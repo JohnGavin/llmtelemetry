@@ -1,0 +1,19 @@
+Package: llmtelemetry
+Title: LLM Usage Telemetry
+Version: 0.0.0.9000
+Authors@R: person("John", "Gavin", email = "john.gavin@example.com", role = c("aut", "cre"))
+Description: Telemetry, cost tracking, and automated reporting for LLM usage.
+License: MIT
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.1
+Imports: 
+    duckdb,
+    dplyr,
+    ggplot2,
+    jsonlite,
+    blastula,
+    here,
+    scales,
+    tibble,
+    lubridate
