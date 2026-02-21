@@ -6,7 +6,7 @@
 set -e
 
 # Configuration
-LLM_REPO="/Users/johngavin/docs_gh/llm"
+LLM_REPO="/Users/johngavin/docs_gh/proj/data/llm/telemetry"
 LOG_FILE="$LLM_REPO/inst/logs/refresh_preserve.log"
 ERROR_LOG="$LLM_REPO/inst/logs/refresh_preserve_error.log"
 LOCK_FILE="/tmp/refresh_preserve.lock"
@@ -295,8 +295,9 @@ message("\nRefresh complete!")
 EOF
 
 # Run the R script via nix-shell
-if nix-shell "$LLM_REPO/default.nix" --attr shell --run "cd $LLM_REPO && Rscript /tmp/refresh_preserve.R && Rscript R/scripts/refresh_gemini_cache.R" >> "$LOG_FILE" 2>&1; then
-    log "✓ History preservation and Gemini refresh completed"
+if nix-shell "$LLM_REPO/default.nix" --attr shell --run "cd $LLM_REPO && Rscript /tmp/refresh_preserve.R" >> "$LOG_FILE" 2>&1; then
+# && Rscript R/scripts/refresh_gemini_cache.R" >> "$LOG_FILE" 2>&1; then
+    log "✓ History preservation completed"
 else
     error_log "Refresh scripts had issues (exit code: $?)"
 fi
