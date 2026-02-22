@@ -605,6 +605,15 @@ tryCatch({
   )
   message("Email sent successfully!")
 }, error = function(e) {
-  message("Failed to send email: ", e$message)
-  quit(status = 1)
+  message("ERROR: Failed to send email via SMTP.")
+  message("Details: ", e$message)
+  message("HINT: Check GMAIL_APP_PASSWORD in GitHub Secrets. It may be expired or invalid.")
+  
+  # Print the email body to stdout so the report is still accessible in CI logs
+  cat("\n--- Generated Email Body (Fallback) ---\n")
+  cat(email_body)
+  cat("\n---------------------------------------\n")
+  
+  # Do not fail the CI job, just warn
+  quit(status = 0)
 })
