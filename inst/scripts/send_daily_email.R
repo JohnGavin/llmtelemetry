@@ -105,6 +105,14 @@ cache_time <- if (!is.null(session_raw$generatedAt)) {
   "Unknown"
 }
 
+# Check for stale data
+if (cache_time != "Unknown") {
+  cache_ts <- tryCatch(as.POSIXct(cache_time), error = function(e) NA)
+  if (!is.na(cache_ts) && difftime(Sys.time(), cache_ts, units = "hours") > 24) {
+    message(sprintf("WARNING: Cached data is stale (generated at %s). Report may be outdated.", cache_time))
+  }
+}
+
 if (!has_data) {
   email_body <- sprintf('\n<div style="background-color: %s; color: %s; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
 <h2 style="color: %s; margin-bottom: 5px;">LLM Usage Report - %s</h2>
