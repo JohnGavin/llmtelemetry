@@ -554,13 +554,26 @@ if (!has_data) {
 
 # Create and send email
 london_time <- format(Sys.time(), tz = "Europe/London", "%Y-%m-%d %H:%M")
+
+gmail_user <- Sys.getenv("GMAIL_USERNAME")
+gmail_pass <- Sys.getenv("GMAIL_APP_PASSWORD")
+
+if (gmail_user == "" || gmail_pass == "") {
+  message("WARNING: GMAIL_USERNAME or GMAIL_APP_PASSWORD not set. Skipping email.")
+  # Print the email body to stdout for debugging/logging
+  cat("\n--- Generated Email Body ---\n")
+  cat(email_body)
+  cat("\n----------------------------\n")
+  quit(status = 0)
+}
+
 email <- compose_email(
   body = md(email_body),
   footer = md(sprintf("<span style='color: %s;'>Report generated: %s (London)</span>", dark_muted, london_time))
 )
 
 smtp_creds <- creds_envvar(
-  user = Sys.getenv("GMAIL_USERNAME"),
+  user = gmail_user,
   pass_envvar = "GMAIL_APP_PASSWORD",
   host = "smtp.gmail.com",
   port = 465,
@@ -570,8 +583,8 @@ smtp_creds <- creds_envvar(
 tryCatch({
   smtp_send(
     email = email,
-    to = Sys.getenv("GMAIL_USERNAME"),
-    from = Sys.getenv("GMAIL_USERNAME"),
+    to = gmail_user,
+    from = gmail_user,
     subject = sprintf("LLM Usage Report - %s", today),
     credentials = smtp_creds
   )
