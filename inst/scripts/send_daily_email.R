@@ -247,6 +247,13 @@ if (!has_data) {
 <h2 style="color: %s; margin-bottom: 5px;">LLM Usage Report - %s</h2>
 <p style="color: %s; font-size: 12px; margin-top: 0;">Data cached: %s</p>
 
+<!-- Embedded Dashboard Link -->
+<div style="margin-bottom: 20px;">
+  <a href="https://johngavin.github.io/llm/vignettes/telemetry.html" style="display: inline-block; padding: 10px 20px; background-color: %s; color: #1a1a2e; text-decoration: none; border-radius: 5px; font-weight: bold;">
+    View Full Telemetry Dashboard
+  </a>
+</div>
+
 <h3 style="color: %s;">Summary</h3>
 <table style="border-collapse: collapse; width: 100%%; font-size: 11px;">
   <tr style="background-color: %s; color: white;">
@@ -261,7 +268,7 @@ if (!has_data) {
     <th style="padding: 6px; border: 1px solid %s; text-align: right;">Start Date</th>
     <th style="padding: 6px; border: 1px solid %s; text-align: right;">End Date</th>
   </tr>',
-  dark_bg, dark_text, accent_orange, today, dark_muted, cache_time, accent_green,
+  dark_bg, dark_text, accent_orange, today, dark_muted, cache_time, accent_blue, accent_green,
   dark_row_alt, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border)
 
   row_ccusage <- sprintf('
