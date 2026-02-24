@@ -109,217 +109,163 @@ mkdir -p "$ARCHIVE_DIR"
 cp inst/extdata/*.json "$ARCHIVE_DIR/" 2>/dev/null || true
 log "Archived existing JSON files to $ARCHIVE_DIR"
 
-# 2. Run the R script that preserves history
-log "Running history preservation script..."
+# ===== TIER 1: Direct JSON refresh via npx (no R/nix-shell needed) =====
+# Pin ccusage version to avoid npm protocol breakage (v18.0.6 uses unsupported runtime: URLs)
+CCUSAGE_VERSION="18.0.5"
 
-# Create the R script inline to avoid dependency issues
-cat > /tmp/refresh_preserve.R << 'EOF'
-#!/usr/bin/env Rscript
+log "--- Tier 1: Fetching fresh JSON data via npx ccusage@${CCUSAGE_VERSION} ---"
 
+TIER1_OK=true
+
+# Fetch daily data
+log "Fetching daily data..."
+if npx "ccusage@${CCUSAGE_VERSION}" daily --json --instances > "$LLM_REPO/inst/extdata/ccusage_daily_all.json.tmp" 2>/dev/null; then
+    if [ -s "$LLM_REPO/inst/extdata/ccusage_daily_all.json.tmp" ] && \
+       python3 -c "import json; json.load(open('$LLM_REPO/inst/extdata/ccusage_daily_all.json.tmp'))" 2>/dev/null; then
+        mv "$LLM_REPO/inst/extdata/ccusage_daily_all.json.tmp" "$LLM_REPO/inst/extdata/ccusage_daily_all.json"
+        log "✓ Daily data fetched"
+    else
+        error_log "Daily JSON invalid or empty, keeping previous version"
+        rm -f "$LLM_REPO/inst/extdata/ccusage_daily_all.json.tmp"
+        TIER1_OK=false
+    fi
+else
+    error_log "npx ccusage daily failed"
+    rm -f "$LLM_REPO/inst/extdata/ccusage_daily_all.json.tmp"
+    TIER1_OK=false
+fi
+
+# Fetch session data
+log "Fetching session data..."
+if npx "ccusage@${CCUSAGE_VERSION}" session --json --instances > "$LLM_REPO/inst/extdata/ccusage_session_all.json.tmp" 2>/dev/null; then
+    if [ -s "$LLM_REPO/inst/extdata/ccusage_session_all.json.tmp" ] && \
+       python3 -c "import json; json.load(open('$LLM_REPO/inst/extdata/ccusage_session_all.json.tmp'))" 2>/dev/null; then
+        mv "$LLM_REPO/inst/extdata/ccusage_session_all.json.tmp" "$LLM_REPO/inst/extdata/ccusage_session_all.json"
+        log "✓ Session data fetched"
+    else
+        error_log "Session JSON invalid, keeping previous version"
+        rm -f "$LLM_REPO/inst/extdata/ccusage_session_all.json.tmp"
+    fi
+else
+    error_log "npx ccusage session failed"
+    rm -f "$LLM_REPO/inst/extdata/ccusage_session_all.json.tmp"
+fi
+
+# Fetch blocks data
+log "Fetching blocks data..."
+if npx "ccusage@${CCUSAGE_VERSION}" blocks --json --instances --breakdown > "$LLM_REPO/inst/extdata/ccusage_blocks_all.json.tmp" 2>/dev/null; then
+    if [ -s "$LLM_REPO/inst/extdata/ccusage_blocks_all.json.tmp" ] && \
+       python3 -c "import json; json.load(open('$LLM_REPO/inst/extdata/ccusage_blocks_all.json.tmp'))" 2>/dev/null; then
+        mv "$LLM_REPO/inst/extdata/ccusage_blocks_all.json.tmp" "$LLM_REPO/inst/extdata/ccusage_blocks_all.json"
+        log "✓ Blocks data fetched"
+    else
+        error_log "Blocks JSON invalid, keeping previous version"
+        rm -f "$LLM_REPO/inst/extdata/ccusage_blocks_all.json.tmp"
+    fi
+else
+    error_log "npx ccusage blocks failed"
+    rm -f "$LLM_REPO/inst/extdata/ccusage_blocks_all.json.tmp"
+fi
+
+if [ "$TIER1_OK" = true ]; then
+    log "✓ Tier 1 complete: all JSON files refreshed"
+else
+    error_log "Tier 1 partial: some JSON files could not be refreshed"
+fi
+
+# ===== TIER 2: DuckDB history preservation (optional, requires R) =====
+log "--- Tier 2: DuckDB history preservation (optional) ---"
+
+if command -v Rscript &>/dev/null; then
+    log "Rscript found at $(which Rscript), attempting DuckDB preservation..."
+
+    cat > /tmp/refresh_preserve.R << 'REOF'
 library(DBI)
 library(duckdb)
 library(jsonlite)
 library(dplyr)
-library(lubridate)
 
 `%||%` <- function(x, y) if (is.null(x) || is.na(x)) y else x
 
-message("Starting refresh with history preservation...")
-
 DB_PATH <- "inst/extdata/llm_usage_history.duckdb"
-dir.create("inst/extdata", recursive = TRUE, showWarnings = FALSE)
-
-# Connect to database
 con <- dbConnect(duckdb(), dbdir = DB_PATH)
 
-# Create tables if needed
 dbExecute(con, "
   CREATE TABLE IF NOT EXISTS daily_usage (
-    date DATE NOT NULL,
-    project VARCHAR NOT NULL,
-    input_tokens BIGINT,
-    output_tokens BIGINT,
-    cache_creation_tokens BIGINT,
-    cache_read_tokens BIGINT,
-    total_tokens BIGINT,
-    total_cost DOUBLE,
-    models_used VARCHAR,
-    data_source VARCHAR NOT NULL,
+    date DATE NOT NULL, project VARCHAR NOT NULL,
+    input_tokens BIGINT, output_tokens BIGINT,
+    cache_creation_tokens BIGINT, cache_read_tokens BIGINT,
+    total_tokens BIGINT, total_cost DOUBLE,
+    models_used VARCHAR, data_source VARCHAR NOT NULL,
     collected_at TIMESTAMP NOT NULL,
     PRIMARY KEY (date, project, data_source)
   )
 ")
 
-# Fetch new data from ccusage
-message("Fetching fresh data from ccusage...")
-daily_fresh <- tryCatch({
-  tmp_file <- tempfile(fileext = ".json")
-  system(sprintf("npx ccusage daily --json --instances > %s 2>/dev/null", tmp_file))
-  fromJSON(tmp_file)
-}, error = function(e) NULL)
+daily_fresh <- tryCatch(
+  fromJSON("inst/extdata/ccusage_daily_all.json"),
+  error = function(e) NULL
+)
 
-# Import fresh daily data
 if (!is.null(daily_fresh$projects)) {
   collected_at <- Sys.time()
-  records_added <- 0
-
-  for (project_name in names(daily_fresh$projects)) {
-    project_data <- daily_fresh$projects[[project_name]]
-
-    if (is.data.frame(project_data) && nrow(project_data) > 0) {
-      for (i in 1:nrow(project_data)) {
-        row <- project_data[i, ]
-
-        # Use INSERT OR REPLACE to handle duplicates
-        sql <- sprintf("
-          INSERT OR REPLACE INTO daily_usage VALUES (
-            '%s', '%s', %s, %s, %s, %s, %s, %f, '%s', 'ccusage', '%s'
-          )",
-          row$date,
-          project_name,
-          as.integer(row$inputTokens %||% 0),
-          as.integer(row$outputTokens %||% 0),
-          as.integer(row$cacheCreationTokens %||% 0),
-          as.integer(row$cacheReadTokens %||% 0),
-          as.integer(row$totalTokens %||% 0),
-          as.numeric(row$totalCost %||% 0),
-          "[]",
+  records <- 0
+  for (pname in names(daily_fresh$projects)) {
+    pdata <- daily_fresh$projects[[pname]]
+    if (is.data.frame(pdata) && nrow(pdata) > 0) {
+      for (i in seq_len(nrow(pdata))) {
+        row <- pdata[i, ]
+        dbExecute(con, sprintf(
+          "INSERT OR REPLACE INTO daily_usage VALUES ('%s','%s',%s,%s,%s,%s,%s,%f,'[]','ccusage','%s')",
+          row$date, pname,
+          as.integer(row$inputTokens %||% 0), as.integer(row$outputTokens %||% 0),
+          as.integer(row$cacheCreationTokens %||% 0), as.integer(row$cacheReadTokens %||% 0),
+          as.integer(row$totalTokens %||% 0), as.numeric(row$totalCost %||% 0),
           format(collected_at, "%Y-%m-%d %H:%M:%S")
-        )
-
-        dbExecute(con, sql)
-        records_added <- records_added + 1
+        ))
+        records <- records + 1
       }
     }
   }
-  message(sprintf("Added/updated %d daily records", records_added))
+  message(sprintf("DuckDB: added/updated %d records", records))
 }
 
-# Export complete history back to JSON
-message("Exporting complete history to JSON...")
-
-daily_complete <- dbGetQuery(con, "
-  WITH ranked AS (
-    SELECT *,
-           ROW_NUMBER() OVER (PARTITION BY date, project
-                              ORDER BY collected_at DESC) as rn
-    FROM daily_usage
-  )
-  SELECT date, project, input_tokens, output_tokens,
-         cache_creation_tokens, cache_read_tokens,
-         total_tokens, total_cost, data_source
-  FROM ranked
-  WHERE rn = 1
-  ORDER BY date DESC, project
-")
-
-if (nrow(daily_complete) > 0) {
-  # Group by project for expected format
-  projects_list <- list()
-  for (proj in unique(daily_complete$project)) {
-    proj_data <- daily_complete %>%
-      filter(project == proj) %>%
-      select(-project) %>%
-      rename(
-        inputTokens = input_tokens,
-        outputTokens = output_tokens,
-        cacheCreationTokens = cache_creation_tokens,
-        cacheReadTokens = cache_read_tokens,
-        totalTokens = total_tokens,
-        totalCost = total_cost,
-        dataSource = data_source
-      )
-    projects_list[[proj]] <- proj_data
-  }
-
-  # Calculate totals
-  totals <- list(
-    inputTokens = sum(daily_complete$input_tokens, na.rm = TRUE),
-    outputTokens = sum(daily_complete$output_tokens, na.rm = TRUE),
-    cacheCreationTokens = sum(daily_complete$cache_creation_tokens, na.rm = TRUE),
-    cacheReadTokens = sum(daily_complete$cache_read_tokens, na.rm = TRUE),
-    totalTokens = sum(daily_complete$total_tokens, na.rm = TRUE),
-    totalCost = sum(daily_complete$total_cost, na.rm = TRUE)
-  )
-
-  daily_json <- list(
-    projects = projects_list,
-    totals = totals,
-    generatedAt = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
-    dataSource = "preserved_history",
-    recordCount = nrow(daily_complete),
-    dateRange = list(
-      earliest = min(daily_complete$date),
-      latest = max(daily_complete$date)
-    )
-  )
-
-  write_json(daily_json, "inst/extdata/ccusage_daily_all.json",
-             pretty = TRUE, auto_unbox = TRUE)
-  message(sprintf("Exported %d daily records spanning %s to %s",
-                 nrow(daily_complete),
-                 min(daily_complete$date),
-                 max(daily_complete$date)))
-}
-
-# Also preserve session and blocks data
-message("Fetching session data...")
-system("npx ccusage session --json --instances > inst/extdata/ccusage_session_all.json 2>/dev/null || true")
-
-message("Fetching blocks data...")
-system("npx ccusage blocks --json --instances --breakdown > inst/extdata/ccusage_blocks_all.json 2>/dev/null || true")
-
-# Print summary
 stats <- dbGetQuery(con, "
-  SELECT
-    COUNT(DISTINCT date || project) as total_records,
-    COUNT(DISTINCT date) as unique_days,
-    MIN(date) as earliest_date,
-    MAX(date) as latest_date,
-    SUM(total_cost) as grand_total_cost
-  FROM (
-    SELECT date, project, MAX(total_cost) as total_cost
-    FROM daily_usage
-    GROUP BY date, project
-  )
+  SELECT COUNT(DISTINCT date) as days, MIN(date) as earliest, MAX(date) as latest,
+         SUM(total_cost) as cost
+  FROM (SELECT date, MAX(total_cost) as total_cost FROM daily_usage GROUP BY date, project)
 ")
-
-cat("\n=== History Summary ===\n")
-cat(sprintf("Total records: %d\n", stats$total_records))
-cat(sprintf("Unique days: %d\n", stats$unique_days))
-cat(sprintf("Date range: %s to %s\n", stats$earliest_date, stats$latest_date))
-cat(sprintf("Grand total cost: $%.2f\n", stats$grand_total_cost))
+message(sprintf("DuckDB: %d days, %s to %s, $%.2f total",
+                stats$days, stats$earliest, stats$latest, stats$cost))
 
 dbDisconnect(con)
-message("\nRefresh complete!")
-EOF
+REOF
 
-# Run the R script via nix-shell
-if nix-shell "$LLM_REPO/default.nix" --attr shell --run "cd $LLM_REPO && Rscript /tmp/refresh_preserve.R" >> "$LOG_FILE" 2>&1; then
-# && Rscript R/scripts/refresh_gemini_cache.R" >> "$LOG_FILE" 2>&1; then
-    log "✓ History preservation completed"
-else
-    error_log "Refresh scripts had issues (exit code: $?)"
-fi
-
-# 3. Capture cmonitor data via nix-shell
-log "Capturing cmonitor data..."
-
-# Run cmonitor inside nix-shell
-if nix-shell "$LLM_REPO/default.nix" --attr shell --run "timeout 60 cmonitor --view daily" > "$LLM_REPO/inst/extdata/cmonitor_daily.txt" 2>> "$LOG_FILE"; then
-    log "✓ cmonitor daily data captured"
-    
-    # Capture monthly data
-    nix-shell "$LLM_REPO/default.nix" --attr shell --run "timeout 60 cmonitor --view monthly" > "$LLM_REPO/inst/extdata/cmonitor_monthly.txt" 2>> "$LOG_FILE" || true
-
-    # Extract total cost from cmonitor
-    CMONITOR_COST=$(grep "Total Cost:" "$LLM_REPO/inst/extdata/cmonitor_daily.txt" | sed 's/.*\$\([0-9.,]*\).*/\1/' | head -1)
-    if [ ! -z "$CMONITOR_COST" ]; then
-        log "cmonitor reports total cost: \$$CMONITOR_COST"
+    if timeout 120 Rscript /tmp/refresh_preserve.R >> "$LOG_FILE" 2>&1; then
+        log "✓ Tier 2 complete: DuckDB history preserved"
+    else
+        log "⚠ Tier 2 failed (non-blocking): DuckDB preservation skipped"
     fi
 else
-    log "⚠ cmonitor failed or not available in nix-shell"
-    # Ensure file exists so git add doesn't fail
+    log "⚠ Rscript not in PATH, skipping Tier 2 (DuckDB preservation)"
+fi
+
+# 3. Capture cmonitor data (try from PATH directly, no nix-shell)
+log "Capturing cmonitor data..."
+if command -v cmonitor &>/dev/null; then
+    if timeout 60 cmonitor --view daily > "$LLM_REPO/inst/extdata/cmonitor_daily.txt" 2>/dev/null; then
+        log "✓ cmonitor daily data captured"
+        timeout 60 cmonitor --view monthly > "$LLM_REPO/inst/extdata/cmonitor_monthly.txt" 2>/dev/null || true
+        CMONITOR_COST=$(grep "Total Cost:" "$LLM_REPO/inst/extdata/cmonitor_daily.txt" | sed 's/.*\$\([0-9.,]*\).*/\1/' | head -1)
+        if [ -n "$CMONITOR_COST" ]; then
+            log "cmonitor reports total cost: \$$CMONITOR_COST"
+        fi
+    else
+        log "⚠ cmonitor command failed"
+        touch "$LLM_REPO/inst/extdata/cmonitor_daily.txt"
+    fi
+else
+    log "⚠ cmonitor not in PATH, skipping"
     touch "$LLM_REPO/inst/extdata/cmonitor_daily.txt"
 fi
 
