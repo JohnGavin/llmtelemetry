@@ -1,0 +1,71 @@
+name: Deploy Shinylive Dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'vignettes/**'
+      - 'inst/extdata/**'
+      - 'inst/scripts/export_dashboard_data.R'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::jsonlite
+            any::dplyr
+            any::DBI
+            any::duckdb
+            any::here
+            any::tibble
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Install shinylive extension
+        run: quarto add quarto-ext/shinylive --no-prompt
+
+      - name: Export dashboard data
+        run: Rscript inst/scripts/export_dashboard_data.R
+
+      - name: Render dashboard
+        run: |
+          cd vignettes
+          quarto render dashboard_shinylive.qmd
+
+      - name: Prepare pages artifact
+        run: |
+          mkdir -p _site
+          cp vignettes/dashboard_shinylive.html _site/index.html
+          cp -r vignettes/dashboard_shinylive_files _site/ 2>/dev/null || true
+          cp vignettes/shinylive-sw.js _site/ 2>/dev/null || true
+          cp -r vignettes/shinylive _site/ 2>/dev/null || true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

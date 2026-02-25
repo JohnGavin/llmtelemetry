@@ -249,7 +249,7 @@ if (!has_data) {
 
 <!-- Embedded Dashboard Link -->
 <div style="margin-bottom: 20px;">
-  <a href="https://johngavin.github.io/llm/vignettes/telemetry.html" style="display: inline-block; padding: 10px 20px; background-color: %s; color: #1a1a2e; text-decoration: none; border-radius: 5px; font-weight: bold;">
+  <a href="https://johngavin.github.io/llmtelemetry/" style="display: inline-block; padding: 10px 20px; background-color: %s; color: #1a1a2e; text-decoration: none; border-radius: 5px; font-weight: bold;">
     View Full Telemetry Dashboard
   </a>
 </div>
@@ -550,7 +550,7 @@ if (!has_data) {
   email_body <- paste0(email_body, sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
 <p style="color: %s; font-size: 12px;">
   <a href="https://github.com/JohnGavin/llmtelemetry" style="color: %s;">llmtelemetry project</a> |
-  <a href="https://johngavin.github.io/llm/vignettes/telemetry.html" style="color: %s;">Dashboard</a> |
+  <a href="https://johngavin.github.io/llmtelemetry/" style="color: %s;">Dashboard</a> |
   Refresh: <code style="background-color: %s; padding: 2px 6px; border-radius: 3px; color: %s;">bash exec/refresh_and_preserve.sh</code>
 </p>
 
