@@ -549,9 +549,9 @@ if (!has_data) {
 
   email_body <- paste0(email_body, sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
 <p style="color: %s; font-size: 12px;">
-  <a href="https://github.com/JohnGavin/llm" style="color: %s;">llm project</a> |
+  <a href="https://github.com/JohnGavin/llmtelemetry" style="color: %s;">llmtelemetry project</a> |
   <a href="https://johngavin.github.io/llm/vignettes/telemetry.html" style="color: %s;">Dashboard</a> |
-  Refresh: <code style="background-color: %s; padding: 2px 6px; border-radius: 3px; color: %s;">Rscript R/scripts/refresh_ccusage_cache.R</code>
+  Refresh: <code style="background-color: %s; padding: 2px 6px; border-radius: 3px; color: %s;">bash exec/refresh_and_preserve.sh</code>
 </p>
 
 <!-- Footnotes -->
@@ -600,7 +600,7 @@ tryCatch({
     email = email,
     to = gmail_user,
     from = gmail_user,
-    subject = sprintf("LLM Usage Report - %s", today),
+    subject = sprintf("LLM Telemetry Report - %s", today),
     credentials = smtp_creds
   )
   message("Email sent successfully!")
