@@ -1,0 +1,574 @@
+---
+title: "LLM Telemetry Dashboard"
+format:
+  html:
+    page-layout: full
+    embed-resources: false
+    resources:
+      - shinylive-sw.js
+      - data/ccusage_daily.json
+      - data/ccusage_sessions.json
+      - data/ccusage_blocks.json
+      - data/gemini_daily.json
+      - data/gemini_sessions.json
+      - data/cmonitor_summary.json
+filters:
+  - shinylive
+---
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 900
+
+library(shiny)
+library(bslib)
+library(plotly)
+library(DT)
+library(dplyr, warn.conflicts = FALSE)
+library(tidyr)
+library(jsonlite)
+library(lubridate, warn.conflicts = FALSE)
+
+# --- Data loading -------------------------------------------------------------
+load_json <- function(path) {
+  tryCatch(
+    fromJSON(txt = path, simplifyDataFrame = TRUE),
+    error = function(e) NULL
+  )
+}
+
+cc_daily    <- load_json("data/ccusage_daily.json")
+cc_sessions <- load_json("data/ccusage_sessions.json")
+cc_blocks   <- load_json("data/ccusage_blocks.json")
+gem_daily   <- load_json("data/gemini_daily.json")
+gem_sess    <- load_json("data/gemini_sessions.json")
+cmon        <- load_json("data/cmonitor_summary.json")
+
+# Parse dates
+if (!is.null(cc_daily) && nrow(cc_daily) > 0) {
+  cc_daily$date <- as.Date(cc_daily$date)
+}
+if (!is.null(cc_sessions) && nrow(cc_sessions) > 0) {
+  cc_sessions$lastActivity <- as.Date(cc_sessions$lastActivity)
+}
+if (!is.null(cc_blocks) && nrow(cc_blocks) > 0) {
+  cc_blocks$startTime <- as.POSIXct(cc_blocks$startTime, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
+  cc_blocks$endTime   <- as.POSIXct(cc_blocks$endTime, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
+  cc_blocks$actualEndTime <- as.POSIXct(cc_blocks$actualEndTime, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
+  cc_blocks$date <- as.Date(cc_blocks$startTime)
+  cc_blocks$hour <- hour(cc_blocks$startTime)
+  cc_blocks$wday <- wday(cc_blocks$startTime, label = TRUE)
+  cc_blocks$duration_hrs <- as.numeric(
+    difftime(coalesce(cc_blocks$actualEndTime, cc_blocks$endTime),
+             cc_blocks$startTime, units = "hours")
+  )
+  cc_blocks$cost_per_hr <- ifelse(cc_blocks$duration_hrs > 0,
+    round(cc_blocks$costUSD / cc_blocks$duration_hrs, 2), 0)
+  cc_blocks$tok_per_hr <- ifelse(cc_blocks$duration_hrs > 0,
+    round(cc_blocks$totalTokens / cc_blocks$duration_hrs, 0), 0)
+}
+if (!is.null(gem_daily) && nrow(gem_daily) > 0) {
+  gem_daily$date <- as.Date(gem_daily$date)
+}
+
+# All project names for filter
+all_projects <- if (!is.null(cc_daily) && nrow(cc_daily) > 0) {
+  sort(unique(cc_daily$project))
+} else {
+  character(0)
+}
+
+# Date range
+all_dates <- c(
+  if (!is.null(cc_daily) && nrow(cc_daily) > 0) cc_daily$date,
+  if (!is.null(gem_daily) && nrow(gem_daily) > 0) gem_daily$date
+)
+date_min <- if (length(all_dates) > 0) min(all_dates, na.rm = TRUE) else Sys.Date() - 90
+date_max <- if (length(all_dates) > 0) max(all_dates, na.rm = TRUE) else Sys.Date()
+max_days <- as.numeric(date_max - date_min)
+
+# --- UI -----------------------------------------------------------------------
+ui <- page_navbar(
+  title = "LLM Telemetry",
+  theme = bs_theme(bootswatch = "flatly", font_scale = 0.9),
+  sidebar = sidebar(
+    width = 220,
+    sliderInput("horizon", "Time Horizon (days)",
+      min = 7, max = max(max_days, 30), value = min(90, max_days), step = 7),
+    conditionalPanel(
+      condition = "input.tabs == 'Cost Trends' || input.tabs == 'Token Analysis'",
+      selectInput("projects", "Projects", choices = all_projects,
+        selected = all_projects, multiple = TRUE)
+    ),
+    conditionalPanel(
+      condition = "input.tabs == 'Sessions'",
+      numericInput("top_n", "Top N sessions", value = 10, min = 5, max = 50)
+    ),
+    conditionalPanel(
+      condition = "input.tabs == 'Time Blocks'",
+      sliderInput("block_days", "Block window (days)",
+        min = 1, max = 60, value = 14, step = 1)
+    )
+  ),
+
+  nav_panel("Overview", value = "Overview",
+    layout_columns(
+      fill = FALSE, col_widths = c(3, 3, 3, 3),
+      value_box("Total Cost", textOutput("vb_cost"), showcase = icon("dollar-sign"),
+        theme = "primary"),
+      value_box("Total Tokens", textOutput("vb_tokens"), showcase = icon("microchip"),
+        theme = "info"),
+      value_box("Active Days", textOutput("vb_days"), showcase = icon("calendar"),
+        theme = "success"),
+      value_box("Sessions", textOutput("vb_sessions"), showcase = icon("layer-group"),
+        theme = "warning")
+    ),
+    layout_columns(
+      col_widths = c(12),
+      card(card_header("Source Summary"), DTOutput("overview_table"))
+    ),
+    layout_columns(
+      col_widths = c(12),
+      card(card_header("Daily Cost (All Sources)"), plotlyOutput("overview_cost_ts", height = "350px"))
+    )
+  ),
+
+  nav_panel("Cost Trends", value = "Cost Trends",
+    layout_columns(
+      col_widths = c(6, 6),
+      card(card_header("Daily Cost by Project"), plotlyOutput("cost_by_project", height = "350px")),
+      card(card_header("Cumulative Cost"), plotlyOutput("cost_cumulative", height = "350px"))
+    ),
+    layout_columns(
+      col_widths = c(6, 6),
+      card(card_header("Weekly Cost by Source"), plotlyOutput("cost_weekly", height = "300px")),
+      card(card_header("Cost by Model"), plotlyOutput("cost_by_model", height = "300px"))
+    )
+  ),
+
+  nav_panel("Token Analysis", value = "Token Analysis",
+    layout_columns(
+      col_widths = c(12),
+      card(card_header("Daily Tokens"), plotlyOutput("token_daily", height = "350px"))
+    ),
+    layout_columns(
+      col_widths = c(6, 6),
+      card(card_header("Token Composition"), plotlyOutput("token_comp", height = "300px")),
+      card(card_header("Weekly Tokens by Source"), plotlyOutput("token_weekly", height = "300px"))
+    )
+  ),
+
+  nav_panel("Sessions", value = "Sessions",
+    layout_columns(
+      col_widths = c(6, 6),
+      card(card_header("Top Claude Sessions"), DTOutput("sess_claude")),
+      card(card_header("Top Gemini Sessions"), DTOutput("sess_gemini"))
+    ),
+    layout_columns(
+      col_widths = c(6, 6),
+      card(card_header("Session Cost Distribution"), plotlyOutput("sess_hist", height = "300px")),
+      card(card_header("Sessions Over Time"), plotlyOutput("sess_scatter", height = "300px"))
+    )
+  ),
+
+  nav_panel("Time Blocks", value = "Time Blocks",
+    layout_columns(
+      col_widths = c(12),
+      card(card_header("Block Activity"), DTOutput("block_table"))
+    ),
+    layout_columns(
+      col_widths = c(6, 6),
+      card(card_header("Block Timeline"), plotlyOutput("block_timeline", height = "300px")),
+      card(card_header("Hourly Activity Heatmap"), plotlyOutput("block_heatmap", height = "300px"))
+    )
+  ),
+
+  id = "tabs"
+)
+
+# --- Server -------------------------------------------------------------------
+server <- function(input, output, session) {
+  cutoff <- reactive(date_max - input$horizon)
+
+  # Filtered datasets
+  cc_d <- reactive({
+    if (is.null(cc_daily) || nrow(cc_daily) == 0) return(tibble())
+    cc_daily |> filter(date >= cutoff())
+  })
+  gem_d <- reactive({
+    if (is.null(gem_daily) || nrow(gem_daily) == 0) return(tibble())
+    gem_daily |> filter(date >= cutoff())
+  })
+  cc_d_proj <- reactive({
+    d <- cc_d()
+    if (nrow(d) == 0) return(d)
+    if (length(input$projects) > 0) d <- d |> filter(project %in% input$projects)
+    d
+  })
+
+  # --- Overview ---------------------------------------------------------------
+  output$vb_cost <- renderText({
+    cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalCost) else 0
+    gm <- if (nrow(gem_d()) > 0) sum(gem_d()$total_cost) else 0
+    sprintf("$%.2f", cc + gm)
+  })
+  output$vb_tokens <- renderText({
+    cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalTokens) else 0
+    gm <- if (nrow(gem_d()) > 0) sum(gem_d()$total_tokens) else 0
+    total <- cc + gm
+    if (total >= 1e9) sprintf("%.2fB", total / 1e9)
+    else if (total >= 1e6) sprintf("%.1fM", total / 1e6)
+    else format(total, big.mark = ",")
+  })
+  output$vb_days <- renderText({
+    dates <- c(
+      if (nrow(cc_d()) > 0) unique(cc_d()$date),
+      if (nrow(gem_d()) > 0) unique(gem_d()$date)
+    )
+    as.character(length(unique(dates)))
+  })
+  output$vb_sessions <- renderText({
+    n <- if (!is.null(cc_sessions)) nrow(cc_sessions) else 0
+    n <- n + if (!is.null(gem_sess)) nrow(gem_sess) else 0
+    as.character(n)
+  })
+
+  output$overview_table <- renderDT({
+    rows <- list()
+
+    if (nrow(cc_d()) > 0) {
+      cc_sum <- cc_d() |>
+        summarise(
+          cost = sum(totalCost), tokens = sum(totalTokens),
+          days = n_distinct(date),
+          min_date = min(date), max_date = max(date)
+        )
+      rows[[1]] <- tibble(
+        Source = "Claude (ccusage)",
+        Cost = sprintf("$%.2f", cc_sum$cost),
+        `$/Day` = sprintf("$%.2f", cc_sum$cost / max(cc_sum$days, 1)),
+        Tokens = format(cc_sum$tokens, big.mark = ","),
+        Days = cc_sum$days,
+        Sessions = if (!is.null(cc_sessions)) nrow(cc_sessions) else 0L,
+        `Date Range` = paste(cc_sum$min_date, "to", cc_sum$max_date)
+      )
+    }
+
+    if (nrow(gem_d()) > 0) {
+      gm_sum <- gem_d() |>
+        summarise(
+          cost = sum(total_cost), tokens = sum(total_tokens),
+          days = n_distinct(date),
+          min_date = min(date), max_date = max(date)
+        )
+      rows[[length(rows) + 1]] <- tibble(
+        Source = "Gemini",
+        Cost = sprintf("$%.2f", gm_sum$cost),
+        `$/Day` = sprintf("$%.2f", gm_sum$cost / max(gm_sum$days, 1)),
+        Tokens = format(gm_sum$tokens, big.mark = ","),
+        Days = gm_sum$days,
+        Sessions = if (!is.null(gem_sess)) nrow(gem_sess) else 0L,
+        `Date Range` = paste(gm_sum$min_date, "to", gm_sum$max_date)
+      )
+    }
+
+    if (!is.null(cmon) && !is.null(cmon$total_cost)) {
+      rows[[length(rows) + 1]] <- tibble(
+        Source = "cmonitor",
+        Cost = sprintf("$%.2f", cmon$total_cost),
+        `$/Day` = "-",
+        Tokens = format(cmon$total_tokens, big.mark = ","),
+        Days = NA_integer_,
+        Sessions = NA_integer_,
+        `Date Range` = if (!is.null(cmon$date_range)) cmon$date_range else "-"
+      )
+    }
+
+    tbl <- bind_rows(rows)
+    datatable(tbl, options = list(dom = "t", paging = FALSE, searching = FALSE),
+      rownames = FALSE)
+  })
+
+  output$overview_cost_ts <- renderPlotly({
+    traces <- list()
+    if (nrow(cc_d()) > 0) {
+      cc_agg <- cc_d() |> group_by(date) |> summarise(cost = sum(totalCost), .groups = "drop")
+      traces[[1]] <- list(data = cc_agg, name = "Claude", color = "#2c3e50")
+    }
+    if (nrow(gem_d()) > 0) {
+      gm_agg <- gem_d() |> rename(cost = total_cost)
+      traces[[length(traces) + 1]] <- list(data = gm_agg, name = "Gemini", color = "#e74c3c")
+    }
+    p <- plot_ly()
+    for (tr in traces) {
+      p <- p |> add_trace(data = tr$data, x = ~date, y = ~cost, type = "scatter",
+        mode = "lines+markers", name = tr$name,
+        line = list(color = tr$color), marker = list(color = tr$color, size = 4))
+    }
+    p |> layout(
+      xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+      yaxis = list(title = "Cost (USD)"),
+      legend = list(orientation = "h", y = 1.1),
+      margin = list(t = 30)
+    )
+  })
+
+  # --- Cost Trends ------------------------------------------------------------
+  output$cost_by_project <- renderPlotly({
+    d <- cc_d_proj()
+    if (nrow(d) == 0) return(plotly_empty())
+    d_agg <- d |> group_by(date, project) |>
+      summarise(cost = sum(totalCost), .groups = "drop")
+    plot_ly(d_agg, x = ~date, y = ~cost, color = ~project, type = "scatter",
+      mode = "lines", stackgroup = "one", fill = "tonexty") |>
+      layout(
+        xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+        yaxis = list(title = "Cost (USD)"),
+        legend = list(orientation = "h", y = -0.2)
+      )
+  })
+
+  output$cost_cumulative <- renderPlotly({
+    traces <- list()
+    if (nrow(cc_d()) > 0) {
+      cc_cum <- cc_d() |> group_by(date) |>
+        summarise(cost = sum(totalCost), .groups = "drop") |>
+        arrange(date) |> mutate(cum_cost = cumsum(cost))
+      traces[[1]] <- list(data = cc_cum, name = "Claude", color = "#2c3e50")
+    }
+    if (nrow(gem_d()) > 0) {
+      gm_cum <- gem_d() |> arrange(date) |> mutate(cum_cost = cumsum(total_cost))
+      traces[[length(traces) + 1]] <- list(data = gm_cum, name = "Gemini", color = "#e74c3c")
+    }
+    p <- plot_ly()
+    for (tr in traces) {
+      p <- p |> add_trace(data = tr$data, x = ~date, y = ~cum_cost, type = "scatter",
+        mode = "lines", name = tr$name, line = list(color = tr$color))
+    }
+    p |> layout(
+      xaxis = list(title = ""),
+      yaxis = list(title = "Cumulative Cost (USD)"),
+      legend = list(orientation = "h", y = 1.1)
+    )
+  })
+
+  output$cost_weekly <- renderPlotly({
+    rows <- list()
+    if (nrow(cc_d()) > 0) {
+      cc_wk <- cc_d() |> mutate(week = floor_date(date, "week")) |>
+        group_by(week) |> summarise(cost = sum(totalCost), .groups = "drop") |>
+        mutate(source = "Claude")
+      rows[[1]] <- cc_wk
+    }
+    if (nrow(gem_d()) > 0) {
+      gm_wk <- gem_d() |> mutate(week = floor_date(date, "week")) |>
+        group_by(week) |> summarise(cost = sum(total_cost), .groups = "drop") |>
+        mutate(source = "Gemini")
+      rows[[length(rows) + 1]] <- gm_wk
+    }
+    if (length(rows) == 0) return(plotly_empty())
+    d <- bind_rows(rows)
+    plot_ly(d, x = ~week, y = ~cost, color = ~source, type = "bar") |>
+      layout(
+        barmode = "group",
+        xaxis = list(title = "Week"),
+        yaxis = list(title = "Cost (USD)")
+      )
+  })
+
+  output$cost_by_model <- renderPlotly({
+    if (is.null(cc_daily) || nrow(cc_daily) == 0) return(plotly_empty())
+    # Parse modelsUsed from filtered data
+    d <- cc_d()
+    if (nrow(d) == 0) return(plotly_empty())
+
+    model_costs <- d |>
+      separate_rows(modelsUsed, sep = ",\\s*") |>
+      group_by(model = modelsUsed) |>
+      summarise(cost = sum(totalCost), .groups = "drop") |>
+      filter(model != "") |>
+      mutate(model = gsub("claude-", "", model)) |>
+      arrange(desc(cost))
+
+    plot_ly(model_costs, labels = ~model, values = ~cost, type = "pie",
+      hole = 0.5, textinfo = "label+percent") |>
+      layout(showlegend = FALSE)
+  })
+
+  # --- Token Analysis ---------------------------------------------------------
+  output$token_daily <- renderPlotly({
+    traces <- list()
+    if (nrow(cc_d_proj()) > 0) {
+      cc_tok <- cc_d_proj() |> group_by(date) |>
+        summarise(tokens = sum(totalTokens), .groups = "drop")
+      traces[[1]] <- list(data = cc_tok, name = "Claude", color = "#2c3e50")
+    }
+    if (nrow(gem_d()) > 0) {
+      gm_tok <- gem_d() |> rename(tokens = total_tokens)
+      traces[[length(traces) + 1]] <- list(data = gm_tok, name = "Gemini", color = "#e74c3c")
+    }
+    p <- plot_ly()
+    for (tr in traces) {
+      p <- p |> add_trace(data = tr$data, x = ~date, y = ~tokens, type = "scatter",
+        mode = "lines+markers", name = tr$name,
+        line = list(color = tr$color), marker = list(color = tr$color, size = 4))
+    }
+    p |> layout(
+      xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+      yaxis = list(title = "Tokens"),
+      legend = list(orientation = "h", y = 1.1)
+    )
+  })
+
+  output$token_comp <- renderPlotly({
+    d <- cc_d_proj()
+    if (nrow(d) == 0) return(plotly_empty())
+    tok <- d |> group_by(date) |>
+      summarise(
+        Input = sum(inputTokens),
+        Output = sum(outputTokens),
+        `Cache Create` = sum(cacheCreation),
+        `Cache Read` = sum(cacheRead),
+        .groups = "drop"
+      ) |>
+      pivot_longer(-date, names_to = "type", values_to = "tokens")
+    plot_ly(tok, x = ~date, y = ~tokens, color = ~type, type = "bar") |>
+      layout(barmode = "stack",
+        xaxis = list(title = ""),
+        yaxis = list(title = "Tokens"),
+        legend = list(orientation = "h", y = -0.15))
+  })
+
+  output$token_weekly <- renderPlotly({
+    rows <- list()
+    if (nrow(cc_d_proj()) > 0) {
+      cc_wk <- cc_d_proj() |> mutate(week = floor_date(date, "week")) |>
+        group_by(week) |> summarise(tokens = sum(totalTokens), .groups = "drop") |>
+        mutate(source = "Claude")
+      rows[[1]] <- cc_wk
+    }
+    if (nrow(gem_d()) > 0) {
+      gm_wk <- gem_d() |> mutate(week = floor_date(date, "week")) |>
+        group_by(week) |> summarise(tokens = sum(total_tokens), .groups = "drop") |>
+        mutate(source = "Gemini")
+      rows[[length(rows) + 1]] <- gm_wk
+    }
+    if (length(rows) == 0) return(plotly_empty())
+    d <- bind_rows(rows)
+    plot_ly(d, x = ~week, y = ~tokens, color = ~source, type = "bar") |>
+      layout(barmode = "group",
+        xaxis = list(title = "Week"),
+        yaxis = list(title = "Tokens"))
+  })
+
+  # --- Sessions ---------------------------------------------------------------
+  output$sess_claude <- renderDT({
+    if (is.null(cc_sessions) || nrow(cc_sessions) == 0) return(datatable(tibble()))
+    cc_sessions |>
+      arrange(desc(totalCost)) |>
+      head(input$top_n) |>
+      mutate(totalCost = sprintf("$%.2f", totalCost),
+             totalTokens = format(totalTokens, big.mark = ",")) |>
+      select(Session = sessionId, Cost = totalCost, Tokens = totalTokens,
+             `Last Active` = lastActivity, Models = modelsUsed) |>
+      datatable(options = list(dom = "t", pageLength = 20, scrollX = TRUE),
+        rownames = FALSE)
+  })
+
+  output$sess_gemini <- renderDT({
+    if (is.null(gem_sess) || nrow(gem_sess) == 0) return(datatable(tibble()))
+    gem_sess |>
+      arrange(desc(total_cost)) |>
+      head(input$top_n) |>
+      mutate(total_cost = sprintf("$%.4f", total_cost),
+             total_tokens = format(total_tokens, big.mark = ",")) |>
+      select(Title = title, Project = project, Cost = total_cost,
+             Tokens = total_tokens, Started = start_time) |>
+      datatable(options = list(dom = "t", pageLength = 20, scrollX = TRUE),
+        rownames = FALSE)
+  })
+
+  output$sess_hist <- renderPlotly({
+    costs <- c()
+    if (!is.null(cc_sessions) && nrow(cc_sessions) > 0) costs <- c(costs, cc_sessions$totalCost)
+    if (!is.null(gem_sess) && nrow(gem_sess) > 0) costs <- c(costs, gem_sess$total_cost)
+    if (length(costs) == 0) return(plotly_empty())
+    plot_ly(x = ~costs, type = "histogram", nbinsx = 20,
+      marker = list(color = "#2c3e50")) |>
+      layout(xaxis = list(title = "Session Cost (USD)"),
+             yaxis = list(title = "Count"))
+  })
+
+  output$sess_scatter <- renderPlotly({
+    if (is.null(cc_sessions) || nrow(cc_sessions) == 0) return(plotly_empty())
+    plot_ly(cc_sessions, x = ~lastActivity, y = ~totalCost,
+      size = ~totalTokens, type = "scatter", mode = "markers",
+      text = ~sessionId, hoverinfo = "text+x+y",
+      marker = list(sizemode = "area", sizeref = max(cc_sessions$totalTokens) / 1000,
+        color = "#3498db", opacity = 0.7)) |>
+      layout(xaxis = list(title = "Last Activity"),
+             yaxis = list(title = "Total Cost (USD)"))
+  })
+
+  # --- Time Blocks ------------------------------------------------------------
+  blk <- reactive({
+    if (is.null(cc_blocks) || nrow(cc_blocks) == 0) return(tibble())
+    cc_blocks |> filter(date >= (date_max - input$block_days))
+  })
+
+  output$block_table <- renderDT({
+    d <- blk()
+    if (nrow(d) == 0) return(datatable(tibble()))
+    d |>
+      mutate(
+        Start = format(startTime, "%Y-%m-%d %H:%M"),
+        End = format(coalesce(actualEndTime, endTime), "%Y-%m-%d %H:%M"),
+        Duration = sprintf("%.1fh", duration_hrs),
+        Cost = sprintf("$%.2f", costUSD),
+        `$/hr` = sprintf("$%.2f", cost_per_hr),
+        Tokens = format(totalTokens, big.mark = ","),
+        `Tok/hr` = format(tok_per_hr, big.mark = ",")
+      ) |>
+      select(Start, End, Duration, Cost, `$/hr`, Tokens, `Tok/hr`, Models = models) |>
+      datatable(options = list(pageLength = 15, dom = "frtip", scrollX = TRUE),
+        rownames = FALSE)
+  })
+
+  output$block_timeline <- renderPlotly({
+    d <- blk()
+    if (nrow(d) == 0) return(plotly_empty())
+    d <- d |> mutate(label = format(date, "%m-%d"))
+    plot_ly(d, x = ~startTime,
+      xend = ~coalesce(actualEndTime, endTime),
+      y = ~label, type = "scatter", mode = "lines",
+      line = list(width = 10),
+      color = ~costUSD,
+      colors = c("#ecf0f1", "#e74c3c"),
+      text = ~paste0("$", round(costUSD, 2), " | ", format(totalTokens, big.mark = ","), " tok"),
+      hoverinfo = "text+x") |>
+      layout(
+        xaxis = list(title = "Time"),
+        yaxis = list(title = "", categoryorder = "category descending"),
+        showlegend = FALSE
+      )
+  })
+
+  output$block_heatmap <- renderPlotly({
+    d <- blk()
+    if (nrow(d) == 0) return(plotly_empty())
+    heat <- d |>
+      group_by(wday, hour) |>
+      summarise(cost = sum(costUSD), .groups = "drop") |>
+      complete(wday, hour = 0:23, fill = list(cost = 0))
+    plot_ly(heat, x = ~hour, y = ~wday, z = ~cost,
+      type = "heatmap", colorscale = "YlOrRd",
+      hovertemplate = "Hour: %{x}<br>Day: %{y}<br>Cost: $%{z:.2f}<extra></extra>") |>
+      layout(
+        xaxis = list(title = "Hour of Day", dtick = 3),
+        yaxis = list(title = "")
+      )
+  })
+}
+
+shinyApp(ui, server)
+```
