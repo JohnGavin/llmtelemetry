@@ -269,6 +269,14 @@ else
     touch "$LLM_REPO/inst/extdata/cmonitor_daily.txt"
 fi
 
+# 3b. Refresh Gemini usage data from local session logs
+log "Refreshing Gemini usage data..."
+if command -v Rscript >/dev/null 2>&1; then
+    cd "$LLM_REPO" && timeout 120 Rscript inst/scripts/refresh_gemini_cache.R 2>&1 | tee -a "$LOG_FILE" || error_log "Gemini refresh failed"
+else
+    log "Rscript not in PATH, skipping Gemini refresh"
+fi
+
 # 4. ALWAYS stage and commit changes (don't check if files changed)
 log "Staging changes..."
 # Split git add to handle missing file types gracefully
