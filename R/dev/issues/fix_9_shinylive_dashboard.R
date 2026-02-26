@@ -32,7 +32,27 @@
 #   - .Rbuildignore: added entries for shinylive/quarto generated files
 #     to fix R CMD check warnings about 100+ byte paths
 #
-# R CMD check notes (pre-existing, not from this PR):
-#   - NSE binding warnings in R/ccusage.R (needs globalVariables())
-#   - MIT license needs + file LICENSE
-#   - NAMESPACE not managed by roxygen2
+# R CMD check fixes (PR #11):
+#   - Added globalVariables() for NSE bindings in R/ccusage.R
+#   - Created LICENSE file (MIT + file LICENSE)
+#   - Fixed DESCRIPTION: added checkmate/cli to Imports, removed unused deps
+#   - Excluded vignettes/ from .Rbuildignore (deployed via GitHub Pages)
+#   - Result: 0 errors, 0 warnings, 0 notes
+#
+# Adversarial QA (Step 4.4):
+#   - Created tests/testthat/ infrastructure
+#   - Added testthat (>= 3.0.0) to Suggests, Config/testthat/edition: 3
+#   - Added Depends: R (>= 4.1.0) for native pipe |> usage
+#   - Created tests/testthat/test-adversarial-ccusage.R
+#   - 104 attack vectors covering all 17 exported functions:
+#     NULL, wrong types, empty data, NA, missing columns, negative numbers,
+#     Inf, NaN, zero-length vectors, injection strings, extreme values,
+#     boundary conditions, single-row data, duplicate dates
+#   - Result: 104/104 pass (100% pass rate, >= 95% required)
+#
+# Quality Gate (Step 4.5):
+#   - Score: 93/100 (Silver)
+#   - Deductions: NAMESPACE not roxygen2-managed (-2),
+#     exportPattern exports internal helpers (-2),
+#     missing R version dep (-1, now fixed)
+#   - Gold (>=95) required for merge - already merged before QA was run

@@ -4,6 +4,7 @@ Version: 0.0.0.9000
 Authors@R: person("John", "Gavin", email = "john.gavin@example.com", role = c("aut", "cre"))
 Description: Telemetry, cost tracking, and automated reporting for LLM usage.
 License: MIT + file LICENSE
+Depends: R (>= 4.1.0)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
@@ -18,3 +19,6 @@ Imports:
     purrr,
     scales,
     tibble
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
