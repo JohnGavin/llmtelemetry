@@ -3,20 +3,18 @@ Title: LLM Usage Telemetry
 Version: 0.0.0.9000
 Authors@R: person("John", "Gavin", email = "john.gavin@example.com", role = c("aut", "cre"))
 Description: Telemetry, cost tracking, and automated reporting for LLM usage.
-License: MIT
+License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.3
 Imports:
-    duckdb,
+    checkmate,
+    cli,
+    DBI,
     dplyr,
-    fs,
-    ggplot2,
-    jsonlite,
-    blastula,
+    duckdb,
     here,
-    scales,
-    tibble,
-    lubridate,
+    jsonlite,
     purrr,
-    DBI
+    scales,
+    tibble
