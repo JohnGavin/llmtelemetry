@@ -7,6 +7,7 @@ on:
       - 'vignettes/**'
       - 'inst/extdata/**'
       - 'inst/scripts/export_dashboard_data.R'
+      - '.github/workflows/deploy-dashboard.yaml'
   workflow_dispatch:
 
 permissions:
@@ -44,15 +45,15 @@ jobs:
       - uses: quarto-dev/quarto-actions/setup@v2
 
       - name: Install shinylive extension
+        working-directory: vignettes
         run: quarto add quarto-ext/shinylive --no-prompt
 
       - name: Export dashboard data
         run: Rscript inst/scripts/export_dashboard_data.R
 
       - name: Render dashboard
-        run: |
-          cd vignettes
-          quarto render dashboard_shinylive.qmd
+        working-directory: vignettes
+        run: quarto render dashboard_shinylive.qmd
 
       - name: Prepare pages artifact
         run: |
