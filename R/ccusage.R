@@ -1,6 +1,10 @@
 # LLM Usage Tracking Functions
 # Functions for fetching, storing, and analyzing Claude Code usage data
 
+#' @importFrom dplyr desc
+#' @keywords internal
+"_PACKAGE"
+
 # Declare NSE variables used in dplyr pipelines
 utils::globalVariables(c(
   "block_date", "block_hour", "block_id", "cacheCreationTokens",
@@ -319,8 +323,6 @@ query_latest_usage <- function(db_path = "inst/extdata/llm_usage.duckdb",
 #'
 #' @return Invisibly returns the percentage used (numeric 0-100)
 #'
-#' @export
-#'
 #' @examples
 #' \dontrun{
 #' # Show basic cost progress bar
@@ -431,8 +433,6 @@ show_usage_progress <- function(current, limit, label = "Usage",
 #'   - `cost_pct`: Integer, percentage of daily cost limit used
 #'   - `token_pct`: Integer, percentage of daily token limit used
 #'
-#' @export
-#'
 #' @examples
 #' \dontrun{
 #' # Show today's usage with defaults
@@ -524,8 +524,6 @@ show_daily_progress <- function(daily_limit = NULL,
 #'   - `cost`: Numeric, total cost for the last 7 days
 #'   - `cost_pct`: Integer, percentage of weekly limit used
 #'   - `days_with_usage`: Integer, number of days with recorded usage
-#'
-#' @export
 #'
 #' @examples
 #' \dontrun{
@@ -638,8 +636,6 @@ show_weekly_progress <- function(weekly_limit = NULL,
 #' - [show_weekly_progress()] for weekly breakdown
 #' - [show_max5_block_status()] for Max5 plan block tracking
 #' - [show_usage_progress()] for individual progress bars
-#'
-#' @keywords internal
 show_usage_dashboard <- function(daily_limit = NULL,
                                   weekly_limit = NULL,
                                   token_limit = NULL,
@@ -708,8 +704,6 @@ show_usage_dashboard <- function(daily_limit = NULL,
 #'   - `block_start`: POSIXct, start time of the current block
 #'   - `block_end`: POSIXct, end time of the current block (5 hours later)
 #'   - `time_remaining`: difftime object, time remaining in the current block
-#'
-#' @export
 #'
 #' @examples
 #' \dontrun{
@@ -789,8 +783,6 @@ get_current_block_window <- function(current_time = Sys.time()) {
 #'   - `time_remaining`: difftime object, time remaining in the block
 #'   - `block_start`: POSIXct, block start time
 #'   - `block_end`: POSIXct, block end time
-#'
-#' @export
 #'
 #' @examples
 #' \dontrun{
@@ -874,8 +866,6 @@ calculate_block_usage <- function(blocks_data, current_window) {
 #'   - `time_remaining`: difftime object, time until block ends
 #'   - `block_start`: POSIXct, when the block started
 #'   - `block_end`: POSIXct, when the block ends
-#'
-#' @export
 #'
 #' @examples
 #' \dontrun{
@@ -982,8 +972,6 @@ show_max5_block_status <- function(cache_dir = NULL) {
 #'   - `total_tokens`: Numeric, tokens consumed in the block
 #'   - `usage_pct`: Integer, percentage of 88000-token limit
 #'   - `status`: Character, emoji status indicator
-#'
-#' @export
 #'
 #' @examples
 #' \dontrun{

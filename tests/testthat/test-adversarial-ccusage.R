@@ -45,42 +45,42 @@ make_blocks_data <- function(n = 5) {
 
 test_that("normalize_to_char_vec handles NULL", {
 
-expect_identical(normalize_to_char_vec(NULL), character(0))
+expect_identical(llmtelemetry:::normalize_to_char_vec(NULL), character(0))
 })
 
 test_that("normalize_to_char_vec handles empty list", {
-  expect_identical(normalize_to_char_vec(list()), character(0))
+  expect_identical(llmtelemetry:::normalize_to_char_vec(list()), character(0))
 })
 
 test_that("normalize_to_char_vec handles single string", {
-  expect_identical(normalize_to_char_vec("model-a"), "model-a")
+  expect_identical(llmtelemetry:::normalize_to_char_vec("model-a"), "model-a")
 })
 
 test_that("normalize_to_char_vec handles character vector", {
   expect_identical(
-    normalize_to_char_vec(c("model-a", "model-b")),
+    llmtelemetry:::normalize_to_char_vec(c("model-a", "model-b")),
     c("model-a", "model-b")
   )
 })
 
 test_that("normalize_to_char_vec handles nested list", {
   expect_identical(
-    normalize_to_char_vec(list("model-a", "model-b")),
+    llmtelemetry:::normalize_to_char_vec(list("model-a", "model-b")),
     c("model-a", "model-b")
   )
 })
 
 test_that("normalize_to_char_vec handles numeric input", {
-  expect_identical(normalize_to_char_vec(42), "42")
+  expect_identical(llmtelemetry:::normalize_to_char_vec(42), "42")
 })
 
 test_that("normalize_to_char_vec handles NA", {
-  result <- normalize_to_char_vec(NA)
+  result <- llmtelemetry:::normalize_to_char_vec(NA)
   expect_type(result, "character")
 })
 
 test_that("normalize_to_char_vec handles logical", {
-  result <- normalize_to_char_vec(TRUE)
+  result <- llmtelemetry:::normalize_to_char_vec(TRUE)
   expect_type(result, "character")
 })
 
@@ -89,19 +89,19 @@ test_that("normalize_to_char_vec handles logical", {
 # ============================================================================
 
 test_that("parse_ccusage_json returns NULL for NULL input", {
-  expect_null(parse_ccusage_json(NULL))
+  expect_null(llmtelemetry:::parse_ccusage_json(NULL))
 })
 
 test_that("parse_ccusage_json returns NULL for empty list", {
-  expect_null(parse_ccusage_json(list()))
+  expect_null(llmtelemetry:::parse_ccusage_json(list()))
 })
 
 test_that("parse_ccusage_json returns NULL for missing projects key", {
-  expect_null(parse_ccusage_json(list(foo = "bar")))
+  expect_null(llmtelemetry:::parse_ccusage_json(list(foo = "bar")))
 })
 
 test_that("parse_ccusage_json returns NULL for empty projects", {
-  expect_null(parse_ccusage_json(list(projects = list())))
+  expect_null(llmtelemetry:::parse_ccusage_json(list(projects = list())))
 })
 
 test_that("parse_ccusage_json returns NULL when filter matches nothing", {
@@ -110,7 +110,7 @@ test_that("parse_ccusage_json returns NULL when filter matches nothing", {
       "project-a" = data.frame(date = "2026-01-01", totalCost = 1.0)
     )
   )
-  expect_null(parse_ccusage_json(json_data, project_filter = "nonexistent"))
+  expect_null(llmtelemetry:::parse_ccusage_json(json_data, project_filter = "nonexistent"))
 })
 
 test_that("parse_ccusage_json parses valid data", {
@@ -123,7 +123,7 @@ test_that("parse_ccusage_json parses valid data", {
       )
     )
   )
-  result <- parse_ccusage_json(json_data)
+  result <- llmtelemetry:::parse_ccusage_json(json_data)
   expect_s3_class(result, "tbl_df")
   expect_true("project" %in% names(result))
   expect_equal(nrow(result), 2)
@@ -136,7 +136,7 @@ test_that("parse_ccusage_json handles project with NULL data", {
       "project-b" = data.frame(date = "2026-01-01", totalCost = 1.0)
     )
   )
-  result <- parse_ccusage_json(json_data)
+  result <- llmtelemetry:::parse_ccusage_json(json_data)
   expect_s3_class(result, "tbl_df")
   expect_equal(nrow(result), 1)
 })
@@ -290,62 +290,62 @@ test_that("find_activity_gaps handles duplicate dates", {
 # ============================================================================
 
 test_that("show_usage_progress rejects NULL current", {
-  expect_error(show_usage_progress(NULL, 100))
+  expect_error(llmtelemetry:::show_usage_progress(NULL, 100))
 })
 
 test_that("show_usage_progress rejects negative current", {
-  expect_error(show_usage_progress(-1, 100))
+  expect_error(llmtelemetry:::show_usage_progress(-1, 100))
 })
 
 test_that("show_usage_progress rejects zero limit", {
-  expect_error(show_usage_progress(50, 0))
+  expect_error(llmtelemetry:::show_usage_progress(50, 0))
 })
 
 test_that("show_usage_progress rejects negative limit", {
-  expect_error(show_usage_progress(50, -10))
+  expect_error(llmtelemetry:::show_usage_progress(50, -10))
 })
 
 test_that("show_usage_progress rejects non-numeric current", {
-  expect_error(show_usage_progress("abc", 100))
+  expect_error(llmtelemetry:::show_usage_progress("abc", 100))
 })
 
 test_that("show_usage_progress rejects Inf current", {
-  expect_error(show_usage_progress(Inf, 100))
+  expect_error(llmtelemetry:::show_usage_progress(Inf, 100))
 })
 
 test_that("show_usage_progress rejects NaN current", {
-  expect_error(show_usage_progress(NaN, 100))
+  expect_error(llmtelemetry:::show_usage_progress(NaN, 100))
 })
 
 test_that("show_usage_progress rejects NA current", {
-  expect_error(show_usage_progress(NA, 100))
+  expect_error(llmtelemetry:::show_usage_progress(NA, 100))
 })
 
 test_that("show_usage_progress rejects non-string label", {
-  expect_error(show_usage_progress(50, 100, label = 42))
+  expect_error(llmtelemetry:::show_usage_progress(50, 100, label = 42))
 })
 
 test_that("show_usage_progress rejects non-logical show_tokens", {
-  expect_error(show_usage_progress(50, 100, show_tokens = "yes"))
+  expect_error(llmtelemetry:::show_usage_progress(50, 100, show_tokens = "yes"))
 })
 
 test_that("show_usage_progress works with valid inputs", {
-  result <- show_usage_progress(50, 100, label = "Test")
+  result <- llmtelemetry:::show_usage_progress(50, 100, label = "Test")
   expect_equal(result, 50)
 })
 
 test_that("show_usage_progress handles current > limit (over 100%)", {
-  result <- show_usage_progress(150, 100)
+  result <- llmtelemetry:::show_usage_progress(150, 100)
   expect_equal(result, 100) # capped at 100
 })
 
 test_that("show_usage_progress handles zero current", {
-  result <- show_usage_progress(0, 100)
+  result <- llmtelemetry:::show_usage_progress(0, 100)
   expect_equal(result, 0)
 })
 
 test_that("show_usage_progress handles show_tokens with valid token params", {
-  result <- show_usage_progress(50, 100, show_tokens = TRUE,
+  result <- llmtelemetry:::show_usage_progress(50, 100, show_tokens = TRUE,
                                  tokens_current = 5000, tokens_limit = 10000)
   expect_equal(result, 50)
 })
@@ -355,7 +355,7 @@ test_that("show_usage_progress handles show_tokens with valid token params", {
 # ============================================================================
 
 test_that("get_current_block_window works with default (Sys.time())", {
-  result <- get_current_block_window()
+  result <- llmtelemetry:::get_current_block_window()
   expect_type(result, "list")
   expect_true(all(c("block_start", "block_end", "time_remaining") %in% names(result)))
   expect_s3_class(result$block_start, "POSIXct")
@@ -365,39 +365,39 @@ test_that("get_current_block_window works with default (Sys.time())", {
 test_that("get_current_block_window calculates correct 5-hour blocks", {
   # Test at hour 7 -> should be in block 5-10
   test_time <- as.POSIXct("2026-01-15 07:30:00")
-  result <- get_current_block_window(test_time)
+  result <- llmtelemetry:::get_current_block_window(test_time)
   expect_equal(as.integer(format(result$block_start, "%H")), 5)
 })
 
 test_that("get_current_block_window calculates correct block at midnight", {
   test_time <- as.POSIXct("2026-01-15 00:30:00")
-  result <- get_current_block_window(test_time)
+  result <- llmtelemetry:::get_current_block_window(test_time)
   expect_equal(as.integer(format(result$block_start, "%H")), 0)
 })
 
 test_that("get_current_block_window calculates correct block at hour 23", {
   test_time <- as.POSIXct("2026-01-15 23:30:00")
-  result <- get_current_block_window(test_time)
+  result <- llmtelemetry:::get_current_block_window(test_time)
   expect_equal(as.integer(format(result$block_start, "%H")), 20)
 })
 
 test_that("get_current_block_window rejects invalid input types", {
-  expect_error(get_current_block_window(42))
-  expect_error(get_current_block_window(list()))
-  expect_error(get_current_block_window(data.frame()))
+  expect_error(llmtelemetry:::get_current_block_window(42))
+  expect_error(llmtelemetry:::get_current_block_window(list()))
+  expect_error(llmtelemetry:::get_current_block_window(data.frame()))
 })
 
 test_that("get_current_block_window accepts character date string", {
-  result <- get_current_block_window("2026-01-15 12:00:00")
+  result <- llmtelemetry:::get_current_block_window("2026-01-15 12:00:00")
   expect_type(result, "list")
 })
 
 test_that("get_current_block_window rejects NA", {
-  expect_error(get_current_block_window(NA))
+  expect_error(llmtelemetry:::get_current_block_window(NA))
 })
 
 test_that("get_current_block_window rejects invalid date string", {
-  expect_error(get_current_block_window("not-a-date"))
+  expect_error(llmtelemetry:::get_current_block_window("not-a-date"))
 })
 
 # ============================================================================
@@ -405,32 +405,32 @@ test_that("get_current_block_window rejects invalid date string", {
 # ============================================================================
 
 test_that("calculate_block_usage handles NULL blocks_data", {
-  window <- get_current_block_window()
-  result <- calculate_block_usage(NULL, window)
+  window <- llmtelemetry:::get_current_block_window()
+  result <- llmtelemetry:::calculate_block_usage(NULL, window)
   expect_type(result, "list")
   expect_equal(result$tokens_used, 0)
 })
 
 test_that("calculate_block_usage handles empty blocks_data", {
-  window <- get_current_block_window()
-  result <- calculate_block_usage(tibble::tibble(), window)
+  window <- llmtelemetry:::get_current_block_window()
+  result <- llmtelemetry:::calculate_block_usage(tibble::tibble(), window)
   expect_type(result, "list")
   expect_equal(result$tokens_used, 0)
 })
 
 test_that("calculate_block_usage rejects invalid window", {
-  expect_error(calculate_block_usage(make_blocks_data(), list()))
-  expect_error(calculate_block_usage(make_blocks_data(), list(foo = 1)))
+  expect_error(llmtelemetry:::calculate_block_usage(make_blocks_data(), list()))
+  expect_error(llmtelemetry:::calculate_block_usage(make_blocks_data(), list(foo = 1)))
 })
 
 test_that("calculate_block_usage rejects non-list window", {
-  expect_error(calculate_block_usage(make_blocks_data(), "not a list"))
+  expect_error(llmtelemetry:::calculate_block_usage(make_blocks_data(), "not a list"))
 })
 
 test_that("calculate_block_usage works with valid data", {
   blocks <- make_blocks_data(3)
-  window <- get_current_block_window()
-  result <- calculate_block_usage(blocks, window)
+  window <- llmtelemetry:::get_current_block_window()
+  result <- llmtelemetry:::calculate_block_usage(blocks, window)
   expect_type(result, "list")
   expect_true(all(c("tokens_used", "tokens_limit", "usage_pct") %in% names(result)))
 })
@@ -440,15 +440,15 @@ test_that("calculate_block_usage works with valid data", {
 # ============================================================================
 
 test_that("show_daily_progress rejects negative daily_limit", {
-  expect_error(show_daily_progress(daily_limit = -10))
+  expect_error(llmtelemetry:::show_daily_progress(daily_limit = -10))
 })
 
 test_that("show_daily_progress rejects non-numeric daily_limit", {
-  expect_error(show_daily_progress(daily_limit = "fifty"))
+  expect_error(llmtelemetry:::show_daily_progress(daily_limit = "fifty"))
 })
 
 test_that("show_daily_progress rejects invalid cache_dir", {
-  expect_error(show_daily_progress(cache_dir = "/definitely/not/a/real/path"))
+  expect_error(llmtelemetry:::show_daily_progress(cache_dir = "/definitely/not/a/real/path"))
 })
 
 # ============================================================================
@@ -456,11 +456,11 @@ test_that("show_daily_progress rejects invalid cache_dir", {
 # ============================================================================
 
 test_that("show_weekly_progress rejects negative weekly_limit", {
-  expect_error(show_weekly_progress(weekly_limit = -10))
+  expect_error(llmtelemetry:::show_weekly_progress(weekly_limit = -10))
 })
 
 test_that("show_weekly_progress rejects non-numeric weekly_limit", {
-  expect_error(show_weekly_progress(weekly_limit = "hundred"))
+  expect_error(llmtelemetry:::show_weekly_progress(weekly_limit = "hundred"))
 })
 
 # ============================================================================
@@ -480,19 +480,19 @@ test_that("show_usage_dashboard rejects non-logical show_max5", {
 # ============================================================================
 
 test_that("get_block_history rejects zero days", {
-  expect_error(get_block_history(days = 0))
+  expect_error(llmtelemetry:::get_block_history(days = 0))
 })
 
 test_that("get_block_history rejects negative days", {
-  expect_error(get_block_history(days = -1))
+  expect_error(llmtelemetry:::get_block_history(days = -1))
 })
 
 test_that("get_block_history rejects non-integer days", {
-  expect_error(get_block_history(days = 1.5))
+  expect_error(llmtelemetry:::get_block_history(days = 1.5))
 })
 
 test_that("get_block_history rejects character days", {
-  expect_error(get_block_history(days = "three"))
+  expect_error(llmtelemetry:::get_block_history(days = "three"))
 })
 
 # ============================================================================
@@ -543,7 +543,7 @@ test_that("parse_ccusage_json handles injection in project names", {
       )
     )
   )
-  result <- parse_ccusage_json(json_data)
+  result <- llmtelemetry:::parse_ccusage_json(json_data)
   expect_s3_class(result, "tbl_df")
   expect_equal(result$project[1], "'; DROP TABLE--")
 })
