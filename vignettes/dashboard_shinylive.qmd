@@ -30,19 +30,25 @@ library(jsonlite)
 library(lubridate, warn.conflicts = FALSE)
 
 # --- Data loading -------------------------------------------------------------
-load_json <- function(path) {
-  tryCatch(
-    fromJSON(txt = path, simplifyDataFrame = TRUE),
-    error = function(e) NULL
-  )
+base_url <- "https://johngavin.github.io/llmtelemetry"
+
+load_json <- function(filename) {
+  tryCatch({
+    tmp <- tempfile(fileext = ".json")
+    download.file(paste0(base_url, "/data/", filename), tmp, mode = "w", quiet = TRUE)
+    fromJSON(txt = tmp, simplifyDataFrame = TRUE)
+  }, error = function(e) {
+    message("Failed to load ", filename, ": ", e$message)
+    NULL
+  })
 }
 
-cc_daily    <- load_json("data/ccusage_daily.json")
-cc_sessions <- load_json("data/ccusage_sessions.json")
-cc_blocks   <- load_json("data/ccusage_blocks.json")
-gem_daily   <- load_json("data/gemini_daily.json")
-gem_sess    <- load_json("data/gemini_sessions.json")
-cmon        <- load_json("data/cmonitor_summary.json")
+cc_daily    <- load_json("ccusage_daily.json")
+cc_sessions <- load_json("ccusage_sessions.json")
+cc_blocks   <- load_json("ccusage_blocks.json")
+gem_daily   <- load_json("gemini_daily.json")
+gem_sess    <- load_json("gemini_sessions.json")
+cmon        <- load_json("cmonitor_summary.json")
 
 # Parse dates
 if (!is.null(cc_daily) && nrow(cc_daily) > 0) {
@@ -114,14 +120,10 @@ ui <- page_navbar(
   nav_panel("Overview", value = "Overview",
     layout_columns(
       fill = FALSE, col_widths = c(3, 3, 3, 3),
-      value_box("Total Cost", textOutput("vb_cost"), showcase = icon("dollar-sign"),
-        theme = "primary"),
-      value_box("Total Tokens", textOutput("vb_tokens"), showcase = icon("microchip"),
-        theme = "info"),
-      value_box("Active Days", textOutput("vb_days"), showcase = icon("calendar"),
-        theme = "success"),
-      value_box("Sessions", textOutput("vb_sessions"), showcase = icon("layer-group"),
-        theme = "warning")
+      value_box("Total Cost", textOutput("vb_cost"), theme = "primary"),
+      value_box("Total Tokens", textOutput("vb_tokens"), theme = "info"),
+      value_box("Active Days", textOutput("vb_days"), theme = "success"),
+      value_box("Sessions", textOutput("vb_sessions"), theme = "warning")
     ),
     layout_columns(
       col_widths = c(12),

@@ -63,6 +63,7 @@ jobs:
           cp -r vignettes/dashboard_shinylive_files _site/ 2>/dev/null || true
           cp vignettes/shinylive-sw.js _site/ 2>/dev/null || true
           cp -r vignettes/shinylive _site/ 2>/dev/null || true
+          cp -r vignettes/data _site/data 2>/dev/null || true
 
       - uses: actions/upload-pages-artifact@v3
         with:
