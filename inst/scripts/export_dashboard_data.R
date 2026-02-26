@@ -92,12 +92,14 @@ if (file.exists(gemini_db)) {
   con <- dbConnect(duckdb(), dbdir = gemini_db, read_only = TRUE)
   on.exit(dbDisconnect(con, shutdown = TRUE), add = TRUE)
 
-  gem_daily <- tbl(con, "daily_usage") |> collect() |>
+  gem_daily <- dbReadTable(con, "daily_usage") |>
+    as_tibble() |>
     mutate(date = as.character(date), total_cost = round(total_cost, 4))
   write_json(gem_daily, file.path(out_dir, "gemini_daily.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d daily rows\n", nrow(gem_daily)))
 
-  gem_sess <- tbl(con, "sessions_summary") |> collect() |>
+  gem_sess <- dbReadTable(con, "sessions_summary") |>
+    as_tibble() |>
     mutate(
       start_time   = as.character(start_time),
       last_updated = as.character(last_updated),

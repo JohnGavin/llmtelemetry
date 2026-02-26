@@ -1,6 +1,14 @@
 # LLM Usage Tracking Functions
 # Functions for fetching, storing, and analyzing Claude Code usage data
 
+# Declare NSE variables used in dplyr pipelines
+utils::globalVariables(c(
+  "block_date", "block_hour", "block_id", "cacheCreationTokens",
+  "cacheReadTokens", "cost", "date", "fetch_timestamp", "gap_days",
+  "gap_end", "gap_start", "group", "inputTokens", "modelName",
+  "outputTokens", "timestamp", "total_cost", "total_tokens", "totalTokens"
+))
+
 #' Fetch ccusage data from command line
 #'
 #' @param type One of "daily", "weekly", "session", "blocks"
