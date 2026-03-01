@@ -144,7 +144,7 @@ ui <- page_navbar(
     layout_columns(
       col_widths = c(6, 6),
       card(card_header("Weekly Cost by Source"), plotlyOutput("cost_weekly", height = "300px")),
-      card(card_header("Cost by Model"), plotlyOutput("cost_by_model", height = "300px"))
+      card(card_header("Weekly Cost by Model"), plotlyOutput("cost_by_model", height = "300px"))
     )
   ),
 
@@ -210,13 +210,13 @@ server <- function(input, output, session) {
 
   # --- Overview ---------------------------------------------------------------
   output$vb_cost <- renderText({
-    cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalCost) else 0
-    gm <- if (nrow(gem_d()) > 0) sum(gem_d()$total_cost) else 0
+    cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalCost, na.rm = TRUE) else 0
+    gm <- if (nrow(gem_d()) > 0) sum(gem_d()$total_cost, na.rm = TRUE) else 0
     sprintf("$%.2f", cc + gm)
   })
   output$vb_tokens <- renderText({
-    cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalTokens) else 0
-    gm <- if (nrow(gem_d()) > 0) sum(gem_d()$total_tokens) else 0
+    cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalTokens, na.rm = TRUE) else 0
+    gm <- if (nrow(gem_d()) > 0) sum(gem_d()$total_tokens, na.rm = TRUE) else 0
     total <- cc + gm
     if (total >= 1e9) sprintf("%.2fB", total / 1e9)
     else if (total >= 1e6) sprintf("%.1fM", total / 1e6)
@@ -241,7 +241,7 @@ server <- function(input, output, session) {
     if (nrow(cc_d()) > 0) {
       cc_sum <- cc_d() |>
         summarise(
-          cost = sum(totalCost), tokens = sum(totalTokens),
+          cost = sum(totalCost, na.rm = TRUE), tokens = sum(totalTokens, na.rm = TRUE),
           days = n_distinct(date),
           min_date = min(date), max_date = max(date)
         )
@@ -259,7 +259,7 @@ server <- function(input, output, session) {
     if (nrow(gem_d()) > 0) {
       gm_sum <- gem_d() |>
         summarise(
-          cost = sum(total_cost), tokens = sum(total_tokens),
+          cost = sum(total_cost, na.rm = TRUE), tokens = sum(total_tokens, na.rm = TRUE),
           days = n_distinct(date),
           min_date = min(date), max_date = max(date)
         )
@@ -294,7 +294,7 @@ server <- function(input, output, session) {
   output$overview_cost_ts <- renderPlotly({
     traces <- list()
     if (nrow(cc_d()) > 0) {
-      cc_agg <- cc_d() |> group_by(date) |> summarise(cost = sum(totalCost), .groups = "drop")
+      cc_agg <- cc_d() |> group_by(date) |> summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
       traces[[1]] <- list(data = cc_agg, name = "Claude", color = "#2c3e50")
     }
     if (nrow(gem_d()) > 0) {
@@ -320,7 +320,7 @@ server <- function(input, output, session) {
     d <- cc_d_proj()
     if (nrow(d) == 0) return(plotly_empty())
     d_agg <- d |> group_by(date, project) |>
-      summarise(cost = sum(totalCost), .groups = "drop")
+      summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
     plot_ly(d_agg, x = ~date, y = ~cost, color = ~project, type = "scatter",
       mode = "lines", stackgroup = "one", fill = "tonexty") |>
       layout(
@@ -334,7 +334,7 @@ server <- function(input, output, session) {
     traces <- list()
     if (nrow(cc_d()) > 0) {
       cc_cum <- cc_d() |> group_by(date) |>
-        summarise(cost = sum(totalCost), .groups = "drop") |>
+        summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop") |>
         arrange(date) |> mutate(cum_cost = cumsum(cost))
       traces[[1]] <- list(data = cc_cum, name = "Claude", color = "#2c3e50")
     }
@@ -358,13 +358,13 @@ server <- function(input, output, session) {
     rows <- list()
     if (nrow(cc_d()) > 0) {
       cc_wk <- cc_d() |> mutate(week = floor_date(date, "week")) |>
-        group_by(week) |> summarise(cost = sum(totalCost), .groups = "drop") |>
+        group_by(week) |> summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop") |>
         mutate(source = "Claude")
       rows[[1]] <- cc_wk
     }
     if (nrow(gem_d()) > 0) {
       gm_wk <- gem_d() |> mutate(week = floor_date(date, "week")) |>
-        group_by(week) |> summarise(cost = sum(total_cost), .groups = "drop") |>
+        group_by(week) |> summarise(cost = sum(total_cost, na.rm = TRUE), .groups = "drop") |>
         mutate(source = "Gemini")
       rows[[length(rows) + 1]] <- gm_wk
     }
@@ -379,22 +379,27 @@ server <- function(input, output, session) {
   })
 
   output$cost_by_model <- renderPlotly({
-    if (is.null(cc_daily) || nrow(cc_daily) == 0) return(plotly_empty())
-    # Parse modelsUsed from filtered data
-    d <- cc_d()
+    d <- cc_d_proj()
     if (nrow(d) == 0) return(plotly_empty())
 
-    model_costs <- d |>
+    model_weekly <- d |>
       separate_rows(modelsUsed, sep = ",\\s*") |>
-      group_by(model = modelsUsed) |>
-      summarise(cost = sum(totalCost), .groups = "drop") |>
-      filter(model != "") |>
-      mutate(model = gsub("claude-", "", model)) |>
-      arrange(desc(cost))
+      filter(modelsUsed != "") |>
+      mutate(
+        model = gsub("claude-", "", modelsUsed),
+        week = floor_date(date, "week")
+      ) |>
+      group_by(week, model) |>
+      summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
 
-    plot_ly(model_costs, labels = ~model, values = ~cost, type = "pie",
-      hole = 0.5, textinfo = "label+percent") |>
-      layout(showlegend = FALSE)
+    plot_ly(model_weekly, x = ~week, y = ~cost, color = ~model,
+      type = "scatter", mode = "lines+markers",
+      marker = list(size = 4)) |>
+      layout(
+        xaxis = list(title = "Week"),
+        yaxis = list(title = "Cost (USD)"),
+        legend = list(orientation = "h", y = -0.2)
+      )
   })
 
   # --- Token Analysis ---------------------------------------------------------
@@ -402,7 +407,7 @@ server <- function(input, output, session) {
     traces <- list()
     if (nrow(cc_d_proj()) > 0) {
       cc_tok <- cc_d_proj() |> group_by(date) |>
-        summarise(tokens = sum(totalTokens), .groups = "drop")
+        summarise(tokens = sum(totalTokens, na.rm = TRUE), .groups = "drop")
       traces[[1]] <- list(data = cc_tok, name = "Claude", color = "#2c3e50")
     }
     if (nrow(gem_d()) > 0) {
@@ -427,10 +432,10 @@ server <- function(input, output, session) {
     if (nrow(d) == 0) return(plotly_empty())
     tok <- d |> group_by(date) |>
       summarise(
-        Input = sum(inputTokens),
-        Output = sum(outputTokens),
-        `Cache Create` = sum(cacheCreation),
-        `Cache Read` = sum(cacheRead),
+        Input = sum(inputTokens, na.rm = TRUE),
+        Output = sum(outputTokens, na.rm = TRUE),
+        `Cache Create` = sum(cacheCreation, na.rm = TRUE),
+        `Cache Read` = sum(cacheRead, na.rm = TRUE),
         .groups = "drop"
       ) |>
       pivot_longer(-date, names_to = "type", values_to = "tokens")
@@ -445,13 +450,13 @@ server <- function(input, output, session) {
     rows <- list()
     if (nrow(cc_d_proj()) > 0) {
       cc_wk <- cc_d_proj() |> mutate(week = floor_date(date, "week")) |>
-        group_by(week) |> summarise(tokens = sum(totalTokens), .groups = "drop") |>
+        group_by(week) |> summarise(tokens = sum(totalTokens, na.rm = TRUE), .groups = "drop") |>
         mutate(source = "Claude")
       rows[[1]] <- cc_wk
     }
     if (nrow(gem_d()) > 0) {
       gm_wk <- gem_d() |> mutate(week = floor_date(date, "week")) |>
-        group_by(week) |> summarise(tokens = sum(total_tokens), .groups = "drop") |>
+        group_by(week) |> summarise(tokens = sum(total_tokens, na.rm = TRUE), .groups = "drop") |>
         mutate(source = "Gemini")
       rows[[length(rows) + 1]] <- gm_wk
     }
@@ -560,7 +565,7 @@ server <- function(input, output, session) {
     if (nrow(d) == 0) return(plotly_empty())
     heat <- d |>
       group_by(wday, hour) |>
-      summarise(cost = sum(costUSD), .groups = "drop") |>
+      summarise(cost = sum(costUSD, na.rm = TRUE), .groups = "drop") |>
       complete(wday, hour = 0:23, fill = list(cost = 0))
     plot_ly(heat, x = ~hour, y = ~wday, z = ~cost,
       type = "heatmap", colorscale = "YlOrRd",
