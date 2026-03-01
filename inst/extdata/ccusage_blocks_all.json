@@ -3200,7 +3200,7 @@
       "startTime": "2026-02-28T21:00:00.000Z",
       "endTime": "2026-03-01T02:00:00.000Z",
       "actualEndTime": "2026-02-28T22:04:04.698Z",
-      "isActive": true,
+      "isActive": false,
       "isGap": false,
       "entries": 22,
       "tokenCounts": {
@@ -3215,15 +3215,59 @@
         "claude-opus-4-6",
         "claude-opus-4-5-20251101"
       ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "gap-2026-03-01T03:04:04.698Z",
+      "startTime": "2026-03-01T03:04:04.698Z",
+      "endTime": "2026-03-01T12:19:18.891Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-01T12:00:00.000Z",
+      "startTime": "2026-03-01T12:00:00.000Z",
+      "endTime": "2026-03-01T17:00:00.000Z",
+      "actualEndTime": "2026-03-01T13:51:57.523Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 314,
+      "tokenCounts": {
+        "inputTokens": 25410,
+        "outputTokens": 7163,
+        "cacheCreationInputTokens": 1425412,
+        "cacheReadInputTokens": 30139995
+      },
+      "totalTokens": 31597980,
+      "costUSD": 23.203151500000036,
+      "models": [
+        "claude-opus-4-5-20251101",
+        "claude-opus-4-6",
+        "claude-sonnet-4-5-20250929"
+      ],
       "burnRate": {
-        "tokensPerMinute": 104751.64458230404,
-        "tokensPerMinuteForIndicator": 51.629953222620124,
-        "costPerHour": 6.672311014271084
+        "tokensPerMinute": 341069.31345698005,
+        "tokensPerMinuteForIndicator": 351.5937014718729,
+        "costPerHour": 15.027320642920799
       },
       "projection": {
-        "totalTokens": 7201094,
-        "totalCost": 7.64,
-        "remainingMinutes": 41
+        "totalTokens": 95046718,
+        "totalCost": 69.8,
+        "remainingMinutes": 186
       }
     }
   ]
