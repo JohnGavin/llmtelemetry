@@ -72,3 +72,32 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting 30s for GitHub Pages propagation..."
+          sleep 30
+          BASE="https://johngavin.github.io/llmtelemetry"
+          FAIL=0
+          for path in "/" "/data/ccusage_daily.json" "/data/gemini_daily.json" \
+                      "/data/ccusage_sessions.json" "/data/ccusage_blocks.json" \
+                      "/data/gemini_sessions.json" "/data/cmonitor_summary.json"; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${BASE}${path}")
+            if [ "$STATUS" != "200" ]; then
+              echo "FAIL: ${path} returned HTTP ${STATUS}"
+              FAIL=1
+            else
+              echo "OK: ${path}"
+            fi
+          done
+          for f in ccusage_daily gemini_daily; do
+            curl -sf "${BASE}/data/${f}.json" | python3 -m json.tool > /dev/null 2>&1 || {
+              echo "FAIL: ${f}.json is not valid JSON"
+              FAIL=1
+            }
+          done
+          if [ "$FAIL" = "1" ]; then
+            echo "::warning::Some deployment health checks failed — inspect logs"
+          else
+            echo "All deployment checks passed"
+          fi
