@@ -3288,6 +3288,52 @@
       ],
       "burnRate": null,
       "projection": null
+    },
+    {
+      "id": "gap-2026-03-02T01:30:25.352Z",
+      "startTime": "2026-03-02T01:30:25.352Z",
+      "endTime": "2026-03-02T09:27:15.024Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-02T09:00:00.000Z",
+      "startTime": "2026-03-02T09:00:00.000Z",
+      "endTime": "2026-03-02T14:00:00.000Z",
+      "actualEndTime": "2026-03-02T11:00:40.471Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 204,
+      "tokenCounts": {
+        "inputTokens": 566,
+        "outputTokens": 2068,
+        "cacheCreationInputTokens": 851230,
+        "cacheReadInputTokens": 22511805
+      },
+      "totalTokens": 23365669,
+      "costUSD": 15.647364100000004,
+      "models": [
+        "claude-opus-4-6",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-6"
+      ],
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
