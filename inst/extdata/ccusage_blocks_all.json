@@ -1088,15 +1088,15 @@
       "actualEndTime": "2026-02-03T18:08:47.200Z",
       "isActive": false,
       "isGap": false,
-      "entries": 445,
+      "entries": 313,
       "tokenCounts": {
-        "inputTokens": 5617,
-        "outputTokens": 1578,
-        "cacheCreationInputTokens": 2096267,
-        "cacheReadInputTokens": 32095181
+        "inputTokens": 3113,
+        "outputTokens": 1238,
+        "cacheCreationInputTokens": 1757112,
+        "cacheReadInputTokens": 27765638
       },
-      "totalTokens": 34198643,
-      "costUSD": 53.928821250000006,
+      "totalTokens": 29527101,
+      "costUSD": 52.258559899999995,
       "models": [
         "claude-opus-4-5-20251101",
         "claude-haiku-4-5-20251001",
@@ -1179,15 +1179,15 @@
       "actualEndTime": "2026-02-05T14:01:02.141Z",
       "isActive": false,
       "isGap": false,
-      "entries": 363,
+      "entries": 356,
       "tokenCounts": {
-        "inputTokens": 28025,
-        "outputTokens": 22712,
-        "cacheCreationInputTokens": 1323931,
-        "cacheReadInputTokens": 31894150
+        "inputTokens": 27945,
+        "outputTokens": 22686,
+        "cacheCreationInputTokens": 1279014,
+        "cacheReadInputTokens": 31846213
       },
-      "totalTokens": 33268818,
-      "costUSD": 35.50354075,
+      "totalTokens": 33175858,
+      "costUSD": 35.2530959,
       "models": [
         "claude-opus-4-5-20251101",
         "claude-sonnet-4-5-20250929",
@@ -1204,15 +1204,15 @@
       "actualEndTime": "2026-02-05T17:53:13.578Z",
       "isActive": false,
       "isGap": false,
-      "entries": 152,
+      "entries": 145,
       "tokenCounts": {
-        "inputTokens": 14817,
-        "outputTokens": 574,
-        "cacheCreationInputTokens": 1250072,
-        "cacheReadInputTokens": 15089604
+        "inputTokens": 14730,
+        "outputTokens": 558,
+        "cacheCreationInputTokens": 1223864,
+        "cacheReadInputTokens": 15009267
       },
-      "totalTokens": 16355067,
-      "costUSD": 36.79582069999998,
+      "totalTokens": 16248419,
+      "costUSD": 36.67293859999999,
       "models": [
         "claude-opus-4-1-20250805",
         "claude-opus-4-5-20251101",
@@ -3415,6 +3415,157 @@
       ],
       "burnRate": null,
       "projection": null
+    },
+    {
+      "id": "gap-2026-03-07T05:00:33.330Z",
+      "startTime": "2026-03-07T05:00:33.330Z",
+      "endTime": "2026-03-07T10:54:30.636Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-07T10:00:00.000Z",
+      "startTime": "2026-03-07T10:00:00.000Z",
+      "endTime": "2026-03-07T15:00:00.000Z",
+      "actualEndTime": "2026-03-07T14:59:56.668Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 600,
+      "tokenCounts": {
+        "inputTokens": 31582,
+        "outputTokens": 24117,
+        "cacheCreationInputTokens": 3102605,
+        "cacheReadInputTokens": 39251530
+      },
+      "totalTokens": 42409834,
+      "costUSD": 35.45633755,
+      "models": [
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "<synthetic>",
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-07T15:00:00.000Z",
+      "startTime": "2026-03-07T15:00:00.000Z",
+      "endTime": "2026-03-07T20:00:00.000Z",
+      "actualEndTime": "2026-03-07T16:09:24.683Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 457,
+      "tokenCounts": {
+        "inputTokens": 47706,
+        "outputTokens": 14194,
+        "cacheCreationInputTokens": 2134796,
+        "cacheReadInputTokens": 29478527
+      },
+      "totalTokens": 31675223,
+      "costUSD": 25.036612399999978,
+      "models": [
+        "claude-opus-4-6",
+        "claude-sonnet-4-5-20250929",
+        "claude-opus-4-5-20251101",
+        "<synthetic>",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-6"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-07T20:00:00.000Z",
+      "startTime": "2026-03-07T20:00:00.000Z",
+      "endTime": "2026-03-08T01:00:00.000Z",
+      "actualEndTime": "2026-03-07T22:53:44.873Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 879,
+      "tokenCounts": {
+        "inputTokens": 71117,
+        "outputTokens": 19406,
+        "cacheCreationInputTokens": 2114220,
+        "cacheReadInputTokens": 59395703
+      },
+      "totalTokens": 61600446,
+      "costUSD": 39.24362849999999,
+      "models": [
+        "<synthetic>",
+        "claude-opus-4-5-20251101",
+        "claude-opus-4-6",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-6"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "gap-2026-03-08T03:53:44.873Z",
+      "startTime": "2026-03-08T03:53:44.873Z",
+      "endTime": "2026-03-08T11:05:30.384Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-08T11:00:00.000Z",
+      "startTime": "2026-03-08T11:00:00.000Z",
+      "endTime": "2026-03-08T16:00:00.000Z",
+      "actualEndTime": "2026-03-08T11:18:40.327Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 82,
+      "tokenCounts": {
+        "inputTokens": 10947,
+        "outputTokens": 3258,
+        "cacheCreationInputTokens": 155677,
+        "cacheReadInputTokens": 6424636
+      },
+      "totalTokens": 6594518,
+      "costUSD": 4.32148425,
+      "models": [
+        "claude-opus-4-6"
+      ],
+      "burnRate": {
+        "tokensPerMinute": 500885.6082021108,
+        "tokensPerMinuteForIndicator": 1078.9386069627808,
+        "costPerHour": 19.694260598549516
+      },
+      "projection": {
+        "totalTokens": 143980946,
+        "totalCost": 94.35,
+        "remainingMinutes": 274
+      }
     }
   ]
 }
