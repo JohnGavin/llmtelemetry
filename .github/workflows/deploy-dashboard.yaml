@@ -81,7 +81,7 @@ jobs:
           sleep 30
           BASE="https://johngavin.github.io/llmtelemetry"
           FAIL=0
-          for path in "/" "/data/ccusage_daily.json" "/data/gemini_daily.json" \
+          for path in "/" "/data/index.json" "/data/ccusage_daily.json" "/data/gemini_daily.json" \
                       "/data/ccusage_sessions.json" "/data/ccusage_blocks.json" \
                       "/data/gemini_sessions.json" "/data/cmonitor_summary.json" \
                       "/data/git_commits.json"; do
