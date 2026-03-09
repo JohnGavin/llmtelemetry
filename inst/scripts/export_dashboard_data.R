@@ -145,7 +145,7 @@ if (file.exists(cmon_file)) {
 
 # --- 6. Extract git commit stats -----------------------------------------------
 cat("Exporting git commit stats...\n")
-commits_raw <- system2("git", c("log", "--format=%H|%ai|%s", "--numstat"), stdout = TRUE)
+commits_raw <- system("git log '--format=%H|%ai|%s' --numstat", intern = TRUE)
 
 # Parse the raw git log output into a data frame
 # Each commit starts with a line: hash|date|message
