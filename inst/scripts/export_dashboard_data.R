@@ -143,4 +143,113 @@ if (file.exists(cmon_file)) {
   write_json(list(), file.path(out_dir, "cmonitor_summary.json"))
 }
 
+# --- 6. Generate API index.json -----------------------------------------------
+cat("Generating index.json...\n")
+api_index <- list(
+  version  = "1.0.0",
+  base_url = "https://johngavin.github.io/llmtelemetry/data",
+  updated  = format(Sys.Date(), "%Y-%m-%d"),
+  endpoints = list(
+    list(
+      path        = "/ccusage_daily.json",
+      description = "Daily Claude API usage aggregated by project",
+      type        = "array",
+      source      = "ccusage CLI (npx ccusage daily --json --instances)",
+      source_url  = "https://www.npmjs.com/package/ccusage",
+      schema      = list(
+        project       = "string",
+        date          = "string",
+        inputTokens   = "integer",
+        outputTokens  = "integer",
+        cacheCreation = "integer",
+        cacheRead     = "integer",
+        totalTokens   = "integer",
+        totalCost     = "number",
+        modelsUsed    = "string"
+      )
+    ),
+    list(
+      path        = "/ccusage_sessions.json",
+      description = "Claude API sessions with token and cost totals",
+      type        = "array",
+      source      = "ccusage CLI (npx ccusage session --json --instances)",
+      source_url  = "https://www.npmjs.com/package/ccusage",
+      schema      = list(
+        sessionId     = "string",
+        inputTokens   = "integer",
+        outputTokens  = "integer",
+        cacheCreation = "integer",
+        cacheRead     = "integer",
+        totalTokens   = "integer",
+        totalCost     = "number",
+        lastActivity  = "string",
+        modelsUsed    = "string"
+      )
+    ),
+    list(
+      path        = "/ccusage_blocks.json",
+      description = "Claude API usage grouped into contiguous time blocks",
+      type        = "array",
+      source      = "ccusage CLI (npx ccusage blocks --json --instances)",
+      source_url  = "https://www.npmjs.com/package/ccusage",
+      schema      = list(
+        startTime     = "string",
+        endTime       = "string",
+        actualEndTime = "string",
+        entries       = "integer",
+        inputTokens   = "integer",
+        outputTokens  = "integer",
+        cacheCreation = "integer",
+        cacheRead     = "integer",
+        totalTokens   = "integer",
+        costUSD       = "number",
+        models        = "string"
+      )
+    ),
+    list(
+      path        = "/gemini_daily.json",
+      description = "Daily Gemini API usage with token and cost totals",
+      type        = "array",
+      source      = "Local Gemini session logs (~/.gemini/tmp/), DuckDB",
+      source_url  = "https://ai.google.dev/",
+      schema      = list(
+        date          = "string",
+        total_tokens  = "integer",
+        total_cost    = "number",
+        message_count = "integer"
+      )
+    ),
+    list(
+      path        = "/gemini_sessions.json",
+      description = "Gemini API sessions with token and cost totals",
+      type        = "array",
+      source      = "Local Gemini session logs (~/.gemini/tmp/), DuckDB",
+      source_url  = "https://ai.google.dev/",
+      schema      = list(
+        sessionId    = "string",
+        project      = "string",
+        total_tokens = "integer",
+        total_cost   = "number",
+        start_time   = "string",
+        last_updated = "string"
+      )
+    ),
+    list(
+      path        = "/cmonitor_summary.json",
+      description = "Aggregated Anthropic cmonitor usage summary",
+      type        = "object",
+      source      = "Anthropic cmonitor CLI text output",
+      source_url  = "https://docs.anthropic.com/",
+      schema      = list(
+        date_range   = "string",
+        total_tokens = "integer",
+        total_cost   = "number",
+        entries      = "integer"
+      )
+    )
+  )
+)
+write_json(api_index, file.path(out_dir, "index.json"), auto_unbox = TRUE, pretty = TRUE)
+cat("  -> index.json written\n")
+
 cat("Done. Output in", out_dir, "\n")
