@@ -12,6 +12,8 @@ format:
       - data/gemini_daily.json
       - data/gemini_sessions.json
       - data/cmonitor_summary.json
+      - data/git_commits.json
+      - data/index.json
 filters:
   - shinylive
 ---
@@ -49,6 +51,7 @@ cc_blocks   <- load_json("ccusage_blocks.json")
 gem_daily   <- load_json("gemini_daily.json")
 gem_sess    <- load_json("gemini_sessions.json")
 cmon        <- load_json("cmonitor_summary.json")
+git_commits <- load_json("git_commits.json")
 
 # Parse dates
 if (!is.null(cc_daily) && nrow(cc_daily) > 0) {
@@ -75,6 +78,9 @@ if (!is.null(cc_blocks) && nrow(cc_blocks) > 0) {
 }
 if (!is.null(gem_daily) && nrow(gem_daily) > 0) {
   gem_daily$date <- as.Date(gem_daily$date)
+}
+if (!is.null(git_commits) && nrow(git_commits) > 0) {
+  git_commits$date <- as.Date(git_commits$date)
 }
 
 # All project names for filter
@@ -198,6 +204,28 @@ ui <- page_navbar(
         card_footer(class = "text-muted small", "Gantt-style view of coding block start/end times colored by cost")),
       card(card_header("Hourly Activity Heatmap"), plotlyOutput("block_heatmap", height = "400px"),
         card_footer(class = "text-muted small", "Cost heatmap by day of week and hour of day"))
+    )
+  ),
+
+  nav_panel("Commits", value = "Commits",
+    layout_columns(
+      fill = FALSE, col_widths = c(3, 3, 3, 3),
+      value_box("Total Commits", textOutput("vb_commits"), theme = "primary"),
+      value_box("Median Lines", textOutput("vb_median_lines"), theme = "info"),
+      value_box("Mean Lines", textOutput("vb_mean_lines"), theme = "success"),
+      value_box("P90 Lines", textOutput("vb_p90_lines"), theme = "warning")
+    ),
+    layout_columns(
+      col_widths = c(6, 6),
+      card(card_header("Lines Changed Distribution"), plotlyOutput("commit_hist", height = "400px"),
+        card_footer(class = "text-muted small", "Histogram of total lines changed (added + deleted) per commit")),
+      card(card_header("Lines Changed Over Time"), plotlyOutput("commit_ts", height = "400px"),
+        card_footer(class = "text-muted small", "Daily total lines changed with 7-day rolling average"))
+    ),
+    layout_columns(
+      col_widths = c(12),
+      card(card_header("Recent Commits"), DTOutput("commit_table"),
+        card_footer(class = "text-muted small", "Git commit history with lines added, deleted, and files changed"))
     )
   ),
 
@@ -606,6 +634,76 @@ server <- function(input, output, session) {
         xaxis = list(title = "Hour of Day", dtick = 3),
         yaxis = list(title = "")
       ) |> config(scrollZoom = TRUE)
+  })
+  # --- Commits (#18) ----------------------------------------------------------
+  git_d <- reactive({
+    if (is.null(git_commits) || nrow(git_commits) == 0) return(tibble())
+    git_commits |> filter(date >= cutoff())
+  })
+
+  output$vb_commits <- renderText({
+    as.character(nrow(git_d()))
+  })
+  output$vb_median_lines <- renderText({
+    d <- git_d()
+    if (nrow(d) == 0) return("0")
+    as.character(median(d$lines_changed))
+  })
+  output$vb_mean_lines <- renderText({
+    d <- git_d()
+    if (nrow(d) == 0) return("0")
+    as.character(round(mean(d$lines_changed)))
+  })
+  output$vb_p90_lines <- renderText({
+    d <- git_d()
+    if (nrow(d) == 0) return("0")
+    as.character(round(quantile(d$lines_changed, 0.9)))
+  })
+
+  output$commit_hist <- renderPlotly({
+    d <- git_d()
+    if (nrow(d) == 0) return(plotly_empty())
+    plot_ly(d, x = ~lines_changed, type = "histogram", nbinsx = 30,
+      marker = list(color = "#2c3e50")) |>
+      layout(
+        xaxis = list(title = "Lines Changed per Commit"),
+        yaxis = list(title = "Count")
+      ) |> config(scrollZoom = TRUE)
+  })
+
+  output$commit_ts <- renderPlotly({
+    d <- git_d()
+    if (nrow(d) == 0) return(plotly_empty())
+    daily <- d |>
+      group_by(date) |>
+      summarise(lines = sum(lines_changed), commits = n(), .groups = "drop") |>
+      arrange(date) |>
+      mutate(rolling_avg = {
+        n <- length(lines)
+        ra <- rep(NA_real_, n)
+        for (i in 7:n) ra[i] <- mean(lines[(i - 6):i])
+        ra
+      })
+    plot_ly(daily, x = ~date, y = ~lines, type = "bar", name = "Daily Lines",
+      marker = list(color = "#bdc3c7")) |>
+      add_trace(x = ~date, y = ~rolling_avg, type = "scatter", mode = "lines",
+        name = "7-day Avg", line = list(color = "#e74c3c", width = 2)) |>
+      layout(
+        xaxis = list(title = ""),
+        yaxis = list(title = "Lines Changed"),
+        legend = list(orientation = "h", y = 1.02, yanchor = "bottom")
+      ) |> config(scrollZoom = TRUE)
+  })
+
+  output$commit_table <- renderDT({
+    d <- git_d()
+    if (nrow(d) == 0) return(datatable(tibble()))
+    d |>
+      select(Hash = hash, Date = date, Added = lines_added,
+             Deleted = lines_deleted, Changed = lines_changed,
+             Files = files_changed, Message = message) |>
+      datatable(options = list(pageLength = 15, dom = "frtip", scrollX = TRUE),
+        rownames = FALSE)
   })
 }
 

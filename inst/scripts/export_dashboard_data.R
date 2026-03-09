@@ -143,4 +143,106 @@ if (file.exists(cmon_file)) {
   write_json(list(), file.path(out_dir, "cmonitor_summary.json"))
 }
 
+# --- 6. Extract git commit stats (#18) ----------------------------------------
+cat("Exporting git commit stats...\n")
+fmt <- "--format=%H|%aI|%s"
+git_log_raw <- system(
+  paste("git log", shQuote(fmt), "--numstat --no-merges"),
+  intern = TRUE
+)
+
+# Parse: header lines have format hash|date|message, numstat lines are add\tdel\tfile
+commits <- list()
+current <- NULL
+for (line in git_log_raw) {
+  if (grepl("^[0-9a-f]{40}\\|", line)) {
+    if (!is.null(current)) commits[[length(commits) + 1L]] <- current
+    parts <- strsplit(line, "\\|", fixed = FALSE)[[1]]
+    current <- list(
+      hash = substr(parts[1], 1, 7),
+      date = as.character(as.Date(parts[2])),
+      message = paste(parts[-(1:2)], collapse = "|"),
+      lines_added = 0L, lines_deleted = 0L, files_changed = 0L
+    )
+  } else if (!is.null(current) && nzchar(trimws(line))) {
+    nums <- strsplit(trimws(line), "\t")[[1]]
+    if (length(nums) >= 2 && !grepl("^-$", nums[1])) {
+      current$lines_added   <- current$lines_added + as.integer(nums[1])
+      current$lines_deleted <- current$lines_deleted + as.integer(nums[2])
+      current$files_changed <- current$files_changed + 1L
+    }
+  }
+}
+if (!is.null(current)) commits[[length(commits) + 1L]] <- current
+
+commit_df <- bind_rows(lapply(commits, as_tibble)) |>
+  mutate(lines_changed = lines_added + lines_deleted) |>
+  filter(lines_changed > 0) |>
+  arrange(desc(date))
+write_json(commit_df, file.path(out_dir, "git_commits.json"), auto_unbox = TRUE)
+cat(sprintf("  -> %d commits\n", nrow(commit_df)))
+
+# --- 7. Generate API index (#19) ----------------------------------------------
+cat("Generating API index...\n")
+endpoints <- list(
+  list(
+    path = "/ccusage_daily.json",
+    description = "Daily Claude API usage aggregated by project",
+    type = "array",
+    source = "ccusage CLI (npx ccusage daily --json --instances)",
+    frequency = "12-hourly"
+  ),
+  list(
+    path = "/ccusage_sessions.json",
+    description = "Claude sessions ranked by cost",
+    type = "array",
+    source = "ccusage CLI (npx ccusage session --json --instances)",
+    frequency = "12-hourly"
+  ),
+  list(
+    path = "/ccusage_blocks.json",
+    description = "Claude 5-hour coding blocks with cost and token metrics",
+    type = "array",
+    source = "ccusage CLI (npx ccusage blocks --json --instances)",
+    frequency = "12-hourly"
+  ),
+  list(
+    path = "/gemini_daily.json",
+    description = "Daily Gemini usage aggregated from session logs",
+    type = "array",
+    source = "~/.gemini/tmp/ session JSON files, priced via refresh_gemini_cache.R",
+    frequency = "12-hourly"
+  ),
+  list(
+    path = "/gemini_sessions.json",
+    description = "Gemini sessions with token and cost totals",
+    type = "array",
+    source = "~/.gemini/tmp/ session JSON files, stored in gemini_usage.duckdb",
+    frequency = "12-hourly"
+  ),
+  list(
+    path = "/cmonitor_summary.json",
+    description = "Anthropic cmonitor aggregate summary",
+    type = "object",
+    source = "cmonitor CLI text output, parsed from inst/extdata/cmonitor_daily.txt",
+    frequency = "daily"
+  ),
+  list(
+    path = "/git_commits.json",
+    description = "Git commit history with lines added/deleted/changed per commit",
+    type = "array",
+    source = "git log --numstat (extracted at build time)",
+    frequency = "on deploy"
+  )
+)
+
+api_index <- list(
+  version = "1.0.0",
+  base_url = "https://johngavin.github.io/llmtelemetry/data",
+  updated = as.character(Sys.Date()),
+  endpoints = endpoints
+)
+write_json(api_index, file.path(out_dir, "index.json"), auto_unbox = TRUE, pretty = TRUE)
+cat("  -> index.json written\n")
+
 cat("Done. Output in", out_dir, "\n")
