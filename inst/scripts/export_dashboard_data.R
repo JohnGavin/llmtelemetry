@@ -143,7 +143,59 @@ if (file.exists(cmon_file)) {
   write_json(list(), file.path(out_dir, "cmonitor_summary.json"))
 }
 
-# --- 6. Generate API index.json -----------------------------------------------
+# --- 6. Extract git commit stats -----------------------------------------------
+cat("Exporting git commit stats...\n")
+commits_raw <- system2("git", c("log", "--format=%H|%ai|%s", "--numstat"), stdout = TRUE)
+
+# Parse the raw git log output into a data frame
+# Each commit starts with a line: hash|date|message
+# Followed by numstat lines: added\tdeleted\tfile
+commit_rows <- list()
+current <- NULL
+for (line in commits_raw) {
+  if (grepl("^[0-9a-f]{40}\\|", line)) {
+    # Save previous commit if it exists
+    if (!is.null(current)) {
+      commit_rows[[length(commit_rows) + 1]] <- current
+    }
+    parts <- strsplit(line, "\\|", fixed = FALSE)[[1]]
+    current <- list(
+      hash = substr(parts[1], 1, 7),
+      date = as.character(as.Date(parts[2])),
+      message = paste(parts[-(1:2)], collapse = "|"),
+      lines_added = 0L,
+      lines_deleted = 0L,
+      files_changed = 0L
+    )
+  } else if (nzchar(trimws(line)) && !is.null(current)) {
+    # numstat line: added\tdeleted\tfile
+    fields <- strsplit(line, "\t")[[1]]
+    if (length(fields) >= 3) {
+      added <- suppressWarnings(as.integer(fields[1]))
+      deleted <- suppressWarnings(as.integer(fields[2]))
+      if (!is.na(added)) current$lines_added <- current$lines_added + added
+      if (!is.na(deleted)) current$lines_deleted <- current$lines_deleted + deleted
+      current$files_changed <- current$files_changed + 1L
+    }
+  }
+}
+# Don't forget the last commit
+if (!is.null(current)) {
+  commit_rows[[length(commit_rows) + 1]] <- current
+}
+
+if (length(commit_rows) > 0) {
+  commits_df <- bind_rows(lapply(commit_rows, as_tibble)) |>
+    mutate(lines_changed = lines_added + lines_deleted) |>
+    arrange(date)
+  write_json(commits_df, file.path(out_dir, "git_commits.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d commits\n", nrow(commits_df)))
+} else {
+  cat("  -> no commits found, writing empty array\n")
+  write_json(list(), file.path(out_dir, "git_commits.json"))
+}
+
+# --- 7. Generate API index.json -----------------------------------------------
 cat("Generating index.json...\n")
 api_index <- list(
   version  = "1.0.0",
@@ -245,6 +297,22 @@ api_index <- list(
         total_tokens = "integer",
         total_cost   = "number",
         entries      = "integer"
+      )
+    ),
+    list(
+      path        = "/git_commits.json",
+      description = "Lines changed per git commit with additions and deletions",
+      type        = "array",
+      source      = "git log --numstat",
+      source_url  = "https://git-scm.com/docs/git-log",
+      schema      = list(
+        hash          = "string",
+        date          = "string",
+        message       = "string",
+        lines_added   = "integer",
+        lines_deleted = "integer",
+        lines_changed = "integer",
+        files_changed = "integer"
       )
     )
   )
