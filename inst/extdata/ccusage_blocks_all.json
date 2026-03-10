@@ -3641,7 +3641,7 @@
       "startTime": "2026-03-09T09:00:00.000Z",
       "endTime": "2026-03-09T14:00:00.000Z",
       "actualEndTime": "2026-03-09T12:06:59.127Z",
-      "isActive": true,
+      "isActive": false,
       "isGap": false,
       "entries": 747,
       "tokenCounts": {
@@ -3660,16 +3660,58 @@
         "claude-sonnet-4-5-20250929",
         "<synthetic>"
       ],
-      "burnRate": {
-        "tokensPerMinute": 343654.96546803357,
-        "tokensPerMinuteForIndicator": 1018.7214327389509,
-        "costPerHour": 15.669167551547826
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-09T14:00:00.000Z",
+      "startTime": "2026-03-09T14:00:00.000Z",
+      "endTime": "2026-03-09T19:00:00.000Z",
+      "actualEndTime": "2026-03-09T18:53:31.459Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 1012,
+      "tokenCounts": {
+        "inputTokens": 56472,
+        "outputTokens": 24688,
+        "cacheCreationInputTokens": 2605166,
+        "cacheReadInputTokens": 101648237
       },
-      "projection": {
-        "totalTokens": 78857760,
-        "totalCost": 59.93,
-        "remainingMinutes": 83
-      }
+      "totalTokens": 104334563,
+      "costUSD": 65.16693569999997,
+      "models": [
+        "claude-opus-4-5-20251101",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-09T19:00:00.000Z",
+      "startTime": "2026-03-09T19:00:00.000Z",
+      "endTime": "2026-03-10T00:00:00.000Z",
+      "actualEndTime": "2026-03-09T23:37:57.636Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 404,
+      "tokenCounts": {
+        "inputTokens": 43581,
+        "outputTokens": 5636,
+        "cacheCreationInputTokens": 1999987,
+        "cacheReadInputTokens": 29561886
+      },
+      "totalTokens": 31611090,
+      "costUSD": 24.549682949999994,
+      "models": [
+        "claude-opus-4-6",
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001"
+      ],
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
