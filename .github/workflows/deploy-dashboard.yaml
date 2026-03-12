@@ -67,15 +67,42 @@ jobs:
           cp -r vignettes/shinylive _site/ 2>/dev/null || true
           cp -r vignettes/data _site/data 2>/dev/null || true
 
+      - name: Download missing WebR assets
+        run: |
+          # Shinylive 0.9.1 uses WebR v0.4.2 but the versioned CDN returns 403.
+          # Download from /latest/ and place in the expected location.
+          WEBR_DIR=$(find _site -path "*/shinylive/webr" -type d | head -1)
+          if [ -z "$WEBR_DIR" ]; then
+            echo "::error::Cannot find shinylive/webr directory in _site"
+            exit 1
+          fi
+          echo "WebR directory: $WEBR_DIR"
+          CDN="https://webr.r-wasm.org/latest"
+          for f in R.bin.data R.bin.js vfs/usr/lib/R/library.data vfs/usr/lib/R/library.dir.js; do
+            TARGET="$WEBR_DIR/$f"
+            if [ ! -f "$TARGET" ]; then
+              echo "Downloading $f ..."
+              mkdir -p "$(dirname "$TARGET")"
+              curl -sfL "$CDN/$f" -o "$TARGET" || {
+                echo "::error::Failed to download $CDN/$f"
+                exit 1
+              }
+              echo "  -> $(stat -c%s "$TARGET" 2>/dev/null || stat -f%z "$TARGET") bytes"
+            else
+              echo "Already present: $f"
+            fi
+          done
+
       - name: Validate Shinylive assets
         run: |
           echo "=== Checking critical Shinylive/WebR assets ==="
           FAIL=0
+          WEBR_DIR=$(find _site -path "*/shinylive/webr" -type d | head -1)
           for f in \
             "_site/shinylive-sw.js" \
-            "_site/dashboard_shinylive_files/libs/quarto-contrib/shinylive-0.9.1/shinylive/shinylive.js" \
-            "_site/dashboard_shinylive_files/libs/quarto-contrib/shinylive-0.9.1/shinylive/webr/webr.mjs" \
-            "_site/dashboard_shinylive_files/libs/quarto-contrib/shinylive-0.9.1/shinylive/webr/R.bin.data"; do
+            "$WEBR_DIR/webr.mjs" \
+            "$WEBR_DIR/R.bin.data" \
+            "$WEBR_DIR/vfs/usr/lib/R/library.data"; do
             if [ -f "$f" ]; then
               SIZE=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
               echo "OK: $f (${SIZE} bytes)"
@@ -84,12 +111,8 @@ jobs:
               FAIL=1
             fi
           done
-          # Check for VFS library files (pattern may vary by shinylive version)
-          VFS_COUNT=$(find _site -name "library.data" -o -name "*.so.js" 2>/dev/null | wc -l)
-          echo "VFS library files found: $VFS_COUNT"
           echo "=== _site total size ==="
           du -sh _site/
-          du -sh _site/dashboard_shinylive_files/ 2>/dev/null || true
           if [ "$FAIL" = "1" ]; then
             echo "::error::Critical Shinylive WebR assets are missing — app will fail to load"
             exit 1
