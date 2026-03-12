@@ -67,6 +67,34 @@ jobs:
           cp -r vignettes/shinylive _site/ 2>/dev/null || true
           cp -r vignettes/data _site/data 2>/dev/null || true
 
+      - name: Validate Shinylive assets
+        run: |
+          echo "=== Checking critical Shinylive/WebR assets ==="
+          FAIL=0
+          for f in \
+            "_site/shinylive-sw.js" \
+            "_site/dashboard_shinylive_files/libs/quarto-contrib/shinylive-0.9.1/shinylive/shinylive.js" \
+            "_site/dashboard_shinylive_files/libs/quarto-contrib/shinylive-0.9.1/shinylive/webr/webr.mjs" \
+            "_site/dashboard_shinylive_files/libs/quarto-contrib/shinylive-0.9.1/shinylive/webr/R.bin.data"; do
+            if [ -f "$f" ]; then
+              SIZE=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
+              echo "OK: $f (${SIZE} bytes)"
+            else
+              echo "MISSING: $f"
+              FAIL=1
+            fi
+          done
+          # Check for VFS library files (pattern may vary by shinylive version)
+          VFS_COUNT=$(find _site -name "library.data" -o -name "*.so.js" 2>/dev/null | wc -l)
+          echo "VFS library files found: $VFS_COUNT"
+          echo "=== _site total size ==="
+          du -sh _site/
+          du -sh _site/dashboard_shinylive_files/ 2>/dev/null || true
+          if [ "$FAIL" = "1" ]; then
+            echo "::error::Critical Shinylive WebR assets are missing — app will fail to load"
+            exit 1
+          fi
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
@@ -81,7 +109,9 @@ jobs:
           sleep 30
           BASE="https://johngavin.github.io/llmtelemetry"
           FAIL=0
-          for path in "/" "/data/index.json" "/data/ccusage_daily.json" "/data/gemini_daily.json" \
+          for path in "/" "/shinylive-sw.js" \
+                      "/dashboard_shinylive_files/libs/quarto-contrib/shinylive-0.9.1/shinylive/webr/R.bin.data" \
+                      "/data/index.json" "/data/ccusage_daily.json" "/data/gemini_daily.json" \
                       "/data/ccusage_sessions.json" "/data/ccusage_blocks.json" \
                       "/data/gemini_sessions.json" "/data/cmonitor_summary.json" \
                       "/data/git_commits.json"; do
