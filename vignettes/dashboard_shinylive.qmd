@@ -334,7 +334,7 @@ ui <- page_navbar(
     layout_columns(
       col_widths = c(6, 6),
       card(card_header("Block Timeline"), plotlyOutput("block_timeline", height = "300px"),
-        card_footer(class = "text-muted small", "Gantt-style block start/end times colored by cost")),
+        card_footer(class = "text-muted small", "Cost per block, dot size = duration")),
       card(card_header("Hourly Activity Heatmap"), plotlyOutput("block_heatmap", height = "300px"),
         card_footer(class = "text-muted small", "Cost heatmap by day of week and hour"))
     )
@@ -709,17 +709,27 @@ server <- function(input, output, session) {
   output$block_timeline <- renderPlotly({
     d <- blk()
     if (nrow(d) == 0) return(plotly_empty())
-    d <- d |> mutate(label = format(date, "%m-%d"))
-    p <- plot_ly(d, x = ~startTime,
-      xend = ~coalesce(actualEndTime, endTime),
-      y = ~label, type = "scatter", mode = "lines",
-      line = list(width = 10),
-      color = ~costUSD,
-      colors = c("#2a2a2a", "#e41a1c"),
-      text = ~paste0("$", round(costUSD, 2), " | ", format(totalTokens, big.mark = ","), " tok"),
-      hoverinfo = "text+x")
+    d <- d |>
+      mutate(
+        label = format(startTime, "%m-%d %H:%M"),
+        duration_label = sprintf("%.1fh", duration_hrs)
+      ) |>
+      arrange(startTime)
+    p <- plot_ly(d, x = ~costUSD, y = ~reorder(label, as.numeric(startTime)),
+      type = "scatter", mode = "markers",
+      marker = list(
+        size = ~pmax(duration_hrs * 5, 8),
+        color = ~costUSD,
+        colorscale = list(c(0, pal$claude), c(1, pal$gemini)),
+        colorbar = list(title = list(text = "Cost ($)"),
+          tickfont = list(color = "#ccc"), titlefont = list(color = "#ccc")),
+        line = list(color = "#1a1a1a", width = 1)
+      ),
+      text = ~paste0("$", round(costUSD, 2), " | ", duration_label,
+                     " | ", format(totalTokens, big.mark = ","), " tok\n", models),
+      hoverinfo = "text")
     dark_layout(p, showlegend = FALSE,
-      xaxis = list(title = "Time"), yaxis = list(title = "", categoryorder = "category descending"))
+      xaxis = list(title = "Cost (USD)"), yaxis = list(title = "", automargin = TRUE))
   })
 
   output$block_heatmap <- renderPlotly({
