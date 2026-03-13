@@ -70,7 +70,8 @@ jobs:
       - name: Download missing WebR assets
         run: |
           # Shinylive 0.9.1 uses WebR v0.4.2 but the versioned CDN returns 403.
-          # Download from /latest/ and place in the expected location.
+          # Download R.bin.data from /latest/ CDN endpoint.
+          # VFS library files are not on CDN — they're built by shinylive::export().
           WEBR_DIR=$(find _site -path "*/shinylive/webr" -type d | head -1)
           if [ -z "$WEBR_DIR" ]; then
             echo "::error::Cannot find shinylive/webr directory in _site"
@@ -78,20 +79,33 @@ jobs:
           fi
           echo "WebR directory: $WEBR_DIR"
           CDN="https://webr.r-wasm.org/latest"
-          for f in R.bin.data R.bin.js vfs/usr/lib/R/library.data vfs/usr/lib/R/library.dir.js; do
-            TARGET="$WEBR_DIR/$f"
-            if [ ! -f "$TARGET" ]; then
-              echo "Downloading $f ..."
-              mkdir -p "$(dirname "$TARGET")"
-              curl -sfL "$CDN/$f" -o "$TARGET" || {
-                echo "::error::Failed to download $CDN/$f"
-                exit 1
-              }
-              echo "  -> $(stat -c%s "$TARGET" 2>/dev/null || stat -f%z "$TARGET") bytes"
-            else
-              echo "Already present: $f"
+          # Only download R.bin.data — the core R WASM binary
+          if [ ! -f "$WEBR_DIR/R.bin.data" ]; then
+            echo "Downloading R.bin.data from CDN..."
+            curl -sfL "$CDN/R.bin.data" -o "$WEBR_DIR/R.bin.data" || {
+              echo "::error::Failed to download R.bin.data from CDN"
+              exit 1
+            }
+            echo "  -> $(stat -c%s "$WEBR_DIR/R.bin.data") bytes"
+          fi
+          # Use shinylive to ensure all R packages are available
+          echo "Running shinylive::assets_ensure() to populate WebR packages..."
+          Rscript -e 'shinylive::assets_ensure()'
+          # Copy any shinylive assets cache into the webr dir
+          ASSETS_DIR=$(Rscript -e 'cat(shinylive::assets_dir())')
+          echo "Shinylive assets dir: $ASSETS_DIR"
+          if [ -d "$ASSETS_DIR" ]; then
+            # Find the webr subdirectory in assets
+            CACHED_WEBR=$(find "$ASSETS_DIR" -path "*/shinylive/webr" -type d | head -1)
+            if [ -n "$CACHED_WEBR" ]; then
+              echo "Copying cached WebR assets from $CACHED_WEBR"
+              cp -rn "$CACHED_WEBR/"* "$WEBR_DIR/" 2>/dev/null || true
             fi
-          done
+          fi
+          echo "WebR dir contents:"
+          ls -la "$WEBR_DIR/" | head -20
+          echo "VFS contents:"
+          find "$WEBR_DIR/vfs" -type f 2>/dev/null | head -20 || echo "No VFS directory"
 
       - name: Validate Shinylive assets
         run: |
@@ -101,8 +115,7 @@ jobs:
           for f in \
             "_site/shinylive-sw.js" \
             "$WEBR_DIR/webr.mjs" \
-            "$WEBR_DIR/R.bin.data" \
-            "$WEBR_DIR/vfs/usr/lib/R/library.data"; do
+            "$WEBR_DIR/R.bin.data"; do
             if [ -f "$f" ]; then
               SIZE=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
               echo "OK: $f (${SIZE} bytes)"
@@ -111,6 +124,8 @@ jobs:
               FAIL=1
             fi
           done
+          echo "=== WebR directory listing ==="
+          find "$WEBR_DIR" -type f | head -30
           echo "=== _site total size ==="
           du -sh _site/
           if [ "$FAIL" = "1" ]; then
