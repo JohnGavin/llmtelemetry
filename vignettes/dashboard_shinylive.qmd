@@ -118,7 +118,7 @@ dark_layout <- function(p, title = NULL, xaxis = list(), yaxis = list(), ...) {
     legend = list(
       orientation = "h", y = -0.15, x = 0.5, xanchor = "center",
       font = list(color = "#e0e0e0", size = 12),
-      bgcolor = "rgba(40, 40, 40, 0.8)",
+      bgcolor = "#1a1a1a",
       bordercolor = "#555555", borderwidth = 1
     ),
     hoverlabel = list(bgcolor = "white", font = list(color = "black", size = 12)),
@@ -143,87 +143,93 @@ ui <- page_navbar(
     tags$style(HTML("
       .bslib-value-box .value-box-value { font-size: 1.4rem !important; white-space: nowrap; }
       .bslib-value-box .value-box-title { font-size: 0.75rem !important; white-space: nowrap; }
-      .card { background-color: #222 !important; border-color: #444 !important; }
+      .card { background-color: #222 !important; border-color: #444 !important; cursor: zoom-in; }
       .card-header { background-color: #2a2a2a !important; color: #e0e0e0 !important; font-size: 0.85rem; }
       .card-footer { background-color: #1a1a1a !important; border-color: #333 !important; }
       .sidebar-content { background-color: #222 !important; }
-      .js-plotly-plot { cursor: zoom-in; }
+      /* All table cells: never wrap */
+      table.dataTable th, table.dataTable td { white-space: nowrap !important; }
       table.dataTable { color: #e0e0e0 !important; }
       table.dataTable thead th { color: #e0e0e0 !important; background-color: #2a2a2a !important; }
       table.dataTable tbody td { border-color: #444 !important; }
       .dataTables_wrapper .dataTables_filter input { background-color: #333; color: #e0e0e0; border-color: #555; }
       .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #ccc !important; }
-      /* DT tables: auto-height based on rows, clickable cursor */
       .dataTables_scrollBody { max-height: none !important; }
-      .dataTables_wrapper { cursor: zoom-in; }
-      /* Fullscreen table styling */
-      #fullscreen-overlay .dataTables_wrapper { font-size: 16px; }
-      #fullscreen-overlay table.dataTable { color: #e0e0e0 !important; }
-      #fullscreen-overlay table.dataTable thead th { color: #e0e0e0 !important; background-color: #2a2a2a !important; }
-      #fullscreen-overlay table.dataTable tbody td { border-color: #444 !important; }
-      /* Fullscreen overlay */
-      #fullscreen-overlay {
-        display: none; position: fixed; top: 0; left: 0;
-        width: 100vw; height: 100vh; z-index: 99999;
-        background: rgba(0,0,0,0.97); cursor: zoom-out;
-        padding: 10px; box-sizing: border-box;
+      /* Fullscreen card: in-place, not cloned */
+      .card.card-fullscreen {
+        position: fixed !important; top: 0 !important; left: 0 !important;
+        width: 100vw !important; height: 100vh !important; z-index: 99999 !important;
+        background: #1a1a1a !important; cursor: zoom-out !important;
+        overflow: auto !important; border-radius: 0 !important;
+        padding: 10px !important; margin: 0 !important;
       }
-      #fullscreen-overlay .plotly, #fullscreen-overlay .js-plotly-plot {
-        width: 100% !important; height: calc(100vh - 20px) !important;
+      .card.card-fullscreen .js-plotly-plot {
+        width: calc(100vw - 40px) !important; height: calc(100vh - 100px) !important;
       }
-      /* Hint banner */
-      #fullscreen-hint {
-        position: absolute; top: 5px; right: 20px; color: #999;
+      .card.card-fullscreen .dataTables_wrapper { font-size: 15px; overflow: auto; }
+      .card-fullscreen-hint {
+        position: fixed; top: 8px; right: 20px; color: #888;
         font-size: 12px; z-index: 100000; pointer-events: none;
       }
     ")),
     tags$script(HTML("
-      // Create overlay container once
-      var ov = document.createElement('div');
-      ov.id = 'fullscreen-overlay';
-      var hint = document.createElement('div');
-      hint.id = 'fullscreen-hint';
-      hint.textContent = 'Click anywhere or press Esc to close';
-      ov.appendChild(hint);
-      document.body.appendChild(ov);
+      var fsCard = null;
+      var fsHint = null;
 
-      function closeOverlay() {
-        ov.style.display = 'none';
-        while (ov.childNodes.length > 1) ov.removeChild(ov.lastChild);
+      function exitFullscreen() {
+        if (!fsCard) return;
+        fsCard.classList.remove('card-fullscreen');
+        // Resize plotly back to original dimensions
+        var plot = fsCard.querySelector('.js-plotly-plot');
+        if (plot && window.Plotly) {
+          window.Plotly.relayout(plot, { autosize: true });
+          window.Plotly.Plots.resize(plot);
+        }
+        fsCard = null;
+        if (fsHint) { fsHint.remove(); fsHint = null; }
       }
 
-      function openOverlay(el) {
-        if (ov.style.display === 'flex') return;
-        var clone = el.cloneNode(true);
-        clone.style.width = '95vw';
-        clone.style.maxHeight = '90vh';
-        clone.style.overflow = 'auto';
-        while (ov.childNodes.length > 1) ov.removeChild(ov.lastChild);
-        ov.appendChild(clone);
-        ov.style.display = 'flex';
-        ov.style.alignItems = 'center';
-        ov.style.justifyContent = 'center';
-        // Re-render plotly at full size if applicable
-        if (window.Plotly && clone.data) {
-          window.Plotly.relayout(clone, { width: window.innerWidth - 60, height: window.innerHeight - 60 });
+      function enterFullscreen(card) {
+        if (fsCard) exitFullscreen();
+        fsCard = card;
+        card.classList.add('card-fullscreen');
+        // Add hint
+        fsHint = document.createElement('div');
+        fsHint.className = 'card-fullscreen-hint';
+        fsHint.textContent = 'Click card or press Esc to exit';
+        document.body.appendChild(fsHint);
+        // Resize plotly to fill viewport
+        var plot = card.querySelector('.js-plotly-plot');
+        if (plot && window.Plotly) {
+          setTimeout(function() {
+            window.Plotly.relayout(plot, {
+              width: window.innerWidth - 60,
+              height: window.innerHeight - 120
+            });
+          }, 50);
+        }
+        // Recalc DT column widths
+        var dtApi = card.querySelector('.dataTable');
+        if (dtApi && dtApi.DataTable) {
+          try { dtApi.DataTable().columns.adjust(); } catch(e) {}
         }
       }
 
-      // Click on plotly chart OR DT table -> fullscreen
+      // Click card -> toggle fullscreen (not value boxes)
       document.addEventListener('click', function(e) {
-        if (ov.style.display === 'flex') return;
-        // Check for plotly
-        var plot = e.target.closest('.js-plotly-plot');
-        if (plot) { e.stopPropagation(); openOverlay(plot); return; }
-        // Check for DT table
-        var dt = e.target.closest('.dataTables_wrapper');
-        if (dt) { e.stopPropagation(); openOverlay(dt); return; }
-      }, true);
+        var card = e.target.closest('.card');
+        if (!card) return;
+        // Skip value boxes
+        if (card.querySelector('.value-box-value')) return;
+        if (fsCard === card) {
+          exitFullscreen();
+        } else if (!fsCard) {
+          enterFullscreen(card);
+        }
+      });
 
-      // Close on overlay click or Esc
-      ov.addEventListener('click', closeOverlay);
       document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') closeOverlay();
+        if (e.key === 'Escape') exitFullscreen();
       });
     "))
   ),
@@ -367,8 +373,6 @@ ui <- page_navbar(
 server <- function(input, output, session) {
   cutoff <- reactive(date_max - input$horizon)
 
-  # Fullscreen toggle — no-op, handled by injected JS below
-
   # Filtered datasets
   cc_d <- reactive({
     if (is.null(cc_daily) || nrow(cc_daily) == 0) return(tibble())
@@ -465,7 +469,7 @@ server <- function(input, output, session) {
 
     tbl <- bind_rows(rows)
     datatable(tbl, options = list(dom = "t", paging = FALSE, searching = FALSE,
-        scrollY = FALSE, autoWidth = TRUE),
+        scrollX = TRUE, autoWidth = FALSE),
       rownames = FALSE)
   })
 
