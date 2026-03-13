@@ -20,7 +20,7 @@ filters:
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 4000
+#| viewerHeight: 1200
 
 library(shiny)
 library(bslib)
@@ -100,11 +100,13 @@ date_max <- if (length(all_dates) > 0) max(all_dates, na.rm = TRUE) else Sys.Dat
 max_days <- as.numeric(date_max - date_min)
 
 # --- Plotly dark theme (irishbuoys style) ------------------------------------
+# Exact irishbuoys_layout() settings from irishbuoys/R/plotly_helpers.R
 dark_axis <- list(
-  gridcolor = "rgba(255,255,255,0.15)",
-  zerolinecolor = "rgba(255,255,255,0.2)",
-  tickfont = list(color = "#e0e0e0", size = 13),
-  titlefont = list(color = "#ffffff", size = 14)
+  gridcolor = "rgba(255, 255, 255, 0.4)",
+  gridwidth = 1,
+  zerolinecolor = "rgba(255, 255, 255, 0.3)",
+  tickfont = list(color = "#cccccc"),
+  titlefont = list(color = "#e0e0e0")
 )
 dark_layout <- function(p, title = NULL, xaxis = list(), yaxis = list(), ...) {
   p |> layout(
@@ -114,12 +116,13 @@ dark_layout <- function(p, title = NULL, xaxis = list(), yaxis = list(), ...) {
     xaxis = modifyList(dark_axis, xaxis),
     yaxis = modifyList(dark_axis, yaxis),
     legend = list(
-      orientation = "h", y = -0.12, x = 0.5, xanchor = "center",
-      font = list(color = "#ffffff", size = 13),
-      bgcolor = "rgba(50,50,50,0.95)", bordercolor = "#888", borderwidth = 1
+      orientation = "h", y = -0.15, x = 0.5, xanchor = "center",
+      font = list(color = "#e0e0e0", size = 12),
+      bgcolor = "rgba(40, 40, 40, 0.8)",
+      bordercolor = "#555555", borderwidth = 1
     ),
-    hoverlabel = list(bgcolor = "white", font = list(color = "black", size = 13)),
-    margin = list(b = 90, t = 40),
+    hoverlabel = list(bgcolor = "white", font = list(color = "black", size = 12)),
+    margin = list(b = 80),
     ...
   ) |> config(scrollZoom = TRUE, displayModeBar = TRUE)
 }
@@ -145,12 +148,19 @@ ui <- page_navbar(
       .card-footer { background-color: #1a1a1a !important; border-color: #333 !important; }
       .sidebar-content { background-color: #222 !important; }
       .js-plotly-plot { cursor: zoom-in; }
-      .card .plotly { min-height: 500px; }
       table.dataTable { color: #e0e0e0 !important; }
       table.dataTable thead th { color: #e0e0e0 !important; background-color: #2a2a2a !important; }
       table.dataTable tbody td { border-color: #444 !important; }
       .dataTables_wrapper .dataTables_filter input { background-color: #333; color: #e0e0e0; border-color: #555; }
       .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #ccc !important; }
+      /* DT tables: auto-height based on rows, clickable cursor */
+      .dataTables_scrollBody { max-height: none !important; }
+      .dataTables_wrapper { cursor: zoom-in; }
+      /* Fullscreen table styling */
+      #fullscreen-overlay .dataTables_wrapper { font-size: 16px; }
+      #fullscreen-overlay table.dataTable { color: #e0e0e0 !important; }
+      #fullscreen-overlay table.dataTable thead th { color: #e0e0e0 !important; background-color: #2a2a2a !important; }
+      #fullscreen-overlay table.dataTable tbody td { border-color: #444 !important; }
       /* Fullscreen overlay */
       #fullscreen-overlay {
         display: none; position: fixed; top: 0; left: 0;
@@ -177,36 +187,43 @@ ui <- page_navbar(
       ov.appendChild(hint);
       document.body.appendChild(ov);
 
-      // Click on any plotly chart -> clone into fullscreen overlay
-      document.addEventListener('click', function(e) {
-        var plot = e.target.closest('.js-plotly-plot');
-        if (!plot) return;
-        if (ov.style.display === 'flex') return; // already open
-        e.stopPropagation();
-        var clone = plot.cloneNode(true);
-        // Remove old plot content (keep only the clone)
+      function closeOverlay() {
+        ov.style.display = 'none';
+        while (ov.childNodes.length > 1) ov.removeChild(ov.lastChild);
+      }
+
+      function openOverlay(el) {
+        if (ov.style.display === 'flex') return;
+        var clone = el.cloneNode(true);
+        clone.style.width = '95vw';
+        clone.style.maxHeight = '90vh';
+        clone.style.overflow = 'auto';
         while (ov.childNodes.length > 1) ov.removeChild(ov.lastChild);
         ov.appendChild(clone);
         ov.style.display = 'flex';
         ov.style.alignItems = 'center';
         ov.style.justifyContent = 'center';
-        // Re-render plotly in clone at full viewport size
+        // Re-render plotly at full size if applicable
         if (window.Plotly && clone.data) {
-          window.Plotly.relayout(clone, { width: window.innerWidth - 40, height: window.innerHeight - 40 });
+          window.Plotly.relayout(clone, { width: window.innerWidth - 60, height: window.innerHeight - 60 });
         }
+      }
+
+      // Click on plotly chart OR DT table -> fullscreen
+      document.addEventListener('click', function(e) {
+        if (ov.style.display === 'flex') return;
+        // Check for plotly
+        var plot = e.target.closest('.js-plotly-plot');
+        if (plot) { e.stopPropagation(); openOverlay(plot); return; }
+        // Check for DT table
+        var dt = e.target.closest('.dataTables_wrapper');
+        if (dt) { e.stopPropagation(); openOverlay(dt); return; }
       }, true);
 
-      // Click overlay or Esc -> close
-      ov.addEventListener('click', function() {
-        ov.style.display = 'none';
-        // Remove cloned plot
-        while (ov.childNodes.length > 1) ov.removeChild(ov.lastChild);
-      });
+      // Close on overlay click or Esc
+      ov.addEventListener('click', closeOverlay);
       document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && ov.style.display !== 'none') {
-          ov.style.display = 'none';
-          while (ov.childNodes.length > 1) ov.removeChild(ov.lastChild);
-        }
+        if (e.key === 'Escape') closeOverlay();
       });
     "))
   ),
@@ -245,7 +262,7 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(12),
-      card(card_header("Daily Cost (All Sources)"), plotlyOutput("overview_cost_ts", height = "600px"),
+      card(card_header("Daily Cost (All Sources)"), plotlyOutput("overview_cost_ts", height = "350px"),
         card_footer(class = "text-muted small", "Daily cost time series combining Claude and Gemini usage"))
     )
   ),
@@ -253,16 +270,16 @@ ui <- page_navbar(
   nav_panel("Cost Trends", value = "Cost Trends",
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Daily Cost by Project"), plotlyOutput("cost_by_project", height = "550px"),
+      card(card_header("Daily Cost by Project"), plotlyOutput("cost_by_project", height = "300px"),
         card_footer(class = "text-muted small", "Daily Claude cost by project (lines+markers)")),
-      card(card_header("Cumulative Cost"), plotlyOutput("cost_cumulative", height = "550px"),
+      card(card_header("Cumulative Cost"), plotlyOutput("cost_cumulative", height = "300px"),
         card_footer(class = "text-muted small", "Running total of cost over time by source"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Weekly Cost by Source"), plotlyOutput("cost_weekly", height = "550px"),
+      card(card_header("Weekly Cost by Source"), plotlyOutput("cost_weekly", height = "300px"),
         card_footer(class = "text-muted small", "Weekly cost grouped by Claude vs Gemini")),
-      card(card_header("Weekly Cost by Model"), plotlyOutput("cost_by_model", height = "550px"),
+      card(card_header("Weekly Cost by Model"), plotlyOutput("cost_by_model", height = "300px"),
         card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
     )
   ),
@@ -270,14 +287,14 @@ ui <- page_navbar(
   nav_panel("Token Analysis", value = "Token Analysis",
     layout_columns(
       col_widths = c(12),
-      card(card_header("Daily Tokens"), plotlyOutput("token_daily", height = "600px"),
+      card(card_header("Daily Tokens"), plotlyOutput("token_daily", height = "350px"),
         card_footer(class = "text-muted small", "Daily token consumption across all sources"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Token Composition"), plotlyOutput("token_comp", height = "550px"),
+      card(card_header("Token Composition"), plotlyOutput("token_comp", height = "300px"),
         card_footer(class = "text-muted small", "Grouped bars: input, output, cache-create, and cache-read tokens")),
-      card(card_header("Weekly Tokens by Source"), plotlyOutput("token_weekly", height = "550px"),
+      card(card_header("Weekly Tokens by Source"), plotlyOutput("token_weekly", height = "300px"),
         card_footer(class = "text-muted small", "Weekly token usage by source"))
     )
   ),
@@ -292,9 +309,9 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Session Cost Distribution"), plotlyOutput("sess_hist", height = "550px"),
+      card(card_header("Session Cost Distribution"), plotlyOutput("sess_hist", height = "300px"),
         card_footer(class = "text-muted small", "Histogram of per-session costs")),
-      card(card_header("Sessions Over Time"), plotlyOutput("sess_scatter", height = "550px"),
+      card(card_header("Sessions Over Time"), plotlyOutput("sess_scatter", height = "300px"),
         card_footer(class = "text-muted small", "Bubble chart of Claude sessions by date, cost, and token volume"))
     )
   ),
@@ -307,9 +324,9 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Block Timeline"), plotlyOutput("block_timeline", height = "550px"),
+      card(card_header("Block Timeline"), plotlyOutput("block_timeline", height = "300px"),
         card_footer(class = "text-muted small", "Gantt-style block start/end times colored by cost")),
-      card(card_header("Hourly Activity Heatmap"), plotlyOutput("block_heatmap", height = "550px"),
+      card(card_header("Hourly Activity Heatmap"), plotlyOutput("block_heatmap", height = "300px"),
         card_footer(class = "text-muted small", "Cost heatmap by day of week and hour"))
     )
   ),
@@ -323,14 +340,14 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(12),
-      card(card_header("Lines Changed per Commit"), plotlyOutput("commit_hist", height = "600px"),
+      card(card_header("Lines Changed per Commit"), plotlyOutput("commit_hist", height = "350px"),
         card_footer(class = "text-muted small", "Distribution of total lines changed per commit"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Lines Changed Over Time"), plotlyOutput("commit_scatter_time", height = "550px"),
+      card(card_header("Lines Changed Over Time"), plotlyOutput("commit_scatter_time", height = "300px"),
         card_footer(class = "text-muted small", "Lines changed per commit over time, sized by files changed")),
-      card(card_header("Additions vs Deletions"), plotlyOutput("commit_scatter_add_del", height = "550px"),
+      card(card_header("Additions vs Deletions"), plotlyOutput("commit_scatter_add_del", height = "300px"),
         card_footer(class = "text-muted small", "Lines added vs deleted per commit"))
     )
   ),
@@ -447,7 +464,8 @@ server <- function(input, output, session) {
     }
 
     tbl <- bind_rows(rows)
-    datatable(tbl, options = list(dom = "t", paging = FALSE, searching = FALSE),
+    datatable(tbl, options = list(dom = "t", paging = FALSE, searching = FALSE,
+        scrollY = FALSE, autoWidth = TRUE),
       rownames = FALSE)
   })
 
