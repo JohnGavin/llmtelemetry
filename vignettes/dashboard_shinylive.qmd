@@ -99,10 +99,65 @@ date_min <- if (length(all_dates) > 0) min(all_dates, na.rm = TRUE) else Sys.Dat
 date_max <- if (length(all_dates) > 0) max(all_dates, na.rm = TRUE) else Sys.Date()
 max_days <- as.numeric(date_max - date_min)
 
+# --- Plotly dark theme (irishbuoys style) ------------------------------------
+dark_axis <- list(
+  gridcolor = "rgba(255,255,255,0.15)",
+  zerolinecolor = "rgba(255,255,255,0.2)",
+  tickfont = list(color = "#cccccc", size = 11),
+  titlefont = list(color = "#e0e0e0", size = 12)
+)
+dark_layout <- function(p, title = NULL, xaxis = list(), yaxis = list(), ...) {
+  p |> layout(
+    plot_bgcolor = "#1a1a1a",
+    paper_bgcolor = "#1a1a1a",
+    title = if (!is.null(title)) list(text = title, font = list(size = 14, color = "#e0e0e0")),
+    xaxis = modifyList(dark_axis, xaxis),
+    yaxis = modifyList(dark_axis, yaxis),
+    legend = list(
+      orientation = "h", y = -0.15, x = 0.5, xanchor = "center",
+      font = list(color = "#e0e0e0", size = 11),
+      bgcolor = "rgba(40,40,40,0.8)", bordercolor = "#555", borderwidth = 1
+    ),
+    hoverlabel = list(bgcolor = "white", font = list(color = "black", size = 12)),
+    margin = list(b = 80, t = 40),
+    ...
+  ) |> config(scrollZoom = TRUE, displayModeBar = TRUE)
+}
+
+# Color palette
+pal <- list(claude = "#377eb8", gemini = "#e41a1c", accent = "#4daf4a",
+            purple = "#984ea3", orange = "#ff7f00", hist = "#377eb8")
+
 # --- UI -----------------------------------------------------------------------
 ui <- page_navbar(
   title = "LLM Telemetry",
-  theme = bs_theme(bootswatch = "flatly", font_scale = 0.9),
+  theme = bs_theme(
+    bg = "#1a1a1a", fg = "#e0e0e0",
+    primary = "#377eb8", secondary = "#555555",
+    font_scale = 0.85
+  ),
+  header = tags$style(HTML("
+    .bslib-value-box .value-box-value { font-size: 1.4rem !important; white-space: nowrap; }
+    .bslib-value-box .value-box-title { font-size: 0.75rem !important; white-space: nowrap; }
+    .card { background-color: #222 !important; border-color: #444 !important; }
+    .card-header { background-color: #2a2a2a !important; color: #e0e0e0 !important; font-size: 0.85rem; }
+    .card-footer { background-color: #1a1a1a !important; border-color: #333 !important; }
+    .sidebar-content { background-color: #222 !important; }
+    .js-plotly-plot { cursor: pointer; }
+    .fullscreen-overlay {
+      position: fixed !important; top: 0 !important; left: 0 !important;
+      width: 100vw !important; height: 100vh !important; z-index: 9999 !important;
+      background: rgba(0,0,0,0.95) !important; padding: 20px !important;
+      overflow: auto !important; cursor: zoom-out !important; box-sizing: border-box !important;
+    }
+    .fullscreen-overlay .js-plotly-plot, .fullscreen-overlay .plotly {
+      width: 100% !important; height: calc(100vh - 40px) !important;
+    }
+    table.dataTable { color: #e0e0e0 !important; }
+    table.dataTable thead th { color: #e0e0e0 !important; background-color: #2a2a2a !important; }
+    table.dataTable tbody td { border-color: #444 !important; }
+    .dataTables_wrapper .dataTables_filter input { background-color: #333; color: #e0e0e0; border-color: #555; }
+  ")),
   sidebar = sidebar(
     width = 220,
     sliderInput("horizon", "Time Horizon (days)",
@@ -125,7 +180,7 @@ ui <- page_navbar(
 
   nav_panel("Overview", value = "Overview",
     layout_columns(
-      fill = FALSE, col_widths = c(4, 3, 3, 2),
+      fill = FALSE, col_widths = c(3, 3, 3, 3),
       value_box("Total Cost", textOutput("vb_cost"), theme = "primary"),
       value_box("Total Tokens", textOutput("vb_tokens"), theme = "info"),
       value_box("Active Days", textOutput("vb_days"), theme = "success"),
@@ -134,7 +189,7 @@ ui <- page_navbar(
     layout_columns(
       col_widths = c(12),
       card(card_header("Source Summary"), DTOutput("overview_table"),
-        card_footer(class = "text-muted small", "Cost, tokens, and session counts per data source within the selected time horizon"))
+        card_footer(class = "text-muted small", "Cost, tokens, and session counts per data source"))
     ),
     layout_columns(
       col_widths = c(12),
@@ -146,17 +201,17 @@ ui <- page_navbar(
   nav_panel("Cost Trends", value = "Cost Trends",
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Daily Cost by Project"), plotlyOutput("cost_by_project", height = "400px"),
-        card_footer(class = "text-muted small", "Stacked area chart of daily Claude cost broken down by project")),
-      card(card_header("Cumulative Cost"), plotlyOutput("cost_cumulative", height = "400px"),
+      card(card_header("Daily Cost by Project"), plotlyOutput("cost_by_project", height = "450px"),
+        card_footer(class = "text-muted small", "Daily Claude cost by project (lines+markers)")),
+      card(card_header("Cumulative Cost"), plotlyOutput("cost_cumulative", height = "450px"),
         card_footer(class = "text-muted small", "Running total of cost over time by source"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Weekly Cost by Source"), plotlyOutput("cost_weekly", height = "400px"),
-        card_footer(class = "text-muted small", "Weekly aggregated cost grouped by Claude vs Gemini")),
-      card(card_header("Weekly Cost by Model"), plotlyOutput("cost_by_model", height = "400px"),
-        card_footer(class = "text-muted small", "Weekly cost breakdown by Claude model variant"))
+      card(card_header("Weekly Cost by Source"), plotlyOutput("cost_weekly", height = "450px"),
+        card_footer(class = "text-muted small", "Weekly cost grouped by Claude vs Gemini")),
+      card(card_header("Weekly Cost by Model"), plotlyOutput("cost_by_model", height = "450px"),
+        card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
     )
   ),
 
@@ -168,10 +223,10 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Token Composition"), plotlyOutput("token_comp", height = "400px"),
-        card_footer(class = "text-muted small", "Stacked bar chart of input, output, cache-create, and cache-read tokens")),
-      card(card_header("Weekly Tokens by Source"), plotlyOutput("token_weekly", height = "400px"),
-        card_footer(class = "text-muted small", "Weekly aggregated token usage by source"))
+      card(card_header("Token Composition"), plotlyOutput("token_comp", height = "450px"),
+        card_footer(class = "text-muted small", "Grouped bars: input, output, cache-create, and cache-read tokens")),
+      card(card_header("Weekly Tokens by Source"), plotlyOutput("token_weekly", height = "450px"),
+        card_footer(class = "text-muted small", "Weekly token usage by source"))
     )
   ),
 
@@ -179,15 +234,15 @@ ui <- page_navbar(
     layout_columns(
       col_widths = c(6, 6),
       card(card_header("Top Claude Sessions"), DTOutput("sess_claude"),
-        card_footer(class = "text-muted small", "Most expensive Claude sessions ranked by total cost")),
+        card_footer(class = "text-muted small", "Most expensive Claude sessions by total cost")),
       card(card_header("Top Gemini Sessions"), DTOutput("sess_gemini"),
-        card_footer(class = "text-muted small", "Most expensive Gemini sessions ranked by total cost"))
+        card_footer(class = "text-muted small", "Most expensive Gemini sessions by total cost"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Session Cost Distribution"), plotlyOutput("sess_hist", height = "400px"),
-        card_footer(class = "text-muted small", "Histogram of per-session costs across all sources")),
-      card(card_header("Sessions Over Time"), plotlyOutput("sess_scatter", height = "400px"),
+      card(card_header("Session Cost Distribution"), plotlyOutput("sess_hist", height = "450px"),
+        card_footer(class = "text-muted small", "Histogram of per-session costs")),
+      card(card_header("Sessions Over Time"), plotlyOutput("sess_scatter", height = "450px"),
         card_footer(class = "text-muted small", "Bubble chart of Claude sessions by date, cost, and token volume"))
     )
   ),
@@ -196,14 +251,14 @@ ui <- page_navbar(
     layout_columns(
       col_widths = c(12),
       card(card_header("Block Activity"), DTOutput("block_table"),
-        card_footer(class = "text-muted small", "Detailed table of Claude coding blocks with cost and efficiency metrics"))
+        card_footer(class = "text-muted small", "Claude coding blocks with cost and efficiency metrics"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Block Timeline"), plotlyOutput("block_timeline", height = "400px"),
-        card_footer(class = "text-muted small", "Gantt-style view of coding block start/end times colored by cost")),
-      card(card_header("Hourly Activity Heatmap"), plotlyOutput("block_heatmap", height = "400px"),
-        card_footer(class = "text-muted small", "Cost heatmap by day of week and hour of day"))
+      card(card_header("Block Timeline"), plotlyOutput("block_timeline", height = "450px"),
+        card_footer(class = "text-muted small", "Gantt-style block start/end times colored by cost")),
+      card(card_header("Hourly Activity Heatmap"), plotlyOutput("block_heatmap", height = "450px"),
+        card_footer(class = "text-muted small", "Cost heatmap by day of week and hour"))
     )
   ),
 
@@ -211,26 +266,27 @@ ui <- page_navbar(
     layout_columns(
       fill = FALSE, col_widths = c(4, 4, 4),
       value_box("Total Commits", textOutput("vb_commits"), theme = "primary"),
-      value_box("Median Lines/Commit", textOutput("vb_median_lines"), theme = "info"),
-      value_box("Mean Lines/Commit", textOutput("vb_mean_lines"), theme = "success")
+      value_box("Median Lines", textOutput("vb_median_lines"), theme = "info"),
+      value_box("Mean Lines", textOutput("vb_mean_lines"), theme = "success")
     ),
     layout_columns(
       col_widths = c(12),
       card(card_header("Lines Changed per Commit"), plotlyOutput("commit_hist", height = "500px"),
-        card_footer(class = "text-muted small", "Distribution of total lines changed (added + deleted) per commit"))
+        card_footer(class = "text-muted small", "Distribution of total lines changed per commit"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Lines Changed Over Time"), plotlyOutput("commit_scatter_time", height = "400px"),
-        card_footer(class = "text-muted small", "Total lines changed per commit over time, sized by files changed")),
-      card(card_header("Additions vs Deletions"), plotlyOutput("commit_scatter_add_del", height = "400px"),
-        card_footer(class = "text-muted small", "Lines added versus lines deleted per commit, sized by files changed"))
+      card(card_header("Lines Changed Over Time"), plotlyOutput("commit_scatter_time", height = "450px"),
+        card_footer(class = "text-muted small", "Lines changed per commit over time, sized by files changed")),
+      card(card_header("Additions vs Deletions"), plotlyOutput("commit_scatter_add_del", height = "450px"),
+        card_footer(class = "text-muted small", "Lines added vs deleted per commit"))
     )
   ),
 
   footer = tags$footer(
     class = "text-muted small text-center py-2",
-    tags$a(href = "https://github.com/johngavin/llmtelemetry", "GitHub"),
+    style = "background-color: #1a1a1a;",
+    tags$a(href = "https://github.com/johngavin/llmtelemetry", style = "color: #7cb5ec;", "GitHub"),
     " | Data: ccusage, Gemini, cmonitor",
     " | Built: ", format(Sys.Date(), "%Y-%m-%d")
   ),
@@ -241,6 +297,11 @@ ui <- page_navbar(
 # --- Server -------------------------------------------------------------------
 server <- function(input, output, session) {
   cutoff <- reactive(date_max - input$horizon)
+
+  # Fullscreen toggle for plotly charts
+  observe({
+    session$sendCustomMessage("setupFullscreen", list())
+  })
 
   # Filtered datasets
   cc_d <- reactive({
@@ -345,24 +406,20 @@ server <- function(input, output, session) {
     traces <- list()
     if (nrow(cc_d()) > 0) {
       cc_agg <- cc_d() |> group_by(date) |> summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
-      traces[[1]] <- list(data = cc_agg, name = "Claude", color = "#2c3e50")
+      traces[[1]] <- list(data = cc_agg, name = "Claude", color = pal$claude)
     }
     if (nrow(gem_d()) > 0) {
       gm_agg <- gem_d() |> rename(cost = total_cost)
-      traces[[length(traces) + 1]] <- list(data = gm_agg, name = "Gemini", color = "#e74c3c")
+      traces[[length(traces) + 1]] <- list(data = gm_agg, name = "Gemini", color = pal$gemini)
     }
     p <- plot_ly()
     for (tr in traces) {
       p <- p |> add_trace(data = tr$data, x = ~date, y = ~cost, type = "scatter",
         mode = "lines+markers", name = tr$name,
-        line = list(color = tr$color), marker = list(color = tr$color, size = 4))
+        line = list(color = tr$color, width = 2),
+        marker = list(color = tr$color, size = 5, opacity = 0.7))
     }
-    p |> layout(
-      xaxis = list(title = ""),
-      yaxis = list(title = "Cost (USD)"),
-      legend = list(orientation = "h", y = 1.02, yanchor = "bottom"),
-      margin = list(t = 40)
-    ) |> config(scrollZoom = TRUE)
+    dark_layout(p, xaxis = list(title = ""), yaxis = list(title = "Cost (USD)"))
   })
 
   # --- Cost Trends ------------------------------------------------------------
@@ -371,13 +428,9 @@ server <- function(input, output, session) {
     if (nrow(d) == 0) return(plotly_empty())
     d_agg <- d |> group_by(date, project) |>
       summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
-    plot_ly(d_agg, x = ~date, y = ~cost, color = ~project, type = "scatter",
-      mode = "lines", stackgroup = "one", fill = "tonexty") |>
-      layout(
-        xaxis = list(title = ""),
-        yaxis = list(title = "Cost (USD)"),
-        legend = list(orientation = "h", y = 1.02, yanchor = "bottom")
-      ) |> config(scrollZoom = TRUE)
+    p <- plot_ly(d_agg, x = ~date, y = ~cost, color = ~project, type = "scatter",
+      mode = "lines+markers", marker = list(size = 3, opacity = 0.6))
+    dark_layout(p, xaxis = list(title = ""), yaxis = list(title = "Cost (USD)"))
   })
 
   output$cost_cumulative <- renderPlotly({
@@ -386,22 +439,18 @@ server <- function(input, output, session) {
       cc_cum <- cc_d() |> group_by(date) |>
         summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop") |>
         arrange(date) |> mutate(cum_cost = cumsum(cost))
-      traces[[1]] <- list(data = cc_cum, name = "Claude", color = "#2c3e50")
+      traces[[1]] <- list(data = cc_cum, name = "Claude", color = pal$claude)
     }
     if (nrow(gem_d()) > 0) {
       gm_cum <- gem_d() |> arrange(date) |> mutate(cum_cost = cumsum(total_cost))
-      traces[[length(traces) + 1]] <- list(data = gm_cum, name = "Gemini", color = "#e74c3c")
+      traces[[length(traces) + 1]] <- list(data = gm_cum, name = "Gemini", color = pal$gemini)
     }
     p <- plot_ly()
     for (tr in traces) {
       p <- p |> add_trace(data = tr$data, x = ~date, y = ~cum_cost, type = "scatter",
-        mode = "lines", name = tr$name, line = list(color = tr$color))
+        mode = "lines", name = tr$name, line = list(color = tr$color, width = 2))
     }
-    p |> layout(
-      xaxis = list(title = ""),
-      yaxis = list(title = "Cumulative Cost (USD)"),
-      legend = list(orientation = "h", y = 1.02, yanchor = "bottom")
-    ) |> config(scrollZoom = TRUE)
+    dark_layout(p, xaxis = list(title = ""), yaxis = list(title = "Cumulative Cost (USD)"))
   })
 
   output$cost_weekly <- renderPlotly({
@@ -420,13 +469,10 @@ server <- function(input, output, session) {
     }
     if (length(rows) == 0) return(plotly_empty())
     d <- bind_rows(rows)
-    plot_ly(d, x = ~week, y = ~cost, color = ~source, type = "bar") |>
-      layout(
-        barmode = "group",
-        xaxis = list(title = "Week"),
-        yaxis = list(title = "Cost (USD)"),
-        legend = list(orientation = "h", y = 1.02, yanchor = "bottom")
-      ) |> config(scrollZoom = TRUE)
+    p <- plot_ly(d, x = ~week, y = ~cost, color = ~source, type = "bar",
+      colors = c("Claude" = pal$claude, "Gemini" = pal$gemini))
+    dark_layout(p, barmode = "group",
+      xaxis = list(title = "Week"), yaxis = list(title = "Cost (USD)"))
   })
 
   output$cost_by_model <- renderPlotly({
@@ -443,14 +489,10 @@ server <- function(input, output, session) {
       group_by(week, model) |>
       summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
 
-    plot_ly(model_weekly, x = ~week, y = ~cost, color = ~model,
+    p <- plot_ly(model_weekly, x = ~week, y = ~cost, color = ~model,
       type = "scatter", mode = "lines+markers",
-      marker = list(size = 4)) |>
-      layout(
-        xaxis = list(title = "Week"),
-        yaxis = list(title = "Cost (USD)"),
-        legend = list(orientation = "h", y = 1.02, yanchor = "bottom", font = list(size = 10))
-      ) |> config(scrollZoom = TRUE)
+      marker = list(size = 4, opacity = 0.7))
+    dark_layout(p, xaxis = list(title = "Week"), yaxis = list(title = "Cost (USD)"))
   })
 
   # --- Token Analysis ---------------------------------------------------------
@@ -459,23 +501,20 @@ server <- function(input, output, session) {
     if (nrow(cc_d_proj()) > 0) {
       cc_tok <- cc_d_proj() |> group_by(date) |>
         summarise(tokens = sum(totalTokens, na.rm = TRUE), .groups = "drop")
-      traces[[1]] <- list(data = cc_tok, name = "Claude", color = "#2c3e50")
+      traces[[1]] <- list(data = cc_tok, name = "Claude", color = pal$claude)
     }
     if (nrow(gem_d()) > 0) {
       gm_tok <- gem_d() |> rename(tokens = total_tokens)
-      traces[[length(traces) + 1]] <- list(data = gm_tok, name = "Gemini", color = "#e74c3c")
+      traces[[length(traces) + 1]] <- list(data = gm_tok, name = "Gemini", color = pal$gemini)
     }
     p <- plot_ly()
     for (tr in traces) {
       p <- p |> add_trace(data = tr$data, x = ~date, y = ~tokens, type = "scatter",
         mode = "lines+markers", name = tr$name,
-        line = list(color = tr$color), marker = list(color = tr$color, size = 4))
+        line = list(color = tr$color, width = 2),
+        marker = list(color = tr$color, size = 4, opacity = 0.7))
     }
-    p |> layout(
-      xaxis = list(title = ""),
-      yaxis = list(title = "Tokens"),
-      legend = list(orientation = "h", y = 1.02, yanchor = "bottom")
-    ) |> config(scrollZoom = TRUE)
+    dark_layout(p, xaxis = list(title = ""), yaxis = list(title = "Tokens"))
   })
 
   output$token_comp <- renderPlotly({
@@ -490,12 +529,11 @@ server <- function(input, output, session) {
         .groups = "drop"
       ) |>
       pivot_longer(-date, names_to = "type", values_to = "tokens")
-    plot_ly(tok, x = ~date, y = ~tokens, color = ~type, type = "bar") |>
-      layout(barmode = "stack",
-        xaxis = list(title = ""),
-        yaxis = list(title = "Tokens"),
-        legend = list(orientation = "h", y = 1.02, yanchor = "bottom")) |>
-      config(scrollZoom = TRUE)
+    p <- plot_ly(tok, x = ~date, y = ~tokens, color = ~type, type = "bar",
+      colors = c("Input" = pal$claude, "Output" = pal$gemini,
+                 "Cache Create" = pal$accent, "Cache Read" = pal$orange))
+    dark_layout(p, barmode = "group",
+      xaxis = list(title = ""), yaxis = list(title = "Tokens"))
   })
 
   output$token_weekly <- renderPlotly({
@@ -514,12 +552,10 @@ server <- function(input, output, session) {
     }
     if (length(rows) == 0) return(plotly_empty())
     d <- bind_rows(rows)
-    plot_ly(d, x = ~week, y = ~tokens, color = ~source, type = "bar") |>
-      layout(barmode = "group",
-        xaxis = list(title = "Week"),
-        yaxis = list(title = "Tokens"),
-        legend = list(orientation = "h", y = 1.02, yanchor = "bottom")) |>
-      config(scrollZoom = TRUE)
+    p <- plot_ly(d, x = ~week, y = ~tokens, color = ~source, type = "bar",
+      colors = c("Claude" = pal$claude, "Gemini" = pal$gemini))
+    dark_layout(p, barmode = "group",
+      xaxis = list(title = "Week"), yaxis = list(title = "Tokens"))
   })
 
   # --- Sessions ---------------------------------------------------------------
@@ -554,23 +590,19 @@ server <- function(input, output, session) {
     if (!is.null(cc_sessions) && nrow(cc_sessions) > 0) costs <- c(costs, cc_sessions$totalCost)
     if (!is.null(gem_sess) && nrow(gem_sess) > 0) costs <- c(costs, gem_sess$total_cost)
     if (length(costs) == 0) return(plotly_empty())
-    plot_ly(x = ~costs, type = "histogram", nbinsx = 20,
-      marker = list(color = "#2c3e50")) |>
-      layout(xaxis = list(title = "Session Cost (USD)"),
-             yaxis = list(title = "Count")) |>
-      config(scrollZoom = TRUE)
+    p <- plot_ly(x = ~costs, type = "histogram", nbinsx = 20,
+      marker = list(color = pal$hist, opacity = 0.8))
+    dark_layout(p, xaxis = list(title = "Session Cost (USD)"), yaxis = list(title = "Count"))
   })
 
   output$sess_scatter <- renderPlotly({
     if (is.null(cc_sessions) || nrow(cc_sessions) == 0) return(plotly_empty())
-    plot_ly(cc_sessions, x = ~lastActivity, y = ~totalCost,
+    p <- plot_ly(cc_sessions, x = ~lastActivity, y = ~totalCost,
       size = ~totalTokens, type = "scatter", mode = "markers",
       text = ~sessionId, hoverinfo = "text+x+y",
       marker = list(sizemode = "area", sizeref = max(cc_sessions$totalTokens) / 1000,
-        color = "#3498db", opacity = 0.7)) |>
-      layout(xaxis = list(title = "Last Activity"),
-             yaxis = list(title = "Total Cost (USD)")) |>
-      config(scrollZoom = TRUE)
+        color = pal$claude, opacity = 0.7))
+    dark_layout(p, xaxis = list(title = "Last Activity"), yaxis = list(title = "Total Cost (USD)"))
   })
 
   # --- Time Blocks ------------------------------------------------------------
@@ -604,19 +636,16 @@ server <- function(input, output, session) {
     d <- blk()
     if (nrow(d) == 0) return(plotly_empty())
     d <- d |> mutate(label = format(date, "%m-%d"))
-    plot_ly(d, x = ~startTime,
+    p <- plot_ly(d, x = ~startTime,
       xend = ~coalesce(actualEndTime, endTime),
       y = ~label, type = "scatter", mode = "lines",
       line = list(width = 10),
       color = ~costUSD,
-      colors = c("#ecf0f1", "#e74c3c"),
+      colors = c("#2a2a2a", "#e41a1c"),
       text = ~paste0("$", round(costUSD, 2), " | ", format(totalTokens, big.mark = ","), " tok"),
-      hoverinfo = "text+x") |>
-      layout(
-        xaxis = list(title = "Time"),
-        yaxis = list(title = "", categoryorder = "category descending"),
-        showlegend = FALSE
-      ) |> config(scrollZoom = TRUE)
+      hoverinfo = "text+x")
+    dark_layout(p, showlegend = FALSE,
+      xaxis = list(title = "Time"), yaxis = list(title = "", categoryorder = "category descending"))
   })
 
   output$block_heatmap <- renderPlotly({
@@ -626,13 +655,10 @@ server <- function(input, output, session) {
       group_by(wday, hour) |>
       summarise(cost = sum(costUSD, na.rm = TRUE), .groups = "drop") |>
       complete(wday, hour = 0:23, fill = list(cost = 0))
-    plot_ly(heat, x = ~hour, y = ~wday, z = ~cost,
-      type = "heatmap", colorscale = "YlOrRd",
-      hovertemplate = "Hour: %{x}<br>Day: %{y}<br>Cost: $%{z:.2f}<extra></extra>") |>
-      layout(
-        xaxis = list(title = "Hour of Day", dtick = 3),
-        yaxis = list(title = "")
-      ) |> config(scrollZoom = TRUE)
+    p <- plot_ly(heat, x = ~hour, y = ~wday, z = ~cost,
+      type = "heatmap", colorscale = list(c(0, "#1a1a1a"), c(0.5, "#ff7f00"), c(1, "#e41a1c")),
+      hovertemplate = "Hour: %{x}<br>Day: %{y}<br>Cost: $%{z:.2f}<extra></extra>")
+    dark_layout(p, xaxis = list(title = "Hour of Day", dtick = 3), yaxis = list(title = ""))
   })
 
   # --- Commits -----------------------------------------------------------------
@@ -660,47 +686,35 @@ server <- function(input, output, session) {
   output$commit_hist <- renderPlotly({
     d <- commits_filt()
     if (nrow(d) == 0) return(plotly_empty())
-    plot_ly(d, x = ~lines_changed, type = "histogram", nbinsx = 30,
-      marker = list(color = "#2c3e50")) |>
-      layout(
-        xaxis = list(title = "Lines Changed"),
-        yaxis = list(title = "Number of Commits"),
-        legend = list(orientation = "h", y = 1.02, yanchor = "bottom")
-      ) |> config(scrollZoom = TRUE)
+    p <- plot_ly(d, x = ~lines_changed, type = "histogram", nbinsx = 30,
+      marker = list(color = pal$hist, opacity = 0.8))
+    dark_layout(p, xaxis = list(title = "Lines Changed"), yaxis = list(title = "Number of Commits"))
   })
 
   output$commit_scatter_time <- renderPlotly({
     d <- commits_filt()
     if (nrow(d) == 0) return(plotly_empty())
-    plot_ly(d, x = ~date, y = ~lines_changed,
+    p <- plot_ly(d, x = ~date, y = ~lines_changed,
       size = ~files_changed, type = "scatter", mode = "markers",
       text = ~paste0(hash, ": ", message),
       hoverinfo = "text+x+y",
       marker = list(sizemode = "area",
         sizeref = max(d$files_changed, na.rm = TRUE) / 500,
-        color = "#3498db", opacity = 0.7)) |>
-      layout(
-        xaxis = list(title = "Date"),
-        yaxis = list(title = "Lines Changed"),
-        legend = list(orientation = "h", y = 1.02, yanchor = "bottom")
-      ) |> config(scrollZoom = TRUE)
+        color = pal$claude, opacity = 0.7))
+    dark_layout(p, xaxis = list(title = "Date"), yaxis = list(title = "Lines Changed"))
   })
 
   output$commit_scatter_add_del <- renderPlotly({
     d <- commits_filt()
     if (nrow(d) == 0) return(plotly_empty())
-    plot_ly(d, x = ~lines_added, y = ~lines_deleted,
+    p <- plot_ly(d, x = ~lines_added, y = ~lines_deleted,
       size = ~files_changed, type = "scatter", mode = "markers",
       text = ~paste0(hash, ": ", message),
       hoverinfo = "text+x+y",
       marker = list(sizemode = "area",
         sizeref = max(d$files_changed, na.rm = TRUE) / 500,
-        color = "#e74c3c", opacity = 0.7)) |>
-      layout(
-        xaxis = list(title = "Lines Added"),
-        yaxis = list(title = "Lines Deleted"),
-        legend = list(orientation = "h", y = 1.02, yanchor = "bottom")
-      ) |> config(scrollZoom = TRUE)
+        color = pal$gemini, opacity = 0.7))
+    dark_layout(p, xaxis = list(title = "Lines Added"), yaxis = list(title = "Lines Deleted"))
   })
 }
 
