@@ -3569,7 +3569,7 @@
       "actualEndTime": "2026-03-08T20:15:00.773Z",
       "isActive": false,
       "isGap": false,
-      "entries": 823,
+      "entries": 824,
       "tokenCounts": {
         "inputTokens": 64071,
         "outputTokens": 17754,
@@ -3951,7 +3951,7 @@
       "actualEndTime": "2026-03-12T10:57:39.672Z",
       "isActive": false,
       "isGap": false,
-      "entries": 546,
+      "entries": 547,
       "tokenCounts": {
         "inputTokens": 25267,
         "outputTokens": 14623,
@@ -3978,7 +3978,7 @@
       "actualEndTime": "2026-03-12T14:52:10.107Z",
       "isActive": false,
       "isGap": false,
-      "entries": 521,
+      "entries": 522,
       "tokenCounts": {
         "inputTokens": 12305,
         "outputTokens": 16623,
@@ -4004,7 +4004,7 @@
       "actualEndTime": "2026-03-12T20:21:58.223Z",
       "isActive": false,
       "isGap": false,
-      "entries": 2,
+      "entries": 3,
       "tokenCounts": {
         "inputTokens": 0,
         "outputTokens": 0,
@@ -4018,6 +4018,111 @@
       ],
       "burnRate": null,
       "projection": null
+    },
+    {
+      "id": "gap-2026-03-13T01:21:58.223Z",
+      "startTime": "2026-03-13T01:21:58.223Z",
+      "endTime": "2026-03-13T10:08:23.688Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-13T10:00:00.000Z",
+      "startTime": "2026-03-13T10:00:00.000Z",
+      "endTime": "2026-03-13T15:00:00.000Z",
+      "actualEndTime": "2026-03-13T12:58:27.710Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 1447,
+      "tokenCounts": {
+        "inputTokens": 11049,
+        "outputTokens": 62372,
+        "cacheCreationInputTokens": 2714842,
+        "cacheReadInputTokens": 123257552
+      },
+      "totalTokens": 126045815,
+      "costUSD": 72.4327314000001,
+      "models": [
+        "claude-opus-4-6",
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+        "<synthetic>"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-13T15:00:00.000Z",
+      "startTime": "2026-03-13T15:00:00.000Z",
+      "endTime": "2026-03-13T20:00:00.000Z",
+      "actualEndTime": "2026-03-13T18:23:25.118Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 867,
+      "tokenCounts": {
+        "inputTokens": 13599,
+        "outputTokens": 39455,
+        "cacheCreationInputTokens": 2835889,
+        "cacheReadInputTokens": 73800915
+      },
+      "totalTokens": 76689858,
+      "costUSD": 47.72874455,
+      "models": [
+        "claude-opus-4-6",
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+        "<synthetic>"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-13T20:00:00.000Z",
+      "startTime": "2026-03-13T20:00:00.000Z",
+      "endTime": "2026-03-14T01:00:00.000Z",
+      "actualEndTime": "2026-03-13T21:02:51.606Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 355,
+      "tokenCounts": {
+        "inputTokens": 12655,
+        "outputTokens": 13868,
+        "cacheCreationInputTokens": 1498419,
+        "cacheReadInputTokens": 23781477
+      },
+      "totalTokens": 25306419,
+      "costUSD": 17.345018750000005,
+      "models": [
+        "claude-opus-4-6",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-6",
+        "claude-opus-4-5-20251101"
+      ],
+      "burnRate": {
+        "tokensPerMinute": 446071.9315655974,
+        "tokensPerMinuteForIndicator": 467.51639735809084,
+        "costPerHour": 18.34426123313774
+      },
+      "projection": {
+        "totalTokens": 131038879,
+        "totalCost": 89.81,
+        "remainingMinutes": 237
+      }
     }
   ]
 }
