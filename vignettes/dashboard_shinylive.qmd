@@ -20,7 +20,7 @@ filters:
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 900
+#| viewerHeight: 4000
 
 library(shiny)
 library(bslib)
@@ -103,8 +103,8 @@ max_days <- as.numeric(date_max - date_min)
 dark_axis <- list(
   gridcolor = "rgba(255,255,255,0.15)",
   zerolinecolor = "rgba(255,255,255,0.2)",
-  tickfont = list(color = "#cccccc", size = 11),
-  titlefont = list(color = "#e0e0e0", size = 12)
+  tickfont = list(color = "#e0e0e0", size = 13),
+  titlefont = list(color = "#ffffff", size = 14)
 )
 dark_layout <- function(p, title = NULL, xaxis = list(), yaxis = list(), ...) {
   p |> layout(
@@ -114,12 +114,12 @@ dark_layout <- function(p, title = NULL, xaxis = list(), yaxis = list(), ...) {
     xaxis = modifyList(dark_axis, xaxis),
     yaxis = modifyList(dark_axis, yaxis),
     legend = list(
-      orientation = "h", y = -0.15, x = 0.5, xanchor = "center",
-      font = list(color = "#e0e0e0", size = 11),
-      bgcolor = "rgba(40,40,40,0.8)", bordercolor = "#555", borderwidth = 1
+      orientation = "h", y = -0.12, x = 0.5, xanchor = "center",
+      font = list(color = "#ffffff", size = 13),
+      bgcolor = "rgba(50,50,50,0.95)", bordercolor = "#888", borderwidth = 1
     ),
-    hoverlabel = list(bgcolor = "white", font = list(color = "black", size = 12)),
-    margin = list(b = 80, t = 40),
+    hoverlabel = list(bgcolor = "white", font = list(color = "black", size = 13)),
+    margin = list(b = 90, t = 40),
     ...
   ) |> config(scrollZoom = TRUE, displayModeBar = TRUE)
 }
@@ -136,28 +136,80 @@ ui <- page_navbar(
     primary = "#377eb8", secondary = "#555555",
     font_scale = 0.85
   ),
-  header = tags$style(HTML("
-    .bslib-value-box .value-box-value { font-size: 1.4rem !important; white-space: nowrap; }
-    .bslib-value-box .value-box-title { font-size: 0.75rem !important; white-space: nowrap; }
-    .card { background-color: #222 !important; border-color: #444 !important; }
-    .card-header { background-color: #2a2a2a !important; color: #e0e0e0 !important; font-size: 0.85rem; }
-    .card-footer { background-color: #1a1a1a !important; border-color: #333 !important; }
-    .sidebar-content { background-color: #222 !important; }
-    .js-plotly-plot { cursor: pointer; }
-    .fullscreen-overlay {
-      position: fixed !important; top: 0 !important; left: 0 !important;
-      width: 100vw !important; height: 100vh !important; z-index: 9999 !important;
-      background: rgba(0,0,0,0.95) !important; padding: 20px !important;
-      overflow: auto !important; cursor: zoom-out !important; box-sizing: border-box !important;
-    }
-    .fullscreen-overlay .js-plotly-plot, .fullscreen-overlay .plotly {
-      width: 100% !important; height: calc(100vh - 40px) !important;
-    }
-    table.dataTable { color: #e0e0e0 !important; }
-    table.dataTable thead th { color: #e0e0e0 !important; background-color: #2a2a2a !important; }
-    table.dataTable tbody td { border-color: #444 !important; }
-    .dataTables_wrapper .dataTables_filter input { background-color: #333; color: #e0e0e0; border-color: #555; }
-  ")),
+  header = tagList(
+    tags$style(HTML("
+      .bslib-value-box .value-box-value { font-size: 1.4rem !important; white-space: nowrap; }
+      .bslib-value-box .value-box-title { font-size: 0.75rem !important; white-space: nowrap; }
+      .card { background-color: #222 !important; border-color: #444 !important; }
+      .card-header { background-color: #2a2a2a !important; color: #e0e0e0 !important; font-size: 0.85rem; }
+      .card-footer { background-color: #1a1a1a !important; border-color: #333 !important; }
+      .sidebar-content { background-color: #222 !important; }
+      .js-plotly-plot { cursor: zoom-in; }
+      .card .plotly { min-height: 500px; }
+      table.dataTable { color: #e0e0e0 !important; }
+      table.dataTable thead th { color: #e0e0e0 !important; background-color: #2a2a2a !important; }
+      table.dataTable tbody td { border-color: #444 !important; }
+      .dataTables_wrapper .dataTables_filter input { background-color: #333; color: #e0e0e0; border-color: #555; }
+      .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #ccc !important; }
+      /* Fullscreen overlay */
+      #fullscreen-overlay {
+        display: none; position: fixed; top: 0; left: 0;
+        width: 100vw; height: 100vh; z-index: 99999;
+        background: rgba(0,0,0,0.97); cursor: zoom-out;
+        padding: 10px; box-sizing: border-box;
+      }
+      #fullscreen-overlay .plotly, #fullscreen-overlay .js-plotly-plot {
+        width: 100% !important; height: calc(100vh - 20px) !important;
+      }
+      /* Hint banner */
+      #fullscreen-hint {
+        position: absolute; top: 5px; right: 20px; color: #999;
+        font-size: 12px; z-index: 100000; pointer-events: none;
+      }
+    ")),
+    tags$script(HTML("
+      // Create overlay container once
+      var ov = document.createElement('div');
+      ov.id = 'fullscreen-overlay';
+      var hint = document.createElement('div');
+      hint.id = 'fullscreen-hint';
+      hint.textContent = 'Click anywhere or press Esc to close';
+      ov.appendChild(hint);
+      document.body.appendChild(ov);
+
+      // Click on any plotly chart -> clone into fullscreen overlay
+      document.addEventListener('click', function(e) {
+        var plot = e.target.closest('.js-plotly-plot');
+        if (!plot) return;
+        if (ov.style.display === 'flex') return; // already open
+        e.stopPropagation();
+        var clone = plot.cloneNode(true);
+        // Remove old plot content (keep only the clone)
+        while (ov.childNodes.length > 1) ov.removeChild(ov.lastChild);
+        ov.appendChild(clone);
+        ov.style.display = 'flex';
+        ov.style.alignItems = 'center';
+        ov.style.justifyContent = 'center';
+        // Re-render plotly in clone at full viewport size
+        if (window.Plotly && clone.data) {
+          window.Plotly.relayout(clone, { width: window.innerWidth - 40, height: window.innerHeight - 40 });
+        }
+      }, true);
+
+      // Click overlay or Esc -> close
+      ov.addEventListener('click', function() {
+        ov.style.display = 'none';
+        // Remove cloned plot
+        while (ov.childNodes.length > 1) ov.removeChild(ov.lastChild);
+      });
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && ov.style.display !== 'none') {
+          ov.style.display = 'none';
+          while (ov.childNodes.length > 1) ov.removeChild(ov.lastChild);
+        }
+      });
+    "))
+  ),
   sidebar = sidebar(
     width = 220,
     sliderInput("horizon", "Time Horizon (days)",
@@ -193,7 +245,7 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(12),
-      card(card_header("Daily Cost (All Sources)"), plotlyOutput("overview_cost_ts", height = "500px"),
+      card(card_header("Daily Cost (All Sources)"), plotlyOutput("overview_cost_ts", height = "600px"),
         card_footer(class = "text-muted small", "Daily cost time series combining Claude and Gemini usage"))
     )
   ),
@@ -201,16 +253,16 @@ ui <- page_navbar(
   nav_panel("Cost Trends", value = "Cost Trends",
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Daily Cost by Project"), plotlyOutput("cost_by_project", height = "450px"),
+      card(card_header("Daily Cost by Project"), plotlyOutput("cost_by_project", height = "550px"),
         card_footer(class = "text-muted small", "Daily Claude cost by project (lines+markers)")),
-      card(card_header("Cumulative Cost"), plotlyOutput("cost_cumulative", height = "450px"),
+      card(card_header("Cumulative Cost"), plotlyOutput("cost_cumulative", height = "550px"),
         card_footer(class = "text-muted small", "Running total of cost over time by source"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Weekly Cost by Source"), plotlyOutput("cost_weekly", height = "450px"),
+      card(card_header("Weekly Cost by Source"), plotlyOutput("cost_weekly", height = "550px"),
         card_footer(class = "text-muted small", "Weekly cost grouped by Claude vs Gemini")),
-      card(card_header("Weekly Cost by Model"), plotlyOutput("cost_by_model", height = "450px"),
+      card(card_header("Weekly Cost by Model"), plotlyOutput("cost_by_model", height = "550px"),
         card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
     )
   ),
@@ -218,14 +270,14 @@ ui <- page_navbar(
   nav_panel("Token Analysis", value = "Token Analysis",
     layout_columns(
       col_widths = c(12),
-      card(card_header("Daily Tokens"), plotlyOutput("token_daily", height = "500px"),
+      card(card_header("Daily Tokens"), plotlyOutput("token_daily", height = "600px"),
         card_footer(class = "text-muted small", "Daily token consumption across all sources"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Token Composition"), plotlyOutput("token_comp", height = "450px"),
+      card(card_header("Token Composition"), plotlyOutput("token_comp", height = "550px"),
         card_footer(class = "text-muted small", "Grouped bars: input, output, cache-create, and cache-read tokens")),
-      card(card_header("Weekly Tokens by Source"), plotlyOutput("token_weekly", height = "450px"),
+      card(card_header("Weekly Tokens by Source"), plotlyOutput("token_weekly", height = "550px"),
         card_footer(class = "text-muted small", "Weekly token usage by source"))
     )
   ),
@@ -240,9 +292,9 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Session Cost Distribution"), plotlyOutput("sess_hist", height = "450px"),
+      card(card_header("Session Cost Distribution"), plotlyOutput("sess_hist", height = "550px"),
         card_footer(class = "text-muted small", "Histogram of per-session costs")),
-      card(card_header("Sessions Over Time"), plotlyOutput("sess_scatter", height = "450px"),
+      card(card_header("Sessions Over Time"), plotlyOutput("sess_scatter", height = "550px"),
         card_footer(class = "text-muted small", "Bubble chart of Claude sessions by date, cost, and token volume"))
     )
   ),
@@ -255,9 +307,9 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Block Timeline"), plotlyOutput("block_timeline", height = "450px"),
+      card(card_header("Block Timeline"), plotlyOutput("block_timeline", height = "550px"),
         card_footer(class = "text-muted small", "Gantt-style block start/end times colored by cost")),
-      card(card_header("Hourly Activity Heatmap"), plotlyOutput("block_heatmap", height = "450px"),
+      card(card_header("Hourly Activity Heatmap"), plotlyOutput("block_heatmap", height = "550px"),
         card_footer(class = "text-muted small", "Cost heatmap by day of week and hour"))
     )
   ),
@@ -271,14 +323,14 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(12),
-      card(card_header("Lines Changed per Commit"), plotlyOutput("commit_hist", height = "500px"),
+      card(card_header("Lines Changed per Commit"), plotlyOutput("commit_hist", height = "600px"),
         card_footer(class = "text-muted small", "Distribution of total lines changed per commit"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Lines Changed Over Time"), plotlyOutput("commit_scatter_time", height = "450px"),
+      card(card_header("Lines Changed Over Time"), plotlyOutput("commit_scatter_time", height = "550px"),
         card_footer(class = "text-muted small", "Lines changed per commit over time, sized by files changed")),
-      card(card_header("Additions vs Deletions"), plotlyOutput("commit_scatter_add_del", height = "450px"),
+      card(card_header("Additions vs Deletions"), plotlyOutput("commit_scatter_add_del", height = "550px"),
         card_footer(class = "text-muted small", "Lines added vs deleted per commit"))
     )
   ),
@@ -298,10 +350,7 @@ ui <- page_navbar(
 server <- function(input, output, session) {
   cutoff <- reactive(date_max - input$horizon)
 
-  # Fullscreen toggle for plotly charts
-  observe({
-    session$sendCustomMessage("setupFullscreen", list())
-  })
+  # Fullscreen toggle — no-op, handled by injected JS below
 
   # Filtered datasets
   cc_d <- reactive({
