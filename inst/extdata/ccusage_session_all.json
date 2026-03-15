@@ -1,6 +1,39 @@
 {
   "sessions": [
     {
+      "sessionId": "-Users-johngavin-docs-gh-proj-data-weather-irish-buoy-network",
+      "inputTokens": 137821,
+      "outputTokens": 286392,
+      "cacheCreationTokens": 20518114,
+      "cacheReadTokens": 693742509,
+      "totalTokens": 714684836,
+      "totalCost": 482.9583719999995,
+      "lastActivity": "2026-03-15",
+      "modelsUsed": [
+        "claude-opus-4-5-20251101",
+        "claude-opus-4-6"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-6",
+          "inputTokens": 94641,
+          "outputTokens": 281599,
+          "cacheCreationTokens": 16915006,
+          "cacheReadTokens": 620155131,
+          "cost": 423.3095329999992
+        },
+        {
+          "modelName": "claude-opus-4-5-20251101",
+          "inputTokens": 43180,
+          "outputTokens": 4793,
+          "cacheCreationTokens": 3603108,
+          "cacheReadTokens": 73587378,
+          "cost": 59.64883900000008
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
       "sessionId": "-Users-johngavin-docs-gh-proj-data-coMMpass",
       "inputTokens": 91955,
       "outputTokens": 285956,
@@ -34,46 +67,13 @@
       "projectPath": "Unknown Project"
     },
     {
-      "sessionId": "-Users-johngavin-docs-gh-proj-data-weather-irish-buoy-network",
-      "inputTokens": 137748,
-      "outputTokens": 273250,
-      "cacheCreationTokens": 20154653,
-      "cacheReadTokens": 687995869,
-      "totalTokens": 708561520,
-      "totalCost": 477.4845057499996,
-      "lastActivity": "2026-03-14",
-      "modelsUsed": [
-        "claude-opus-4-5-20251101",
-        "claude-opus-4-6"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-opus-4-6",
-          "inputTokens": 94568,
-          "outputTokens": 268457,
-          "cacheCreationTokens": 16551545,
-          "cacheReadTokens": 614408491,
-          "cost": 417.8356667499993
-        },
-        {
-          "modelName": "claude-opus-4-5-20251101",
-          "inputTokens": 43180,
-          "outputTokens": 4793,
-          "cacheCreationTokens": 3603108,
-          "cacheReadTokens": 73587378,
-          "cost": 59.64883900000008
-        }
-      ],
-      "projectPath": "Unknown Project"
-    },
-    {
       "sessionId": "-Users-johngavin-docs-gh-proj-data-micromort",
-      "inputTokens": 103627,
-      "outputTokens": 146937,
-      "cacheCreationTokens": 10880484,
-      "cacheReadTokens": 408250849,
-      "totalTokens": 419381897,
-      "totalCost": 271.9357433000011,
+      "inputTokens": 104540,
+      "outputTokens": 152485,
+      "cacheCreationTokens": 11067969,
+      "cacheReadTokens": 416933234,
+      "totalTokens": 428258228,
+      "totalCost": 277.59198205000104,
       "lastActivity": "2026-03-14",
       "modelsUsed": [
         "claude-haiku-4-5-20251001",
@@ -84,11 +84,11 @@
       "modelBreakdowns": [
         {
           "modelName": "claude-opus-4-6",
-          "inputTokens": 47309,
-          "outputTokens": 143635,
-          "cacheCreationTokens": 6954067,
-          "cacheReadTokens": 320951185,
-          "cost": 207.76593125000005
+          "inputTokens": 48222,
+          "outputTokens": 149183,
+          "cacheCreationTokens": 7141552,
+          "cacheReadTokens": 329633570,
+          "cost": 213.42217000000005
         },
         {
           "modelName": "claude-opus-4-5-20251101",
@@ -482,12 +482,12 @@
     },
     {
       "sessionId": "subagents",
-      "inputTokens": 6315,
-      "outputTokens": 209,
-      "cacheCreationTokens": 359691,
-      "cacheReadTokens": 4704136,
-      "totalTokens": 5070351,
-      "totalCost": 1.1601611499999993,
+      "inputTokens": 7552,
+      "outputTokens": 250,
+      "cacheCreationTokens": 418666,
+      "cacheReadTokens": 5521080,
+      "totalTokens": 5947548,
+      "totalCost": 1.3170162999999993,
       "lastActivity": "2026-03-14",
       "modelsUsed": [
         "claude-haiku-4-5-20251001",
@@ -496,11 +496,11 @@
       "modelBreakdowns": [
         {
           "modelName": "claude-haiku-4-5-20251001",
-          "inputTokens": 6306,
-          "outputTokens": 199,
-          "cacheCreationTokens": 353096,
-          "cacheReadTokens": 4205229,
-          "cost": 0.8691939
+          "inputTokens": 7543,
+          "outputTokens": 240,
+          "cacheCreationTokens": 412071,
+          "cacheReadTokens": 5022173,
+          "cost": 1.0260490500000001
         },
         {
           "modelName": "claude-opus-4-6",
@@ -545,6 +545,48 @@
         }
       ],
       "projectPath": "-Users-johngavin-docs-gh-proj-data-weather-irish-buoy-network/4c4c0126-9348-43bc-a39e-10352c897bd7"
+    },
+    {
+      "sessionId": "subagents",
+      "inputTokens": 103,
+      "outputTokens": 621,
+      "cacheCreationTokens": 277066,
+      "cacheReadTokens": 2423766,
+      "totalTokens": 2701556,
+      "totalCost": 1.5406872999999999,
+      "lastActivity": "2026-03-14",
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-sonnet-4-6",
+          "inputTokens": 66,
+          "outputTokens": 607,
+          "cacheCreationTokens": 193492,
+          "cacheReadTokens": 1897476,
+          "cost": 1.3041408
+        },
+        {
+          "modelName": "claude-haiku-4-5-20251001",
+          "inputTokens": 34,
+          "outputTokens": 12,
+          "cacheCreationTokens": 80957,
+          "cacheReadTokens": 360775,
+          "cost": 0.13736775
+        },
+        {
+          "modelName": "claude-opus-4-6",
+          "inputTokens": 3,
+          "outputTokens": 2,
+          "cacheCreationTokens": 2617,
+          "cacheReadTokens": 165515,
+          "cost": 0.09917875
+        }
+      ],
+      "projectPath": "-Users-johngavin-docs-gh-proj-data-weather-irish-buoy-network/e84eda10-c88e-4dcb-ab83-bd4a51fb1692"
     },
     {
       "sessionId": "-Users-johngavin-docs-gh-proj-data-llm-telemetry",
@@ -4988,11 +5030,11 @@
     }
   ],
   "totals": {
-    "inputTokens": 1392512,
-    "outputTokens": 1164194,
-    "cacheCreationTokens": 141005231,
-    "cacheReadTokens": 3154614111,
-    "totalCost": 2847.77545095,
-    "totalTokens": 3298176048
+    "inputTokens": 1394838,
+    "outputTokens": 1183546,
+    "cacheCreationTokens": 141892218,
+    "cacheReadTokens": 3172283846,
+    "totalCost": 2860.6030984,
+    "totalTokens": 3316754448
   }
 }
