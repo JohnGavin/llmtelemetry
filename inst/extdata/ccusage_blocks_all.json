@@ -4240,7 +4240,7 @@
       "startTime": "2026-03-15T21:00:00.000Z",
       "endTime": "2026-03-16T02:00:00.000Z",
       "actualEndTime": "2026-03-15T23:09:34.654Z",
-      "isActive": true,
+      "isActive": false,
       "isGap": false,
       "entries": 482,
       "tokenCounts": {
@@ -4257,16 +4257,8 @@
         "claude-sonnet-4-6",
         "claude-haiku-4-5-20251001"
       ],
-      "burnRate": {
-        "tokensPerMinute": 921280.4475853543,
-        "tokensPerMinuteForIndicator": 785.8328400279963,
-        "costPerHour": 39.943317235581794
-      },
-      "projection": {
-        "totalTokens": 174021370,
-        "totalCost": 125.75,
-        "remainingMinutes": 91
-      }
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
