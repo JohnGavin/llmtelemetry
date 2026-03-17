@@ -4330,7 +4330,7 @@
       "startTime": "2026-03-16T21:00:00.000Z",
       "endTime": "2026-03-17T02:00:00.000Z",
       "actualEndTime": "2026-03-16T21:18:27.616Z",
-      "isActive": true,
+      "isActive": false,
       "isGap": false,
       "entries": 77,
       "tokenCounts": {
@@ -4345,15 +4345,57 @@
         "claude-opus-4-6",
         "claude-haiku-4-5-20251001"
       ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "gap-2026-03-17T02:18:27.616Z",
+      "startTime": "2026-03-17T02:18:27.616Z",
+      "endTime": "2026-03-17T09:38:48.554Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-17T09:00:00.000Z",
+      "startTime": "2026-03-17T09:00:00.000Z",
+      "endTime": "2026-03-17T14:00:00.000Z",
+      "actualEndTime": "2026-03-17T13:55:17.462Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 620,
+      "tokenCounts": {
+        "inputTokens": 1172,
+        "outputTokens": 75675,
+        "cacheCreationInputTokens": 3012716,
+        "cacheReadInputTokens": 198436222
+      },
+      "totalTokens": 201525785,
+      "costUSD": 168.42944050000006,
+      "models": [
+        "claude-opus-4-6"
+      ],
       "burnRate": {
-        "tokensPerMinute": 1024054.8787348277,
-        "tokensPerMinuteForIndicator": 1387.8100261477323,
-        "costPerHour": 60.06710835782339
+        "tokensPerMinute": 785731.3267452115,
+        "tokensPerMinuteForIndicator": 299.61970011127494,
+        "costPerHour": 39.40149527178928
       },
       "projection": {
-        "totalTokens": 64094690,
-        "totalCost": 62.66,
-        "remainingMinutes": 55
+        "totalTokens": 205126163,
+        "totalCost": 171.44,
+        "remainingMinutes": 5
       }
     }
   ]
