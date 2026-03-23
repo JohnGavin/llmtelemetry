@@ -1599,7 +1599,7 @@
     {
       "id": "gap-2026-02-20T04:22:23.606Z",
       "startTime": "2026-02-20T04:22:23.606Z",
-      "endTime": "2026-02-20T11:53:17.652Z",
+      "endTime": "2026-02-20T11:55:37.302Z",
       "actualEndTime": null,
       "isActive": false,
       "isGap": true,
@@ -1620,22 +1620,22 @@
       "id": "2026-02-20T11:00:00.000Z",
       "startTime": "2026-02-20T11:00:00.000Z",
       "endTime": "2026-02-20T16:00:00.000Z",
-      "actualEndTime": "2026-02-20T13:58:28.308Z",
+      "actualEndTime": "2026-02-20T13:58:13.923Z",
       "isActive": false,
       "isGap": false,
-      "entries": 225,
+      "entries": 134,
       "tokenCounts": {
-        "inputTokens": 8555,
-        "outputTokens": 14244,
-        "cacheCreationInputTokens": 861900,
-        "cacheReadInputTokens": 16258550
+        "inputTokens": 4483,
+        "outputTokens": 6150,
+        "cacheCreationInputTokens": 489419,
+        "cacheReadInputTokens": 7333983
       },
-      "totalTokens": 17143249,
-      "costUSD": 11.715821900000003,
+      "totalTokens": 7834035,
+      "costUSD": 4.7028221499999985,
       "models": [
-        "claude-opus-4-6",
         "claude-sonnet-4-5-20250929",
-        "claude-haiku-4-5-20251001"
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-6"
       ],
       "burnRate": null,
       "projection": null
@@ -1647,18 +1647,18 @@
       "actualEndTime": "2026-02-20T20:15:23.248Z",
       "isActive": false,
       "isGap": false,
-      "entries": 457,
+      "entries": 443,
       "tokenCounts": {
-        "inputTokens": 4237,
-        "outputTokens": 32310,
-        "cacheCreationInputTokens": 1662228,
-        "cacheReadInputTokens": 40517692
+        "inputTokens": 1392,
+        "outputTokens": 32168,
+        "cacheCreationInputTokens": 1539727,
+        "cacheReadInputTokens": 39265440
       },
-      "totalTokens": 42216467,
-      "costUSD": 29.417644099999993,
+      "totalTokens": 40838727,
+      "costUSD": 28.00811185,
       "models": [
-        "claude-opus-4-6",
         "claude-sonnet-4-5-20250929",
+        "claude-opus-4-6",
         "claude-opus-4-5-20251101",
         "claude-haiku-4-5-20251001"
       ],
@@ -4297,34 +4297,48 @@
       "id": "2026-03-22T11:00:00.000Z",
       "startTime": "2026-03-22T11:00:00.000Z",
       "endTime": "2026-03-22T16:00:00.000Z",
-      "actualEndTime": "2026-03-22T14:44:48.000Z",
-      "isActive": true,
+      "actualEndTime": "2026-03-22T15:53:58.236Z",
+      "isActive": false,
       "isGap": false,
-      "entries": 210,
+      "entries": 237,
       "tokenCounts": {
-        "inputTokens": 13111,
-        "outputTokens": 41311,
-        "cacheCreationInputTokens": 4338458,
-        "cacheReadInputTokens": 63561344
+        "inputTokens": 13302,
+        "outputTokens": 41827,
+        "cacheCreationInputTokens": 4374758,
+        "cacheReadInputTokens": 65107264
       },
-      "totalTokens": 67954224,
-      "costUSD": 91.23034650000005,
+      "totalTokens": 69537151,
+      "costUSD": 92.24403650000002,
       "models": [
         "claude-opus-4-6",
         "claude-haiku-4-5-20251001",
         "<synthetic>",
         "claude-opus-4-5-20251101"
       ],
-      "burnRate": {
-        "tokensPerMinute": 331645.824926454,
-        "tokensPerMinuteForIndicator": 265.60275464476615,
-        "costPerHour": 26.71459851265648
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-22T16:00:00.000Z",
+      "startTime": "2026-03-22T16:00:00.000Z",
+      "endTime": "2026-03-22T21:00:00.000Z",
+      "actualEndTime": "2026-03-22T16:46:03.753Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 1,
+      "tokenCounts": {
+        "inputTokens": 7,
+        "outputTokens": 414,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 70048
       },
-      "projection": {
-        "totalTokens": 92890751,
-        "totalCost": 124.71,
-        "remainingMinutes": 75
-      }
+      "totalTokens": 70469,
+      "costUSD": 0.045409,
+      "models": [
+        "claude-opus-4-5-20251101"
+      ],
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
