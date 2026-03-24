@@ -1,6 +1,72 @@
 {
   "sessions": [
     {
+      "sessionId": "-Users-johngavin-docs-gh-llm",
+      "inputTokens": 51059,
+      "outputTokens": 78057,
+      "cacheCreationTokens": 5670062,
+      "cacheReadTokens": 119781345,
+      "totalTokens": 125580523,
+      "totalCost": 105.61707300000002,
+      "lastActivity": "2026-03-23",
+      "modelsUsed": [
+        "claude-opus-4-6",
+        "claude-opus-4-5-20251101"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-6",
+          "inputTokens": 50854,
+          "outputTokens": 78000,
+          "cacheCreationTokens": 5603960,
+          "cacheReadTokens": 118172206,
+          "cost": 104.39691600000003
+        },
+        {
+          "modelName": "claude-opus-4-5-20251101",
+          "inputTokens": 205,
+          "outputTokens": 57,
+          "cacheCreationTokens": 66102,
+          "cacheReadTokens": 1609139,
+          "cost": 1.220157
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "-Users-johngavin-docs-gh-proj-finance-data-crypto",
+      "inputTokens": 1958,
+      "outputTokens": 285443,
+      "cacheCreationTokens": 13478679,
+      "cacheReadTokens": 533944777,
+      "totalTokens": 547710857,
+      "totalCost": 554.5699547499997,
+      "lastActivity": "2026-03-23",
+      "modelsUsed": [
+        "claude-opus-4-6",
+        "claude-opus-4-5-20251101"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-6",
+          "inputTokens": 1709,
+          "outputTokens": 284500,
+          "cacheCreationTokens": 13396924,
+          "cacheReadTokens": 532074037,
+          "cost": 553.0987960000001
+        },
+        {
+          "modelName": "claude-opus-4-5-20251101",
+          "inputTokens": 249,
+          "outputTokens": 943,
+          "cacheCreationTokens": 81755,
+          "cacheReadTokens": 1870740,
+          "cost": 1.4711587500000003
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
       "sessionId": "-Users-johngavin-docs-gh-proj-data-weather-irish-buoy-network",
       "inputTokens": 87084,
       "outputTokens": 296772,
@@ -104,72 +170,6 @@
           "cacheCreationTokens": 8911599,
           "cacheReadTokens": 207806158,
           "cost": 160.0162577500003
-        }
-      ],
-      "projectPath": "Unknown Project"
-    },
-    {
-      "sessionId": "-Users-johngavin-docs-gh-llm",
-      "inputTokens": 51022,
-      "outputTokens": 69644,
-      "cacheCreationTokens": 4673597,
-      "cacheReadTokens": 110461950,
-      "totalTokens": 115256213,
-      "totalCost": 90.31966050000004,
-      "lastActivity": "2026-03-22",
-      "modelsUsed": [
-        "claude-opus-4-6",
-        "claude-opus-4-5-20251101"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-opus-4-6",
-          "inputTokens": 50817,
-          "outputTokens": 69587,
-          "cacheCreationTokens": 4607495,
-          "cacheReadTokens": 108852811,
-          "cost": 89.09950350000005
-        },
-        {
-          "modelName": "claude-opus-4-5-20251101",
-          "inputTokens": 205,
-          "outputTokens": 57,
-          "cacheCreationTokens": 66102,
-          "cacheReadTokens": 1609139,
-          "cost": 1.220157
-        }
-      ],
-      "projectPath": "Unknown Project"
-    },
-    {
-      "sessionId": "-Users-johngavin-docs-gh-proj-finance-data-crypto",
-      "inputTokens": 1950,
-      "outputTokens": 284954,
-      "cacheCreationTokens": 13417633,
-      "cacheReadTokens": 533643300,
-      "totalTokens": 547347837,
-      "totalCost": 554.0254137499996,
-      "lastActivity": "2026-03-22",
-      "modelsUsed": [
-        "claude-opus-4-6",
-        "claude-opus-4-5-20251101"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-opus-4-6",
-          "inputTokens": 1701,
-          "outputTokens": 284011,
-          "cacheCreationTokens": 13335878,
-          "cacheReadTokens": 531772560,
-          "cost": 552.554255
-        },
-        {
-          "modelName": "claude-opus-4-5-20251101",
-          "inputTokens": 249,
-          "outputTokens": 943,
-          "cacheCreationTokens": 81755,
-          "cacheReadTokens": 1870740,
-          "cost": 1.4711587500000003
         }
       ],
       "projectPath": "Unknown Project"
@@ -5294,11 +5294,11 @@
     }
   ],
   "totals": {
-    "inputTokens": 1324682,
-    "outputTokens": 1864605,
-    "cacheCreationTokens": 157174420,
-    "cacheReadTokens": 4430321233,
-    "totalCost": 3594.5393138,
-    "totalTokens": 4590684940
+    "inputTokens": 1324727,
+    "outputTokens": 1873507,
+    "cacheCreationTokens": 158231931,
+    "cacheReadTokens": 4439942105,
+    "totalCost": 3610.3812673,
+    "totalTokens": 4601372270
   }
 }
