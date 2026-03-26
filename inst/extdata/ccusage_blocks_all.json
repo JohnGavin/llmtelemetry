@@ -4536,6 +4536,120 @@
       ],
       "burnRate": null,
       "projection": null
+    },
+    {
+      "id": "gap-2026-03-25T14:02:20.189Z",
+      "startTime": "2026-03-25T14:02:20.189Z",
+      "endTime": "2026-03-25T17:21:41.144Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-25T17:00:00.000Z",
+      "startTime": "2026-03-25T17:00:00.000Z",
+      "endTime": "2026-03-25T22:00:00.000Z",
+      "actualEndTime": "2026-03-25T20:04:52.158Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 140,
+      "tokenCounts": {
+        "inputTokens": 168,
+        "outputTokens": 23475,
+        "cacheCreationInputTokens": 2126865,
+        "cacheReadInputTokens": 52620890
+      },
+      "totalTokens": 54771398,
+      "costUSD": 61.907471250000015,
+      "models": [
+        "claude-opus-4-6"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-25T22:00:00.000Z",
+      "startTime": "2026-03-25T22:00:00.000Z",
+      "endTime": "2026-03-26T03:00:00.000Z",
+      "actualEndTime": "2026-03-26T00:07:08.324Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 49,
+      "tokenCounts": {
+        "inputTokens": 65,
+        "outputTokens": 11301,
+        "cacheCreationInputTokens": 1710900,
+        "cacheReadInputTokens": 25547006
+      },
+      "totalTokens": 27269272,
+      "costUSD": 38.673871749999996,
+      "models": [
+        "claude-opus-4-6"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "gap-2026-03-26T05:07:08.324Z",
+      "startTime": "2026-03-26T05:07:08.324Z",
+      "endTime": "2026-03-26T06:36:47.070Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-26T06:00:00.000Z",
+      "startTime": "2026-03-26T06:00:00.000Z",
+      "endTime": "2026-03-26T11:00:00.000Z",
+      "actualEndTime": "2026-03-26T09:03:18.781Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 93,
+      "tokenCounts": {
+        "inputTokens": 111,
+        "outputTokens": 14786,
+        "cacheCreationInputTokens": 1422641,
+        "cacheReadInputTokens": 48304917
+      },
+      "totalTokens": 49742455,
+      "costUSD": 55.467737,
+      "models": [
+        "claude-opus-4-6"
+      ],
+      "burnRate": {
+        "tokensPerMinute": 339472.862563385,
+        "tokensPerMinuteForIndicator": 101.66621719026024,
+        "costPerHour": 22.71274080779043
+      },
+      "projection": {
+        "totalTokens": 76566746,
+        "totalCost": 85.38,
+        "remainingMinutes": 79
+      }
     }
   ]
 }
