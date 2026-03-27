@@ -4626,7 +4626,7 @@
       "startTime": "2026-03-26T06:00:00.000Z",
       "endTime": "2026-03-26T11:00:00.000Z",
       "actualEndTime": "2026-03-26T09:03:18.781Z",
-      "isActive": true,
+      "isActive": false,
       "isGap": false,
       "entries": 93,
       "tokenCounts": {
@@ -4640,15 +4640,87 @@
       "models": [
         "claude-opus-4-6"
       ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-26T13:00:00.000Z",
+      "startTime": "2026-03-26T13:00:00.000Z",
+      "endTime": "2026-03-26T18:00:00.000Z",
+      "actualEndTime": "2026-03-26T17:59:52.443Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 98,
+      "tokenCounts": {
+        "inputTokens": 6551,
+        "outputTokens": 14635,
+        "cacheCreationInputTokens": 2773003,
+        "cacheReadInputTokens": 19416048
+      },
+      "totalTokens": 22210237,
+      "costUSD": 38.87193210000001,
+      "models": [
+        "claude-opus-4-5-20251101",
+        "claude-opus-4-6",
+        "claude-haiku-4-5-20251001"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-26T18:00:00.000Z",
+      "startTime": "2026-03-26T18:00:00.000Z",
+      "endTime": "2026-03-26T23:00:00.000Z",
+      "actualEndTime": "2026-03-26T22:29:39.421Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 139,
+      "tokenCounts": {
+        "inputTokens": 674,
+        "outputTokens": 10500,
+        "cacheCreationInputTokens": 1564641,
+        "cacheReadInputTokens": 40373768
+      },
+      "totalTokens": 41949583,
+      "costUSD": 45.332924249999984,
+      "models": [
+        "claude-opus-4-6",
+        "claude-opus-4-5-20251101"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-03-26T23:00:00.000Z",
+      "startTime": "2026-03-26T23:00:00.000Z",
+      "endTime": "2026-03-27T04:00:00.000Z",
+      "actualEndTime": "2026-03-27T00:56:26.540Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 121,
+      "tokenCounts": {
+        "inputTokens": 706,
+        "outputTokens": 9844,
+        "cacheCreationInputTokens": 2028881,
+        "cacheReadInputTokens": 24912323
+      },
+      "totalTokens": 26951754,
+      "costUSD": 35.555205949999994,
+      "models": [
+        "<synthetic>",
+        "claude-opus-4-5-20251101",
+        "claude-opus-4-6",
+        "claude-haiku-4-5-20251001"
+      ],
       "burnRate": {
-        "tokensPerMinute": 339472.862563385,
-        "tokensPerMinuteForIndicator": 101.66621719026024,
-        "costPerHour": 22.71274080779043
+        "tokensPerMinute": 390410.11398171156,
+        "tokensPerMinuteForIndicator": 152.8222134450714,
+        "costPerHour": 30.90213425274525
       },
       "projection": {
-        "totalTokens": 76566746,
-        "totalCost": 85.38,
-        "remainingMinutes": 79
+        "totalTokens": 89963510,
+        "totalCost": 118.68,
+        "remainingMinutes": 161
       }
     }
   ]
