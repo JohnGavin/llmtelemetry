@@ -2602,15 +2602,15 @@
       "actualEndTime": "2026-03-05T17:59:58.512Z",
       "isActive": false,
       "isGap": false,
-      "entries": 543,
+      "entries": 364,
       "tokenCounts": {
-        "inputTokens": 3477,
-        "outputTokens": 29369,
-        "cacheCreationInputTokens": 1482939,
-        "cacheReadInputTokens": 37319886
+        "inputTokens": 3279,
+        "outputTokens": 12542,
+        "cacheCreationInputTokens": 1183571,
+        "cacheReadInputTokens": 21583338
       },
-      "totalTokens": 38835671,
-      "costUSD": 22.97336075000001,
+      "totalTokens": 22782730,
+      "costUSD": 12.812371750000002,
       "models": [
         "claude-opus-4-6",
         "claude-sonnet-4-6",
@@ -2627,18 +2627,18 @@
       "actualEndTime": "2026-03-05T22:59:59.914Z",
       "isActive": false,
       "isGap": false,
-      "entries": 426,
+      "entries": 182,
       "tokenCounts": {
-        "inputTokens": 717,
-        "outputTokens": 23099,
-        "cacheCreationInputTokens": 1697942,
-        "cacheReadInputTokens": 40620941
+        "inputTokens": 419,
+        "outputTokens": 8165,
+        "cacheCreationInputTokens": 850337,
+        "cacheReadInputTokens": 14972447
       },
-      "totalTokens": 42342699,
-      "costUSD": 30.632018999999975,
+      "totalTokens": 15831368,
+      "costUSD": 12.135400750000008,
       "models": [
-        "claude-opus-4-6",
         "claude-sonnet-4-6",
+        "claude-opus-4-6",
         "claude-haiku-4-5-20251001",
         "claude-opus-4-5-20251101"
       ],
@@ -5407,34 +5407,70 @@
       "id": "2026-04-05T10:00:00.000Z",
       "startTime": "2026-04-05T10:00:00.000Z",
       "endTime": "2026-04-05T15:00:00.000Z",
-      "actualEndTime": "2026-04-05T10:59:37.843Z",
-      "isActive": true,
+      "actualEndTime": "2026-04-05T12:47:02.747Z",
+      "isActive": false,
       "isGap": false,
-      "entries": 96,
+      "entries": 262,
       "tokenCounts": {
-        "inputTokens": 3124,
-        "outputTokens": 14650,
-        "cacheCreationInputTokens": 1824436,
-        "cacheReadInputTokens": 11877335
+        "inputTokens": 3922,
+        "outputTokens": 44478,
+        "cacheCreationInputTokens": 2577468,
+        "cacheReadInputTokens": 35651444
       },
-      "totalTokens": 13719545,
-      "costUSD": 16.829162599999997,
+      "totalTokens": 38277312,
+      "costUSD": 33.395385899999994,
       "models": [
         "claude-opus-4-6",
         "claude-haiku-4-5-20251001",
         "claude-sonnet-4-6",
         "<synthetic>"
       ],
-      "burnRate": {
-        "tokensPerMinute": 324684.4063091522,
-        "tokensPerMinuteForIndicator": 420.6364451400445,
-        "costPerHour": 23.89656508635463
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "gap-2026-04-05T17:47:02.747Z",
+      "startTime": "2026-04-05T17:47:02.747Z",
+      "endTime": "2026-04-05T18:53:51.597Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
       },
-      "projection": {
-        "totalTokens": 91754390,
-        "totalCost": 112.55,
-        "remainingMinutes": 240
-      }
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-04-05T18:00:00.000Z",
+      "startTime": "2026-04-05T18:00:00.000Z",
+      "endTime": "2026-04-05T23:00:00.000Z",
+      "actualEndTime": "2026-04-05T21:09:26.910Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 386,
+      "tokenCounts": {
+        "inputTokens": 9913,
+        "outputTokens": 59768,
+        "cacheCreationInputTokens": 3355791,
+        "cacheReadInputTokens": 40662945
+      },
+      "totalTokens": 44088417,
+      "costUSD": 38.345248449999985,
+      "models": [
+        "claude-opus-4-6",
+        "claude-haiku-4-5-20251001",
+        "<synthetic>"
+      ],
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
