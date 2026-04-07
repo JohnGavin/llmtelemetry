@@ -5560,6 +5560,83 @@
       ],
       "burnRate": null,
       "projection": null
+    },
+    {
+      "id": "gap-2026-04-07T03:04:55.783Z",
+      "startTime": "2026-04-07T03:04:55.783Z",
+      "endTime": "2026-04-07T09:29:45.049Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-04-07T09:00:00.000Z",
+      "startTime": "2026-04-07T09:00:00.000Z",
+      "endTime": "2026-04-07T14:00:00.000Z",
+      "actualEndTime": "2026-04-07T12:52:28.937Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 453,
+      "tokenCounts": {
+        "inputTokens": 13035,
+        "outputTokens": 103059,
+        "cacheCreationInputTokens": 2685573,
+        "cacheReadInputTokens": 100765315
+      },
+      "totalTokens": 103566982,
+      "costUSD": 65.72337064999996,
+      "models": [
+        "claude-opus-4-6",
+        "claude-haiku-4-5-20251001",
+        "<synthetic>",
+        "claude-sonnet-4-6"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-04-07T15:00:00.000Z",
+      "startTime": "2026-04-07T15:00:00.000Z",
+      "endTime": "2026-04-07T20:00:00.000Z",
+      "actualEndTime": "2026-04-07T18:16:34.825Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 248,
+      "tokenCounts": {
+        "inputTokens": 9645,
+        "outputTokens": 64762,
+        "cacheCreationInputTokens": 2544046,
+        "cacheReadInputTokens": 63179739
+      },
+      "totalTokens": 65798192,
+      "costUSD": 48.09905399999999,
+      "models": [
+        "claude-opus-4-6",
+        "<synthetic>",
+        "claude-sonnet-4-6"
+      ],
+      "burnRate": {
+        "tokensPerMinute": 460118.529230567,
+        "tokensPerMinuteForIndicator": 520.3188471266626,
+        "costPerHour": 20.181040218121748
+      },
+      "projection": {
+        "totalTokens": 111075420,
+        "totalCost": 81.2,
+        "remainingMinutes": 98
+      }
     }
   ]
 }
