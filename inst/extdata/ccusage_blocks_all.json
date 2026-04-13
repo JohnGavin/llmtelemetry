@@ -5954,32 +5954,49 @@
       "id": "2026-04-12T12:00:00.000Z",
       "startTime": "2026-04-12T12:00:00.000Z",
       "endTime": "2026-04-12T17:00:00.000Z",
-      "actualEndTime": "2026-04-12T15:03:16.653Z",
-      "isActive": true,
+      "actualEndTime": "2026-04-12T16:37:45.710Z",
+      "isActive": false,
       "isGap": false,
-      "entries": 311,
+      "entries": 558,
       "tokenCounts": {
-        "inputTokens": 1641,
-        "outputTokens": 32200,
-        "cacheCreationInputTokens": 1374426,
-        "cacheReadInputTokens": 159232888
+        "inputTokens": 2018,
+        "outputTokens": 63500,
+        "cacheCreationInputTokens": 2819791,
+        "cacheReadInputTokens": 263767661
       },
-      "totalTokens": 160641155,
-      "costUSD": 88.33011070000003,
+      "totalTokens": 266652970,
+      "costUSD": 149.17494124999996,
       "models": [
         "claude-opus-4-6",
+        "claude-haiku-4-5-20251001",
+        "<synthetic>"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-04-12T18:00:00.000Z",
+      "startTime": "2026-04-12T18:00:00.000Z",
+      "endTime": "2026-04-12T23:00:00.000Z",
+      "actualEndTime": "2026-04-12T21:13:35.290Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 493,
+      "tokenCounts": {
+        "inputTokens": 681,
+        "outputTokens": 74479,
+        "cacheCreationInputTokens": 2835291,
+        "cacheReadInputTokens": 211459509
+      },
+      "totalTokens": 214369960,
+      "costUSD": 124.19455124999999,
+      "models": [
+        "claude-opus-4-6",
+        "<synthetic>",
         "claude-haiku-4-5-20251001"
       ],
-      "burnRate": {
-        "tokensPerMinute": 997172.6390309419,
-        "tokensPerMinuteForIndicator": 210.06646321390122,
-        "costPerHour": 32.89830788104615
-      },
-      "projection": {
-        "totalTokens": 270204053,
-        "totalCost": 148.57,
-        "remainingMinutes": 110
-      }
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
