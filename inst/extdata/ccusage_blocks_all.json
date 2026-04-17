@@ -6303,7 +6303,7 @@
       "startTime": "2026-04-16T09:00:00.000Z",
       "endTime": "2026-04-16T14:00:00.000Z",
       "actualEndTime": "2026-04-16T09:00:39.315Z",
-      "isActive": true,
+      "isActive": false,
       "isGap": false,
       "entries": 3,
       "tokenCounts": {
@@ -6317,16 +6317,8 @@
       "models": [
         "<synthetic>"
       ],
-      "burnRate": {
-        "tokensPerMinute": 0,
-        "tokensPerMinuteForIndicator": 0,
-        "costPerHour": 0
-      },
-      "projection": {
-        "totalTokens": 0,
-        "totalCost": 0,
-        "remainingMinutes": 3
-      }
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
