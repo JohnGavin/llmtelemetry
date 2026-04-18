@@ -1184,6 +1184,37 @@
             "cost": 5.549675499999998
           }
         ]
+      },
+      {
+        "date": "2026-04-18",
+        "inputTokens": 193,
+        "outputTokens": 12171,
+        "cacheCreationTokens": 1021772,
+        "cacheReadTokens": 26530833,
+        "totalTokens": 27564969,
+        "totalCost": 19.4409435,
+        "modelsUsed": [
+          "claude-opus-4-6",
+          "claude-haiku-4-5-20251001"
+        ],
+        "modelBreakdowns": [
+          {
+            "modelName": "claude-opus-4-6",
+            "inputTokens": 176,
+            "outputTokens": 11840,
+            "cacheCreationTokens": 919952,
+            "cacheReadTokens": 26530833,
+            "cost": 19.311996499999996
+          },
+          {
+            "modelName": "claude-haiku-4-5-20251001",
+            "inputTokens": 17,
+            "outputTokens": 331,
+            "cacheCreationTokens": 101820,
+            "cacheReadTokens": 0,
+            "cost": 0.128947
+          }
+        ]
       }
     ],
     "-Users-johngavin-docs-gh-proj-data-weather-irish-buoy-network": [
@@ -2887,6 +2918,37 @@
             "cacheCreationTokens": 416567,
             "cacheReadTokens": 2870592,
             "cost": 0.8453439499999998
+          }
+        ]
+      },
+      {
+        "date": "2026-04-18",
+        "inputTokens": 562,
+        "outputTokens": 21816,
+        "cacheCreationTokens": 680711,
+        "cacheReadTokens": 49750003,
+        "totalTokens": 50453092,
+        "totalCost": 28.80403105000002,
+        "modelsUsed": [
+          "claude-opus-4-6",
+          "claude-haiku-4-5-20251001"
+        ],
+        "modelBreakdowns": [
+          {
+            "modelName": "claude-opus-4-6",
+            "inputTokens": 225,
+            "outputTokens": 20653,
+            "cacheCreationTokens": 560590,
+            "cacheReadTokens": 49128975,
+            "cost": 28.585625000000018
+          },
+          {
+            "modelName": "claude-haiku-4-5-20251001",
+            "inputTokens": 337,
+            "outputTokens": 1163,
+            "cacheCreationTokens": 120121,
+            "cacheReadTokens": 621028,
+            "cost": 0.21840605000000002
           }
         ]
       }
@@ -7095,6 +7157,46 @@
             "cost": 0.21606410000000004
           }
         ]
+      },
+      {
+        "date": "2026-04-18",
+        "inputTokens": 452,
+        "outputTokens": 25105,
+        "cacheCreationTokens": 1343795,
+        "cacheReadTokens": 61878141,
+        "totalTokens": 63247493,
+        "totalCost": 37.69528034999999,
+        "modelsUsed": [
+          "claude-opus-4-6",
+          "claude-haiku-4-5-20251001",
+          "claude-sonnet-4-6"
+        ],
+        "modelBreakdowns": [
+          {
+            "modelName": "claude-opus-4-6",
+            "inputTokens": 280,
+            "outputTokens": 20049,
+            "cacheCreationTokens": 1050281,
+            "cacheReadTokens": 59154897,
+            "cost": 36.64432975
+          },
+          {
+            "modelName": "claude-sonnet-4-6",
+            "inputTokens": 19,
+            "outputTokens": 2920,
+            "cacheCreationTokens": 71839,
+            "cacheReadTokens": 887231,
+            "cost": 0.57942255
+          },
+          {
+            "modelName": "claude-haiku-4-5-20251001",
+            "inputTokens": 153,
+            "outputTokens": 2136,
+            "cacheCreationTokens": 221675,
+            "cacheReadTokens": 1836013,
+            "cost": 0.4715280499999999
+          }
+        ]
       }
     ],
     "-Users-johngavin-docs-gh-proj-finance-data-crypto": [
@@ -10595,6 +10697,28 @@
             "cost": 0.12787890000000002
           }
         ]
+      },
+      {
+        "date": "2026-04-18",
+        "inputTokens": 99,
+        "outputTokens": 11240,
+        "cacheCreationTokens": 377565,
+        "cacheReadTokens": 16109305,
+        "totalTokens": 16498209,
+        "totalCost": 10.695928750000002,
+        "modelsUsed": [
+          "claude-opus-4-6"
+        ],
+        "modelBreakdowns": [
+          {
+            "modelName": "claude-opus-4-6",
+            "inputTokens": 99,
+            "outputTokens": 11240,
+            "cacheCreationTokens": 377565,
+            "cacheReadTokens": 16109305,
+            "cost": 10.695928750000002
+          }
+        ]
       }
     ],
     "-Users-johngavin-docs-gh-proj-finance-data-historical": [
@@ -10781,6 +10905,28 @@
             "cacheCreationTokens": 1678193,
             "cacheReadTokens": 6345886,
             "cost": 13.804664249999998
+          }
+        ]
+      },
+      {
+        "date": "2026-04-18",
+        "inputTokens": 77,
+        "outputTokens": 5270,
+        "cacheCreationTokens": 2501105,
+        "cacheReadTokens": 36113629,
+        "totalTokens": 38620081,
+        "totalCost": 33.82085575,
+        "modelsUsed": [
+          "claude-opus-4-6"
+        ],
+        "modelBreakdowns": [
+          {
+            "modelName": "claude-opus-4-6",
+            "inputTokens": 77,
+            "outputTokens": 5270,
+            "cacheCreationTokens": 2501105,
+            "cacheReadTokens": 36113629,
+            "cost": 33.82085575
           }
         ]
       }
@@ -11046,11 +11192,11 @@
     ]
   },
   "totals": {
-    "inputTokens": 1078076,
-    "outputTokens": 3210251,
-    "cacheCreationTokens": 243033616,
-    "cacheReadTokens": 6105932339,
-    "totalCost": 4344.7910827,
-    "totalTokens": 6353254282
+    "inputTokens": 1079459,
+    "outputTokens": 3285853,
+    "cacheCreationTokens": 248958564,
+    "cacheReadTokens": 6296314250,
+    "totalCost": 4475.2481221,
+    "totalTokens": 6549638126
   }
 }
