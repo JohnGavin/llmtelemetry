@@ -35,90 +35,105 @@ shorten_project <- function(x) {
 
 # --- 1. Daily usage from cmonitor-rs ------------------------------------------
 cat("Exporting ccusage daily (via cmonitor-rs)...\n")
-if (!file.exists(cmonitor_bin)) {
-  stop("cmonitor-rs binary not found at: ", cmonitor_bin)
+has_cmonitor <- file.exists(cmonitor_bin)
+if (!has_cmonitor) {
+  cat("  -> cmonitor-rs not found, falling back to ccusage JSON files\n")
 }
 
-cmon_json_raw <- system2(
-  cmonitor_bin,
-  args   = c("--plan", "max20", "--view", "daily", "--output", "json", "--since", "90d"),
-  stdout = TRUE,
-  stderr = FALSE
-)
-cmon_data <- fromJSON(paste(cmon_json_raw, collapse = "\n"), simplifyDataFrame = FALSE)
-
-blocks_all <- cmon_data$blocks
-
-# Aggregate blocks by date for the daily view.
-# Each block's date comes from its start_time day-of-year.
-daily_rows <- lapply(blocks_all, function(b) {
-  if (isTRUE(b$is_gap)) return(NULL)
-  st <- b$start_time
-  origin <- as.Date(paste0(st[1], "-01-01"))
-  date_str <- as.character(origin + (st[2] - 1L))
-  tok <- b$tokens
-  tibble(
-    date          = date_str,
-    inputTokens   = tok$input_tokens,
-    outputTokens  = tok$output_tokens,
-    cacheCreation = tok$cache_creation_tokens,
-    cacheRead     = tok$cache_read_tokens,
-    totalTokens   = tok$input_tokens + tok$output_tokens +
-                    tok$cache_creation_tokens + tok$cache_read_tokens,
-    totalCost     = round(b$cost_usd, 4),
-    modelsUsed    = paste(b$models, collapse = ", ")
+if (has_cmonitor) {
+  cmon_json_raw <- system2(
+    cmonitor_bin,
+    args   = c("--plan", "max20", "--view", "daily", "--output", "json", "--since", "90d"),
+    stdout = TRUE,
+    stderr = FALSE
   )
-}) |> bind_rows()
+  cmon_data <- fromJSON(paste(cmon_json_raw, collapse = "\n"), simplifyDataFrame = FALSE)
+  blocks_all <- cmon_data$blocks
 
-# Sum across multiple blocks in the same day
-daily_rows <- daily_rows |>
-  group_by(date) |>
-  summarise(
-    inputTokens   = sum(inputTokens),
-    outputTokens  = sum(outputTokens),
-    cacheCreation = sum(cacheCreation),
-    cacheRead     = sum(cacheRead),
-    totalTokens   = sum(totalTokens),
-    totalCost     = round(sum(totalCost), 4),
-    modelsUsed    = paste(unique(unlist(strsplit(modelsUsed, ", "))), collapse = ", "),
-    .groups = "drop"
-  ) |>
-  mutate(project = "all") |>
-  arrange(date)
+  # Aggregate blocks by date for the daily view
+  daily_rows <- lapply(blocks_all, function(b) {
+    if (isTRUE(b$is_gap)) return(NULL)
+    st <- b$start_time
+    origin <- as.Date(paste0(st[1], "-01-01"))
+    date_str <- as.character(origin + (st[2] - 1L))
+    tok <- b$tokens
+    tibble(
+      date          = date_str,
+      inputTokens   = tok$input_tokens,
+      outputTokens  = tok$output_tokens,
+      cacheCreation = tok$cache_creation_tokens,
+      cacheRead     = tok$cache_read_tokens,
+      totalTokens   = tok$input_tokens + tok$output_tokens +
+                      tok$cache_creation_tokens + tok$cache_read_tokens,
+      totalCost     = round(b$cost_usd, 4),
+      modelsUsed    = paste(b$models, collapse = ", ")
+    )
+  }) |> bind_rows()
 
-write_json(daily_rows, file.path(out_dir, "ccusage_daily.json"), auto_unbox = TRUE)
-cat(sprintf("  -> %d daily rows\n", nrow(daily_rows)))
+  daily_rows <- daily_rows |>
+    group_by(date) |>
+    summarise(
+      inputTokens   = sum(inputTokens),
+      outputTokens  = sum(outputTokens),
+      cacheCreation = sum(cacheCreation),
+      cacheRead     = sum(cacheRead),
+      totalTokens   = sum(totalTokens),
+      totalCost     = round(sum(totalCost), 4),
+      modelsUsed    = paste(unique(unlist(strsplit(modelsUsed, ", "))), collapse = ", "),
+      .groups = "drop"
+    ) |>
+    mutate(project = "all") |>
+    arrange(date)
 
-# --- 2. Sessions (not available from cmonitor-rs) -----------------------------
-# TODO: cmonitor-rs does not provide session-level data.
-# Write empty array so the dashboard session tab degrades gracefully.
-cat("Exporting ccusage sessions (empty — cmonitor-rs has no session view)...\n")
-write_json(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
-cat("  -> 0 sessions (placeholder)\n")
+  write_json(daily_rows, file.path(out_dir, "ccusage_daily.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d daily rows\n", nrow(daily_rows)))
 
-# --- 3. Blocks from cmonitor-rs -----------------------------------------------
-cat("Exporting ccusage blocks (via cmonitor-rs)...\n")
-blk_rows <- lapply(blocks_all, function(b) {
-  if (isTRUE(b$is_gap)) return(NULL)
-  tok <- b$tokens
-  tibble(
-    startTime     = parse_cmonitor_time(b$start_time),
-    endTime       = parse_cmonitor_time(b$end_time),
-    actualEndTime = parse_cmonitor_time(b$actual_end_time),
-    entries       = b$message_count,
-    inputTokens   = tok$input_tokens,
-    outputTokens  = tok$output_tokens,
-    cacheCreation = tok$cache_creation_tokens,
-    cacheRead     = tok$cache_read_tokens,
-    totalTokens   = tok$input_tokens + tok$output_tokens +
-                    tok$cache_creation_tokens + tok$cache_read_tokens,
-    costUSD       = round(b$cost_usd, 4),
-    models        = paste(b$models, collapse = ", ")
-  )
-}) |> bind_rows() |> arrange(startTime)
+  # --- 2. Sessions (not available from cmonitor-rs) ---------------------------
+  cat("Exporting ccusage sessions (empty — cmonitor-rs has no session view)...\n")
+  write_json(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
+  cat("  -> 0 sessions (placeholder)\n")
 
-write_json(blk_rows, file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
-cat(sprintf("  -> %d active blocks\n", nrow(blk_rows)))
+  # --- 3. Blocks from cmonitor-rs ---------------------------------------------
+  cat("Exporting ccusage blocks (via cmonitor-rs)...\n")
+  blk_rows <- lapply(blocks_all, function(b) {
+    if (isTRUE(b$is_gap)) return(NULL)
+    tok <- b$tokens
+    tibble(
+      startTime     = parse_cmonitor_time(b$start_time),
+      endTime       = parse_cmonitor_time(b$end_time),
+      actualEndTime = parse_cmonitor_time(b$actual_end_time),
+      entries       = b$message_count,
+      inputTokens   = tok$input_tokens,
+      outputTokens  = tok$output_tokens,
+      cacheCreation = tok$cache_creation_tokens,
+      cacheRead     = tok$cache_read_tokens,
+      totalTokens   = tok$input_tokens + tok$output_tokens +
+                      tok$cache_creation_tokens + tok$cache_read_tokens,
+      costUSD       = round(b$cost_usd, 4),
+      models        = paste(b$models, collapse = ", ")
+    )
+  }) |> bind_rows() |> arrange(startTime)
+
+  write_json(blk_rows, file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d active blocks\n", nrow(blk_rows)))
+
+} else {
+  # CI fallback: read existing ccusage JSON files from inst/extdata/
+  blocks_all <- list()
+  for (f in c("ccusage_daily_all.json", "ccusage_session_all.json", "ccusage_blocks_all.json")) {
+    src <- file.path(extdata, f)
+    dst <- file.path(out_dir, sub("_all", "", f))
+    if (file.exists(src)) {
+      file.copy(src, dst, overwrite = TRUE)
+      cat(sprintf("  -> copied %s\n", f))
+    } else if (!file.exists(dst)) {
+      write_json(list(), dst, auto_unbox = TRUE)
+      cat(sprintf("  -> %s not found, wrote empty\n", f))
+    } else {
+      cat(sprintf("  -> using existing %s\n", basename(dst)))
+    }
+  }
+}
 
 # --- 4. Export Gemini from DuckDB (unchanged) ----------------------------------
 cat("Exporting Gemini data...\n")
@@ -149,8 +164,8 @@ if (file.exists(gemini_db)) {
 }
 
 # --- 5. Compute cmonitor summary from cmonitor-rs blocks ----------------------
-cat("Exporting cmonitor summary (via cmonitor-rs)...\n")
-active_blocks <- Filter(function(b) !isTRUE(b$is_gap), blocks_all)
+cat("Exporting cmonitor summary...\n")
+active_blocks <- if (has_cmonitor) Filter(function(b) !isTRUE(b$is_gap), blocks_all) else list()
 if (length(active_blocks) > 0) {
   total_cost   <- sum(vapply(active_blocks, function(b) b$cost_usd, numeric(1)))
   total_tokens <- sum(vapply(active_blocks, function(b) {
