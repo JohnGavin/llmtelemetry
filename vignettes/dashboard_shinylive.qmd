@@ -62,9 +62,16 @@ if (!is.null(cc_sessions) && nrow(cc_sessions) > 0) {
   cc_sessions$lastActivity <- as.Date(cc_sessions$lastActivity)
 }
 if (!is.null(cc_blocks) && nrow(cc_blocks) > 0) {
-  cc_blocks$startTime <- as.POSIXct(cc_blocks$startTime, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
-  cc_blocks$endTime   <- as.POSIXct(cc_blocks$endTime, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
-  cc_blocks$actualEndTime <- as.POSIXct(cc_blocks$actualEndTime, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
+  # Support both ISO 8601 (ccusage: 2026-04-21T12:00:00) and space-separated (cmonitor-rs: 2026-04-21 12:00:00)
+  parse_ts <- function(x) {
+    t <- as.POSIXct(x, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
+    na_idx <- is.na(t) & !is.na(x)
+    if (any(na_idx)) t[na_idx] <- as.POSIXct(x[na_idx], format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+    t
+  }
+  cc_blocks$startTime <- parse_ts(cc_blocks$startTime)
+  cc_blocks$endTime   <- parse_ts(cc_blocks$endTime)
+  cc_blocks$actualEndTime <- parse_ts(cc_blocks$actualEndTime)
   cc_blocks$date <- as.Date(cc_blocks$startTime)
   cc_blocks$hour <- hour(cc_blocks$startTime)
   cc_blocks$wday <- wday(cc_blocks$startTime, label = TRUE)
@@ -691,19 +698,29 @@ server <- function(input, output, session) {
     if (nrow(d) == 0) return(datatable(tibble()))
     d |>
       mutate(
-        Start = format(startTime, "%Y-%m-%d %H:%M"),
-        End = format(coalesce(actualEndTime, endTime), "%Y-%m-%d %H:%M"),
+        Day = format(date, "%a %Y-%m-%d"),
+        Start = format(startTime, "%H:%M"),
+        End = format(coalesce(actualEndTime, endTime), "%H:%M"),
         Duration = sprintf("%.1fh", duration_hrs),
         Cost = sprintf("$%.2f", costUSD),
         `$/hr` = sprintf("$%.2f", cost_per_hr),
         Tokens = format(totalTokens, big.mark = ","),
         `Tok/hr` = format(tok_per_hr, big.mark = ",")
       ) |>
-      select(Start, End, Duration, Cost, `$/hr`, Tokens, `Tok/hr`, Models = models) |>
-      datatable(options = list(pageLength = 15, dom = "frtip", scrollX = TRUE,
-        columnDefs = list(list(targets = 7, render = DT::JS(
-          "function(data, type, row) { return '<span style=\"white-space:nowrap\">' + data + '</span>'; }"
-        )))),
+      select(Day, Start, End, Duration, Cost, `$/hr`, Tokens, `Tok/hr`, Models = models) |>
+      datatable(
+        extensions = "RowGroup",
+        options = list(
+          pageLength = 25, dom = "frtip", scrollX = TRUE,
+          rowGroup = list(dataSrc = 0),
+          columnDefs = list(
+            list(visible = FALSE, targets = 0),
+            list(targets = 8, render = DT::JS(
+              "function(data, type, row) { return '<span style=\"white-space:nowrap\">' + data + '</span>'; }"
+            ))
+          ),
+          order = list(list(0, "desc"))
+        ),
         rownames = FALSE)
   })
 

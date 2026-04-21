@@ -1,6 +1,7 @@
 #!/usr/bin/env Rscript
 # Export dashboard data: flatten/trim raw data to browser-friendly JSON
 # Run: Rscript inst/scripts/export_dashboard_data.R
+# Data source: cmonitor-rs CLI for Claude usage, DuckDB for Gemini
 
 library(jsonlite)
 library(dplyr, warn.conflicts = FALSE)
@@ -12,7 +13,18 @@ extdata  <- file.path(pkg_root, "inst", "extdata")
 out_dir  <- file.path(pkg_root, "vignettes", "data")
 if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
-# Helper: shorten project path to last meaningful component
+cmonitor_bin <- "/Users/johngavin/.cargo/bin/cmonitor-rs"
+
+# Helper: convert cmonitor-rs time array to "YYYY-MM-DD HH:MM:SS" string
+# t = c(year, day_of_year, hour, min, sec, nanosec, ...)
+parse_cmonitor_time <- function(t) {
+  if (is.null(t) || length(t) < 5) return(NA_character_)
+  origin <- as.Date(paste0(t[1], "-01-01"))
+  d <- origin + (t[2] - 1L)
+  sprintf("%s %02d:%02d:%02d", d, t[3], t[4], t[5])
+}
+
+# Helper: shorten project path to last meaningful component (kept for legacy use)
 shorten_project <- function(x) {
   x |>
     gsub("^-Users-johngavin-docs[-_]gh-", "", x = _) |>
@@ -21,71 +33,94 @@ shorten_project <- function(x) {
     gsub("-", "/", x = _)
 }
 
-# --- 1. Flatten ccusage daily -------------------------------------------------
-cat("Exporting ccusage daily...\n")
-raw <- fromJSON(file.path(extdata, "ccusage_daily_all.json"), simplifyDataFrame = FALSE)
-daily_rows <- lapply(names(raw$projects), function(proj) {
-  entries <- raw$projects[[proj]]
-  lapply(entries, function(e) {
-    tibble(
-      project       = shorten_project(proj),
-      date          = e$date,
-      inputTokens   = e$inputTokens,
-      outputTokens  = e$outputTokens,
-      cacheCreation = e$cacheCreationTokens,
-      cacheRead     = e$cacheReadTokens,
-      totalTokens   = e$totalTokens,
-      totalCost     = round(e$totalCost, 4),
-      modelsUsed    = paste(e$modelsUsed, collapse = ", ")
-    )
-  }) |> bind_rows()
-}) |> bind_rows() |> arrange(date, project)
-write_json(daily_rows, file.path(out_dir, "ccusage_daily.json"), auto_unbox = TRUE)
-cat(sprintf("  -> %d rows\n", nrow(daily_rows)))
+# --- 1. Daily usage from cmonitor-rs ------------------------------------------
+cat("Exporting ccusage daily (via cmonitor-rs)...\n")
+if (!file.exists(cmonitor_bin)) {
+  stop("cmonitor-rs binary not found at: ", cmonitor_bin)
+}
 
-# --- 2. Trim ccusage sessions -------------------------------------------------
-cat("Exporting ccusage sessions...\n")
-raw_sess <- fromJSON(file.path(extdata, "ccusage_session_all.json"), simplifyDataFrame = FALSE)
-sess_rows <- lapply(raw_sess$sessions, function(s) {
+cmon_json_raw <- system2(
+  cmonitor_bin,
+  args   = c("--plan", "max20", "--view", "daily", "--output", "json", "--since", "90d"),
+  stdout = TRUE,
+  stderr = FALSE
+)
+cmon_data <- fromJSON(paste(cmon_json_raw, collapse = "\n"), simplifyDataFrame = FALSE)
+
+blocks_all <- cmon_data$blocks
+
+# Aggregate blocks by date for the daily view.
+# Each block's date comes from its start_time day-of-year.
+daily_rows <- lapply(blocks_all, function(b) {
+  if (isTRUE(b$is_gap)) return(NULL)
+  st <- b$start_time
+  origin <- as.Date(paste0(st[1], "-01-01"))
+  date_str <- as.character(origin + (st[2] - 1L))
+  tok <- b$tokens
   tibble(
-    sessionId     = shorten_project(s$sessionId),
-    inputTokens   = s$inputTokens,
-    outputTokens  = s$outputTokens,
-    cacheCreation = s$cacheCreationTokens,
-    cacheRead     = s$cacheReadTokens,
-    totalTokens   = s$totalTokens,
-    totalCost     = round(s$totalCost, 4),
-    lastActivity  = s$lastActivity,
-    modelsUsed    = paste(s$modelsUsed, collapse = ", ")
+    date          = date_str,
+    inputTokens   = tok$input_tokens,
+    outputTokens  = tok$output_tokens,
+    cacheCreation = tok$cache_creation_tokens,
+    cacheRead     = tok$cache_read_tokens,
+    totalTokens   = tok$input_tokens + tok$output_tokens +
+                    tok$cache_creation_tokens + tok$cache_read_tokens,
+    totalCost     = round(b$cost_usd, 4),
+    modelsUsed    = paste(b$models, collapse = ", ")
   )
-}) |> bind_rows() |> arrange(desc(totalCost))
-write_json(sess_rows, file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
-cat(sprintf("  -> %d sessions\n", nrow(sess_rows)))
+}) |> bind_rows()
 
-# --- 3. Filter ccusage blocks (active only) -----------------------------------
-cat("Exporting ccusage blocks...\n")
-raw_blk <- fromJSON(file.path(extdata, "ccusage_blocks_all.json"), simplifyDataFrame = FALSE)
-blk_rows <- lapply(raw_blk$blocks, function(b) {
-  if (isTRUE(b$isGap) || is.null(b$costUSD) || b$costUSD <= 0) return(NULL)
-  tc <- b$tokenCounts
+# Sum across multiple blocks in the same day
+daily_rows <- daily_rows |>
+  group_by(date) |>
+  summarise(
+    inputTokens   = sum(inputTokens),
+    outputTokens  = sum(outputTokens),
+    cacheCreation = sum(cacheCreation),
+    cacheRead     = sum(cacheRead),
+    totalTokens   = sum(totalTokens),
+    totalCost     = round(sum(totalCost), 4),
+    modelsUsed    = paste(unique(unlist(strsplit(modelsUsed, ", "))), collapse = ", "),
+    .groups = "drop"
+  ) |>
+  mutate(project = "all") |>
+  arrange(date)
+
+write_json(daily_rows, file.path(out_dir, "ccusage_daily.json"), auto_unbox = TRUE)
+cat(sprintf("  -> %d daily rows\n", nrow(daily_rows)))
+
+# --- 2. Sessions (not available from cmonitor-rs) -----------------------------
+# TODO: cmonitor-rs does not provide session-level data.
+# Write empty array so the dashboard session tab degrades gracefully.
+cat("Exporting ccusage sessions (empty — cmonitor-rs has no session view)...\n")
+write_json(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
+cat("  -> 0 sessions (placeholder)\n")
+
+# --- 3. Blocks from cmonitor-rs -----------------------------------------------
+cat("Exporting ccusage blocks (via cmonitor-rs)...\n")
+blk_rows <- lapply(blocks_all, function(b) {
+  if (isTRUE(b$is_gap)) return(NULL)
+  tok <- b$tokens
   tibble(
-    startTime     = b$startTime,
-    endTime       = b$endTime,
-    actualEndTime = b$actualEndTime %||% NA_character_,
-    entries       = b$entries,
-    inputTokens   = tc$inputTokens,
-    outputTokens  = tc$outputTokens,
-    cacheCreation = tc$cacheCreationInputTokens,
-    cacheRead     = tc$cacheReadInputTokens,
-    totalTokens   = b$totalTokens,
-    costUSD       = round(b$costUSD, 4),
-    models        = paste(setdiff(b$models, "<synthetic>"), collapse = ", ")
+    startTime     = parse_cmonitor_time(b$start_time),
+    endTime       = parse_cmonitor_time(b$end_time),
+    actualEndTime = parse_cmonitor_time(b$actual_end_time),
+    entries       = b$message_count,
+    inputTokens   = tok$input_tokens,
+    outputTokens  = tok$output_tokens,
+    cacheCreation = tok$cache_creation_tokens,
+    cacheRead     = tok$cache_read_tokens,
+    totalTokens   = tok$input_tokens + tok$output_tokens +
+                    tok$cache_creation_tokens + tok$cache_read_tokens,
+    costUSD       = round(b$cost_usd, 4),
+    models        = paste(b$models, collapse = ", ")
   )
 }) |> bind_rows() |> arrange(startTime)
+
 write_json(blk_rows, file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
 cat(sprintf("  -> %d active blocks\n", nrow(blk_rows)))
 
-# --- 4. Export Gemini from DuckDB ---------------------------------------------
+# --- 4. Export Gemini from DuckDB (unchanged) ----------------------------------
 cat("Exporting Gemini data...\n")
 gemini_db <- file.path(extdata, "gemini_usage.duckdb")
 if (file.exists(gemini_db)) {
@@ -113,37 +148,42 @@ if (file.exists(gemini_db)) {
   write_json(list(), file.path(out_dir, "gemini_sessions.json"))
 }
 
-# --- 5. Extract cmonitor summary ----------------------------------------------
-cat("Exporting cmonitor summary...\n")
-cmon_file <- file.path(extdata, "cmonitor_daily.txt")
-if (file.exists(cmon_file)) {
-  txt <- readLines(cmon_file, warn = FALSE)
-  clean <- gsub("\033\\[[0-9;]*m", "", txt)  # strip ANSI codes
+# --- 5. Compute cmonitor summary from cmonitor-rs blocks ----------------------
+cat("Exporting cmonitor summary (via cmonitor-rs)...\n")
+active_blocks <- Filter(function(b) !isTRUE(b$is_gap), blocks_all)
+if (length(active_blocks) > 0) {
+  total_cost   <- sum(vapply(active_blocks, function(b) b$cost_usd, numeric(1)))
+  total_tokens <- sum(vapply(active_blocks, function(b) {
+    tok <- b$tokens
+    tok$input_tokens + tok$output_tokens +
+      tok$cache_creation_tokens + tok$cache_read_tokens
+  }, numeric(1)))
+  entries      <- sum(vapply(active_blocks, function(b) b$message_count, numeric(1)))
 
-  extract_num <- function(pattern) {
-    m <- regmatches(clean, regexpr(pattern, clean, perl = TRUE))
-    if (length(m) == 0) return(NA_real_)
-    as.numeric(gsub("[^0-9.]", "", m[1]))
-  }
-
-  cmon_summary <- list(
-    date_range   = {
-      m <- regmatches(clean, regexpr("\\d{4}-\\d{2}-\\d{2} to \\d{4}-\\d{2}-\\d{2}", clean))
-      if (length(m) > 0) m[1] else NA_character_
-    },
-    total_tokens = extract_num("Total Tokens:\\s*[0-9,]+"),
-    total_cost   = extract_num("Total Cost:\\s*\\$[0-9,.]+"),
-    entries      = extract_num("Entries:\\s*[0-9,]+")
-  )
-  write_json(cmon_summary, file.path(out_dir, "cmonitor_summary.json"), auto_unbox = TRUE)
-  cat(sprintf("  -> cost=$%.2f, tokens=%s\n",
-    cmon_summary$total_cost, format(cmon_summary$total_tokens, big.mark = ",")))
+  # Date range from first and last start_time
+  dates <- vapply(active_blocks, function(b) {
+    st <- b$start_time
+    as.character(as.Date(paste0(st[1], "-01-01")) + (st[2] - 1L))
+  }, character(1))
+  date_range <- paste(min(dates), "to", max(dates))
 } else {
-  cat("  -> cmonitor_daily.txt not found, skipping\n")
-  write_json(list(), file.path(out_dir, "cmonitor_summary.json"))
+  total_cost   <- 0
+  total_tokens <- 0
+  entries      <- 0
+  date_range   <- NA_character_
 }
 
-# --- 6. Extract git commit stats -----------------------------------------------
+cmon_summary <- list(
+  date_range   = date_range,
+  total_tokens = total_tokens,
+  total_cost   = round(total_cost, 4),
+  entries      = entries
+)
+write_json(cmon_summary, file.path(out_dir, "cmonitor_summary.json"), auto_unbox = TRUE)
+cat(sprintf("  -> cost=$%.2f, tokens=%s\n",
+  cmon_summary$total_cost, format(cmon_summary$total_tokens, big.mark = ",")))
+
+# --- 6. Extract git commit stats (unchanged) -----------------------------------
 cat("Exporting git commit stats...\n")
 commits_raw <- system("git log '--format=%H|%ai|%s' --numstat", intern = TRUE)
 
@@ -204,12 +244,11 @@ api_index <- list(
   endpoints = list(
     list(
       path        = "/ccusage_daily.json",
-      description = "Daily Claude API usage aggregated by project",
+      description = "Daily Claude API usage aggregated by date (last 90 days)",
       type        = "array",
-      source      = "ccusage CLI (npx ccusage daily --json --instances)",
-      source_url  = "https://www.npmjs.com/package/ccusage",
+      source      = "cmonitor-rs CLI (--view daily --output json --since 90d)",
+      source_url  = "https://github.com/anthropics/cmonitor",
       schema      = list(
-        project       = "string",
         date          = "string",
         inputTokens   = "integer",
         outputTokens  = "integer",
@@ -222,28 +261,18 @@ api_index <- list(
     ),
     list(
       path        = "/ccusage_sessions.json",
-      description = "Claude API sessions with token and cost totals",
+      description = "Claude API sessions (empty — cmonitor-rs has no session view)",
       type        = "array",
-      source      = "ccusage CLI (npx ccusage session --json --instances)",
-      source_url  = "https://www.npmjs.com/package/ccusage",
-      schema      = list(
-        sessionId     = "string",
-        inputTokens   = "integer",
-        outputTokens  = "integer",
-        cacheCreation = "integer",
-        cacheRead     = "integer",
-        totalTokens   = "integer",
-        totalCost     = "number",
-        lastActivity  = "string",
-        modelsUsed    = "string"
-      )
+      source      = "cmonitor-rs CLI (no session data available)",
+      source_url  = "https://github.com/anthropics/cmonitor",
+      schema      = list()
     ),
     list(
       path        = "/ccusage_blocks.json",
       description = "Claude API usage grouped into contiguous time blocks",
       type        = "array",
-      source      = "ccusage CLI (npx ccusage blocks --json --instances)",
-      source_url  = "https://www.npmjs.com/package/ccusage",
+      source      = "cmonitor-rs CLI (--view daily --output json --since 90d)",
+      source_url  = "https://github.com/anthropics/cmonitor",
       schema      = list(
         startTime     = "string",
         endTime       = "string",
@@ -288,10 +317,10 @@ api_index <- list(
     ),
     list(
       path        = "/cmonitor_summary.json",
-      description = "Aggregated Anthropic cmonitor usage summary",
+      description = "Aggregated Claude usage summary computed from cmonitor-rs blocks",
       type        = "object",
-      source      = "Anthropic cmonitor CLI text output",
-      source_url  = "https://docs.anthropic.com/",
+      source      = "cmonitor-rs CLI (--view daily --output json --since 90d)",
+      source_url  = "https://github.com/anthropics/cmonitor",
       schema      = list(
         date_range   = "string",
         total_tokens = "integer",
