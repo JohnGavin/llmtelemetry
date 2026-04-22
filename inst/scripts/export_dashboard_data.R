@@ -117,6 +117,34 @@ if (has_cmonitor) {
   write_json(blk_rows, file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d active blocks\n", nrow(blk_rows)))
 
+  # --- 3b. Per-model daily breakdown from model_stats -------------------------
+  cat("Exporting per-model daily data...\n")
+  model_daily <- lapply(blocks_all, function(b) {
+    if (isTRUE(b$is_gap) || is.null(b$model_stats)) return(NULL)
+    st <- b$start_time
+    origin <- as.Date(paste0(st[1], "-01-01"))
+    date_str <- as.character(origin + (st[2] - 1L))
+    lapply(b$model_stats, function(ms) {
+      tibble(
+        date   = date_str,
+        model  = ms$model,
+        cost   = round(ms$cost_usd, 4),
+        tokens = ms$total_tokens %||% (ms$input_tokens + ms$output_tokens +
+          ms$cache_creation_tokens + ms$cache_read_tokens)
+      )
+    }) |> bind_rows()
+  }) |> bind_rows()
+  if (nrow(model_daily) > 0) {
+    model_daily <- model_daily |>
+      group_by(date, model) |>
+      summarise(cost = round(sum(cost), 4), tokens = sum(tokens), .groups = "drop") |>
+      arrange(date, desc(cost))
+  }
+  write_json(model_daily, file.path(out_dir, "model_daily.json"), auto_unbox = TRUE)
+  # Also save to inst/extdata for email script
+  write_json(model_daily, file.path(extdata, "model_daily.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d model-day rows\n", nrow(model_daily)))
+
 } else {
   # CI fallback: read existing ccusage JSON files from inst/extdata/
   blocks_all <- list()

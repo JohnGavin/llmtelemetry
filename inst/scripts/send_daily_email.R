@@ -336,25 +336,18 @@ if (!has_data) {
           sprintf("<!-- QA:blocks_total=%d -->", nrow(activity_df)))
 
         # --- Daily Model Breakdown table ---
-        # Expand blocks by model, compute per-model cost/tokens per day
-        model_rows <- list()
-        for (i in seq_len(nrow(activity_df))) {
-          models <- activity_df$models_list[[i]]
-          n_models <- length(models)
-          if (n_models == 0) next
-          # Split cost/tokens equally across models (best approximation without per-model data)
-          for (m in models) {
-            model_rows[[length(model_rows) + 1]] <- list(
-              date = activity_df$date[i], model = m,
-              cost = activity_df$costUSD[i] / n_models,
-              tokens = activity_df$totalTokens[i] / n_models)
-          }
+        # Read per-model daily data (exported by export_dashboard_data.R from cmonitor-rs model_stats)
+        model_daily_path <- file.path("inst", "extdata", "model_daily.json")
+        model_df <- NULL
+        if (file.exists(model_daily_path)) {
+          model_df <- tryCatch(
+            fromJSON(model_daily_path) |> as_tibble() |>
+              mutate(date = as.Date(date),
+                     cost_per_mtok = if_else(tokens > 0, cost / (tokens / 1e6), 0)) |>
+              filter(date %in% recent_days),
+            error = function(e) NULL)
         }
-        if (length(model_rows) > 0) {
-          model_df <- bind_rows(lapply(model_rows, as_tibble)) |>
-            group_by(date, model) |>
-            summarise(cost = sum(cost), tokens = sum(tokens), .groups = "drop") |>
-            mutate(cost_per_mtok = if_else(tokens > 0, cost / (tokens / 1e6), 0))
+        if (!is.null(model_df) && nrow(model_df) > 0) {
 
           daily_model_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Daily Cost by Model (Last 5 Days)</h3>
 <table style="border-collapse: collapse; width: 100%%;">
@@ -417,6 +410,69 @@ if (!has_data) {
     }
   }
 
+  # --- Build Top Projects by Cost ---
+  projects_html <- ""
+  if (!is.null(daily_data) && nrow(daily_data) > 0 && "project" %in% names(daily_data)) {
+    proj_totals <- daily_data |>
+      group_by(project) |>
+      summarise(cost = sum(totalCost, na.rm = TRUE),
+                tokens = sum(totalTokens, na.rm = TRUE), .groups = "drop") |>
+      arrange(desc(cost)) |>
+      head(10)
+    if (nrow(proj_totals) > 0) {
+      projects_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Top Projects by Cost</h3>
+<table style="border-collapse: collapse; width: 100%%;">
+  <tr style="background-color: %s;">
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Project</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Total Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
+  </tr>', accent_orange, accent_orange, dark_border, dark_border, dark_border)
+      for (i in seq_len(nrow(proj_totals))) {
+        bg <- if (i %% 2 == 0) dark_row_alt else dark_card
+        projects_html <- paste0(projects_html, sprintf('\n  <tr style="background-color: %s;">
+    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
+  </tr>', bg,
+          dark_border, dark_text, as.character(proj_totals$project[i]),
+          dark_border, accent_green, dollar(as.numeric(proj_totals$cost[i])),
+          dark_border, accent_blue, comma(as.numeric(proj_totals$tokens[i]))))
+      }
+      projects_html <- paste0(projects_html, "</table>")
+    }
+  }
+
+  # --- Build Top Claude Sessions by Cost ---
+  sessions_html <- ""
+  if (!is.null(session_data) && nrow(session_data) > 0) {
+    top_sessions <- session_data |> arrange(desc(totalCost)) |> head(5)
+    sessions_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Top Claude Sessions by Cost</h3>
+<table style="border-collapse: collapse; width: 100%%;">
+  <tr style="background-color: %s;">
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Session</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Last Active</th>
+  </tr>', accent_purple, accent_purple, dark_border, dark_border, dark_border, dark_border)
+    for (i in seq_len(nrow(top_sessions))) {
+      bg <- if (i %% 2 == 0) dark_row_alt else dark_card
+      session_name <- top_sessions$sessionId[i]
+      session_parts <- strsplit(gsub("^-", "", session_name), "-")[[1]]
+      if (length(session_parts) > 2) session_name <- paste(tail(session_parts, 2), collapse = "/")
+      sessions_html <- paste0(sessions_html, sprintf('\n  <tr style="background-color: %s;">
+    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
+  </tr>', bg,
+        dark_border, dark_text, session_name,
+        dark_border, accent_green, dollar(top_sessions$totalCost[i]),
+        dark_border, accent_blue, millions(top_sessions$totalTokens[i]),
+        dark_border, dark_muted, top_sessions$lastActivity[i]))
+    }
+    sessions_html <- paste0(sessions_html, "</table>")
+  }
+
   email_header <- sprintf('\n<div style="background-color: %s; color: %s; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
 <h2 style="color: %s; margin-bottom: 5px;">LLM Usage Report - %s</h2>
 <p style="color: %s; font-size: 12px; margin-top: 0;">Data cached: %s</p>
@@ -428,6 +484,8 @@ if (!has_data) {
   </a>
 </div>
 
+%s
+%s
 %s
 %s
 
@@ -446,7 +504,7 @@ if (!has_data) {
     <th style="padding: 6px; border: 1px solid %s; text-align: right;">End Date</th>
   </tr>',
   dark_bg, dark_text, accent_orange, today, dark_muted, cache_time, accent_blue,
-  blocks_html, daily_model_html,
+  blocks_html, daily_model_html, projects_html, sessions_html,
   accent_green,
   dark_row_alt, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border)
 
@@ -621,45 +679,7 @@ if (!has_data) {
     email_body <- paste0(email_body, "</table>")
   }
 
-  # Top Claude Sessions by Cost - NOW AT THE END
-  if (!is.null(session_data) && nrow(session_data) > 0) {
-    top_sessions <- session_data |>
-      arrange(desc(totalCost)) |>
-      head(5)
-
-    email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s; margin-top: 20px;">Top Claude Sessions by Cost</h3>
-<table style="border-collapse: collapse; width: 100%%;">
-  <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Session</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Last Active</th>
-  </tr>', accent_purple, accent_purple, dark_border, dark_border, dark_border, dark_border))
-
-    for (i in seq_len(nrow(top_sessions))) {
-      bg <- if (i %% 2 == 0) dark_row_alt else dark_card
-      last_active <- top_sessions$lastActivity[i]
-      # Clean up session name: remove leading dashes and path separators, show last 2 components
-      session_name <- top_sessions$sessionId[i]
-      session_parts <- strsplit(gsub("^-", "", session_name), "-")[[1]]
-      if (length(session_parts) > 2) {
-        session_name <- paste(tail(session_parts, 2), collapse = "/")
-      }
-      email_body <- paste0(email_body, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-  </tr>', 
-        bg,
-        dark_border, dark_text, session_name,
-        dark_border, accent_green, dollar(top_sessions$totalCost[i]),
-        dark_border, accent_blue, millions(top_sessions$totalTokens[i]),
-        dark_border, dark_muted, last_active
-      ))
-    }
-    email_body <- paste0(email_body, "</table>")
-  }
+  # (Top Claude Sessions moved to top — see sessions_html/projects_html below)
 
   email_body <- paste0(email_body, sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
 <p style="color: %s; font-size: 12px;">
