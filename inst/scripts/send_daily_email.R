@@ -365,11 +365,13 @@ if (!has_data) {
   </tr>', accent_purple, accent_purple,
             dark_border, dark_border, dark_border, dark_border, dark_border)
 
-          prev_date <- NULL
           row_idx <- 0
-          for (d in sort(unique(model_df$date), decreasing = TRUE)) {
+          model_sorted_dates <- sort(unique(model_df$date), decreasing = TRUE)
+          for (di2 in seq_along(model_sorted_dates)) {
+            d <- model_sorted_dates[di2]
             d_rows <- model_df[model_df$date == d, ] |> arrange(desc(cost))
-            d_total_cost <- sum(d_rows$cost); d_total_tokens <- sum(d_rows$tokens)
+            d_total_cost <- as.numeric(sum(d_rows$cost))
+            d_total_tokens <- as.numeric(sum(d_rows$tokens))
             day_label <- format(d, "%a %Y-%m-%d")
             # Day total row
             daily_model_html <- paste0(daily_model_html, sprintf('\n  <tr style="background-color: #1a3a5c; font-weight: bold;">
