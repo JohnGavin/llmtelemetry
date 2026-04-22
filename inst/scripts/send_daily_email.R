@@ -243,6 +243,173 @@ if (!has_data) {
   # Build email - Dark mode with Merged Summary Table
   # Break into chunks to avoid sprintf 100-argument limit
   
+  # --- Build Time Block Activity HTML (shown first) ---
+  blocks_html <- ""
+  daily_model_html <- ""
+  if (!is.null(blocks_raw) && !is.null(blocks_raw$blocks)) {
+    blocks_df <- as_tibble(blocks_raw$blocks) |>
+      mutate(
+        start = ymd_hms(startTime),
+        end = ymd_hms(actualEndTime),
+        duration_mins = as.numeric(difftime(end, start, units = "mins")),
+        duration_hrs = duration_mins / 60,
+        date = as.Date(start),
+        cost_per_hr = ifelse(duration_hrs > 0, costUSD / duration_hrs, 0),
+        tokens_per_hr = ifelse(duration_hrs > 0, totalTokens / duration_hrs, 0),
+        models_list = map(models, normalize_to_char_vec)
+      ) |>
+      filter(!is.na(end), costUSD > 0)
+
+    recent_days <- blocks_df |>
+      group_by(date) |> summarise(n = n(), .groups = "drop") |>
+      arrange(desc(date)) |> head(5) |> pull(date)
+
+    if (length(recent_days) > 0) {
+      activity_df <- blocks_df |> filter(date %in% recent_days) |> arrange(desc(end))
+
+      if (nrow(activity_df) > 0) {
+        blocks_html <- sprintf('\n<h3 style="color: %s;">Time Block Activity (Last 5 Days)</h3>
+<table style="border-collapse: collapse; width: 100%%;">
+  <tr style="background-color: %s;">
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Start</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">End</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Duration</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">$/hr</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tok/hr</th>
+  </tr>', accent_orange, "#607D8B",
+              dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border)
+
+        day_summary <- activity_df |>
+          group_by(date) |>
+          summarise(n_blocks = n(), total_mins = sum(duration_mins, na.rm = TRUE),
+            total_cost = sum(costUSD, na.rm = TRUE), total_tokens = sum(totalTokens, na.rm = TRUE),
+            .groups = "drop")
+
+        sorted_dates <- sort(unique(activity_df$date), decreasing = TRUE)
+        for (di in seq_along(sorted_dates)) {
+          d <- sorted_dates[di]
+          ds <- day_summary[day_summary$date == d, ]
+          d_nblocks <- as.integer(ds$n_blocks[1]); d_mins <- as.numeric(ds$total_mins[1])
+          d_cost <- as.numeric(ds$total_cost[1]); d_tokens <- as.numeric(ds$total_tokens[1])
+          d_cost_hr <- if (d_mins > 0) d_cost / (d_mins / 60) else 0
+          day_label <- format(d, "%a %Y-%m-%d")
+          blocks_html <- paste0(blocks_html, sprintf('\n  <tr style="background-color: #1a3a5c; font-weight: bold;">
+    <td colspan="2" style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">%s (%d blocks)</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s;"></td>
+  </tr>',
+            dark_border, "#ffffff", day_label, d_nblocks,
+            dark_border, "#ffffff", format_hhmm(d_mins),
+            dark_border, accent_green, dollar(d_cost),
+            dark_border, "#ffffff", dollar(d_cost_hr),
+            dark_border, accent_blue, comma(d_tokens), dark_border))
+
+          day_blocks <- activity_df |> filter(date == d) |> arrange(desc(end))
+          for (i in seq_len(nrow(day_blocks))) {
+            bg <- if (i %% 2 == 0) dark_row_alt else dark_card
+            blocks_html <- paste0(blocks_html, sprintf('\n  <tr style="background-color: %s;">
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s; padding-left: 20px;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+  </tr>',
+              bg,
+              dark_border, dark_muted, format(day_blocks$start[i], "%H:%M"),
+              dark_border, dark_muted, format(day_blocks$end[i], "%H:%M"),
+              dark_border, dark_text, format_hhmm(day_blocks$duration_mins[i]),
+              dark_border, accent_green, dollar(day_blocks$costUSD[i]),
+              dark_border, dark_text, dollar(day_blocks$cost_per_hr[i]),
+              dark_border, accent_blue, comma(day_blocks$totalTokens[i]),
+              dark_border, dark_text, comma(round(day_blocks$tokens_per_hr[i]))))
+          }
+        }
+        blocks_html <- paste0(blocks_html, "</table>")
+
+        # --- Daily Model Breakdown table ---
+        # Expand blocks by model, compute per-model cost/tokens per day
+        model_rows <- list()
+        for (i in seq_len(nrow(activity_df))) {
+          models <- activity_df$models_list[[i]]
+          n_models <- length(models)
+          if (n_models == 0) next
+          # Split cost/tokens equally across models (best approximation without per-model data)
+          for (m in models) {
+            model_rows[[length(model_rows) + 1]] <- list(
+              date = activity_df$date[i], model = m,
+              cost = activity_df$costUSD[i] / n_models,
+              tokens = activity_df$totalTokens[i] / n_models)
+          }
+        }
+        if (length(model_rows) > 0) {
+          model_df <- bind_rows(lapply(model_rows, as_tibble)) |>
+            group_by(date, model) |>
+            summarise(cost = sum(cost), tokens = sum(tokens), .groups = "drop") |>
+            mutate(cost_per_mtok = if_else(tokens > 0, cost / (tokens / 1e6), 0))
+
+          daily_model_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Daily Cost by Model (Last 5 Days)</h3>
+<table style="border-collapse: collapse; width: 100%%;">
+  <tr style="background-color: %s;">
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Day</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Model</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">$/MTok</th>
+  </tr>', accent_purple, accent_purple,
+            dark_border, dark_border, dark_border, dark_border, dark_border)
+
+          prev_date <- NULL
+          row_idx <- 0
+          for (d in sort(unique(model_df$date), decreasing = TRUE)) {
+            d_rows <- model_df[model_df$date == d, ] |> arrange(desc(cost))
+            d_total_cost <- sum(d_rows$cost); d_total_tokens <- sum(d_rows$tokens)
+            day_label <- format(d, "%a %Y-%m-%d")
+            # Day total row
+            daily_model_html <- paste0(daily_model_html, sprintf('\n  <tr style="background-color: #1a3a5c; font-weight: bold;">
+    <td style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">ALL</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s;"></td>
+  </tr>',
+              dark_border, "#ffffff", day_label,
+              dark_border, "#ffffff",
+              dark_border, accent_green, dollar(d_total_cost),
+              dark_border, accent_blue, comma(d_total_tokens),
+              dark_border))
+            # Per-model rows
+            for (j in seq_len(nrow(d_rows))) {
+              row_idx <- row_idx + 1
+              bg <- if (row_idx %% 2 == 0) dark_row_alt else dark_card
+              m_name <- gsub("claude-", "", as.character(d_rows$model[j]))
+              daily_model_html <- paste0(daily_model_html, sprintf('\n  <tr style="background-color: %s;">
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s;"></td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s; padding-left: 20px;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+  </tr>',
+                bg,
+                dark_border, dark_muted,
+                dark_border, dark_text, m_name,
+                dark_border, accent_green, dollar(as.numeric(d_rows$cost[j])),
+                dark_border, accent_blue, comma(as.numeric(d_rows$tokens[j])),
+                dark_border, dark_text, sprintf("$%.2f", as.numeric(d_rows$cost_per_mtok[j]))))
+            }
+          }
+          daily_model_html <- paste0(daily_model_html, "</table>")
+        }
+      }
+    }
+  }
+
   email_header <- sprintf('\n<div style="background-color: %s; color: %s; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
 <h2 style="color: %s; margin-bottom: 5px;">LLM Usage Report - %s</h2>
 <p style="color: %s; font-size: 12px; margin-top: 0;">Data cached: %s</p>
@@ -253,6 +420,9 @@ if (!has_data) {
     View Full Telemetry Dashboard
   </a>
 </div>
+
+%s
+%s
 
 <h3 style="color: %s;">Summary</h3>
 <table style="border-collapse: collapse; width: 100%%; font-size: 11px;">
@@ -268,7 +438,9 @@ if (!has_data) {
     <th style="padding: 6px; border: 1px solid %s; text-align: right;">Start Date</th>
     <th style="padding: 6px; border: 1px solid %s; text-align: right;">End Date</th>
   </tr>',
-  dark_bg, dark_text, accent_orange, today, dark_muted, cache_time, accent_blue, accent_green,
+  dark_bg, dark_text, accent_orange, today, dark_muted, cache_time, accent_blue,
+  blocks_html, daily_model_html,
+  accent_green,
   dark_row_alt, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border)
 
   row_ccusage <- sprintf('
@@ -411,112 +583,7 @@ if (!has_data) {
      dark_card, dark_border, dark_text, dark_border, dark_text, millions(week3$tokens),
      dark_row_alt, dark_border, dark_text, dark_border, dark_text, millions(week4$tokens)))
 
-  # Time Block Activity Table (last 5 non-empty days)
-  if (!is.null(blocks_raw) && !is.null(blocks_raw$blocks)) {
-    blocks_df <- as_tibble(blocks_raw$blocks) |>
-      mutate(
-        start = ymd_hms(startTime),
-        end = ymd_hms(actualEndTime),
-        duration_mins = as.numeric(difftime(end, start, units = "mins")),
-        duration_hrs = duration_mins / 60,
-        date = as.Date(start),
-        cost_per_hr = ifelse(duration_hrs > 0, costUSD / duration_hrs, 0),
-        tokens_per_hr = ifelse(duration_hrs > 0, totalTokens / duration_hrs, 0)
-      ) |>
-      filter(!is.na(end), costUSD > 0) |>
-      select(id, date, start, end, duration_mins, duration_hrs, costUSD, totalTokens, cost_per_hr, tokens_per_hr)
-
-    recent_days <- blocks_df |>
-      group_by(date) |>
-      summarise(n = n(), .groups = "drop") |>
-      arrange(desc(date)) |>
-      head(5) |>
-      pull(date)
-
-    if (length(recent_days) > 0) {
-      activity_df <- blocks_df |>
-        filter(date %in% recent_days) |>
-        arrange(desc(end))
-
-      if (nrow(activity_df) > 0) {
-        email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s;">Time Block Activity (Last 5 Days)</h3>
-<table style="border-collapse: collapse; width: 100%%;">
-  <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Start</th>
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">End</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Duration</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">$/hr</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tok/hr</th>
-  </tr>', accent_orange, "#607D8B",
-            dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border))
-
-        # Day summaries for group headers
-        day_summary <- activity_df |>
-          group_by(date) |>
-          summarise(
-            n_blocks = n(),
-            total_mins = sum(duration_mins, na.rm = TRUE),
-            total_cost = sum(costUSD, na.rm = TRUE),
-            total_tokens = sum(totalTokens, na.rm = TRUE),
-            .groups = "drop"
-          )
-
-        sorted_dates <- sort(unique(activity_df$date), decreasing = TRUE)
-        for (di in seq_along(sorted_dates)) {
-          d <- sorted_dates[di]
-          ds <- day_summary[day_summary$date == d, ]
-          d_nblocks  <- as.integer(ds$n_blocks[1])
-          d_mins     <- as.numeric(ds$total_mins[1])
-          d_cost     <- as.numeric(ds$total_cost[1])
-          d_tokens   <- as.numeric(ds$total_tokens[1])
-          d_cost_hr  <- if (d_mins > 0) d_cost / (d_mins / 60) else 0
-          day_label  <- format(d, "%a %Y-%m-%d")
-          # Day summary row (bold, darker background)
-          email_body <- paste0(email_body, sprintf('\n  <tr style="background-color: #1a3a5c; font-weight: bold;">
-    <td colspan="2" style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">%s (%d blocks)</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s;"></td>
-  </tr>',
-            dark_border, "#ffffff", day_label, d_nblocks,
-            dark_border, "#ffffff", format_hhmm(d_mins),
-            dark_border, accent_green, dollar(d_cost),
-            dark_border, "#ffffff", dollar(d_cost_hr),
-            dark_border, accent_blue, comma(d_tokens),
-            dark_border))
-
-          # Individual blocks for this day
-          day_blocks <- activity_df |> filter(date == d) |> arrange(desc(end))
-          for (i in seq_len(nrow(day_blocks))) {
-            bg <- if (i %% 2 == 0) dark_row_alt else dark_card
-            email_body <- paste0(email_body, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s; padding-left: 20px;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-  </tr>',
-              bg,
-              dark_border, dark_muted, format(day_blocks$start[i], "%H:%M"),
-              dark_border, dark_muted, format(day_blocks$end[i], "%H:%M"),
-              dark_border, dark_text, format_hhmm(day_blocks$duration_mins[i]),
-              dark_border, accent_green, dollar(day_blocks$costUSD[i]),
-              dark_border, dark_text, dollar(day_blocks$cost_per_hr[i]),
-              dark_border, accent_blue, comma(day_blocks$totalTokens[i]),
-              dark_border, dark_text, comma(round(day_blocks$tokens_per_hr[i]))
-            ))
-          }
-        }
-        email_body <- paste0(email_body, "</table>")
-      }
-    }
-  }
+  # (Time Block Activity moved to top — see blocks_html above)
 
   # Gemini Recent Sessions
   if (exists("gm_sessions") && !is.null(gm_sessions) && nrow(gm_sessions) > 0) {
