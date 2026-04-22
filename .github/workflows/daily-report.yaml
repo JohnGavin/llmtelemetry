@@ -37,3 +37,7 @@ jobs:
 
       - name: Send Report
         run: Rscript inst/scripts/send_daily_email.R
+
+      - name: Validate email output
+        if: always()
+        run: bash inst/scripts/qa_email_output.sh /tmp/email_qa.html

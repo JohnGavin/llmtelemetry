@@ -153,6 +153,17 @@ jobs:
               FAIL=1
             }
           done
+          # Content QA: verify data files have rows
+          for f in ccusage_daily ccusage_blocks; do
+            ROWS=$(curl -sf "${BASE}/data/${f}.json" | python3 -c \
+              "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+            if [ "$ROWS" = "0" ]; then
+              echo "::warning::${f}.json has 0 rows"
+              FAIL=1
+            else
+              echo "OK: ${f}.json ($ROWS rows)"
+            fi
+          done
           if [ "$FAIL" = "1" ]; then
             echo "::warning::Some deployment health checks failed — inspect logs"
           else

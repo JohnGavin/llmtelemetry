@@ -331,7 +331,9 @@ if (!has_data) {
               dark_border, dark_text, comma(round(day_blocks$tokens_per_hr[i]))))
           }
         }
-        blocks_html <- paste0(blocks_html, "</table>")
+        blocks_html <- paste0(blocks_html, "</table>",
+          sprintf("<!-- QA:blocks_grouped_by_day=%d -->", length(sorted_dates)),
+          sprintf("<!-- QA:blocks_total=%d -->", nrow(activity_df)))
 
         # --- Daily Model Breakdown table ---
         # Expand blocks by model, compute per-model cost/tokens per day
@@ -406,7 +408,10 @@ if (!has_data) {
                 dark_border, dark_text, sprintf("$%.2f", as.numeric(d_rows$cost_per_mtok[j]))))
             }
           }
-          daily_model_html <- paste0(daily_model_html, "</table>")
+          daily_model_html <- paste0(daily_model_html, "</table>",
+            sprintf("<!-- QA:model_breakdown_days=%d -->", length(model_sorted_dates)),
+            sprintf("<!-- QA:models_found=%s -->",
+              paste(gsub("claude-", "", unique(model_df$model)), collapse = ",")))
         }
       }
     }
@@ -675,6 +680,67 @@ if (!has_data) {
 </div>
 ', dark_border, dark_muted, accent_blue, accent_blue, dark_card, dark_text, dark_border, dark_muted))
 }
+
+# --- QA: Validate email before sending ---
+# Save HTML for CI QA step (always, even if checks pass)
+writeLines(email_body, "/tmp/email_qa.html")
+message("Email HTML saved to /tmp/email_qa.html for QA")
+
+qa_errors <- character(0)
+
+# Negative assertions: error patterns that should NOT appear
+neg_patterns <- c("Error in", "Error:", "invalid 'trim'", "prettyNum")
+for (pat in neg_patterns) {
+  if (grepl(pat, email_body, ignore.case = TRUE)) {
+    qa_errors <- c(qa_errors, sprintf("Error pattern found: '%s'", pat))
+  }
+}
+# NaN/NULL in visible content (not inside HTML comments)
+visible <- gsub("<!--.*?-->", "", email_body)
+for (pat in c("NaN", ">NULL<", "NA_real_")) {
+  if (grepl(pat, visible, ignore.case = TRUE)) {
+    qa_errors <- c(qa_errors, sprintf("Bad value in visible content: '%s'", pat))
+  }
+}
+
+# Positive assertions: structural features that MUST appear
+pos_checks <- list(
+  "Time Block Activity heading" = grepl("Time Block Activity", email_body),
+  "Daily Cost by Model heading" = grepl("Daily Cost by Model", email_body),
+  "Summary heading" = grepl("Summary", email_body),
+  "Day group headers (bold rows)" = grepl("font-weight: bold", email_body),
+  "$/MTok column" = grepl("MTok", email_body),
+  "Dashboard link" = grepl("johngavin.github.io/llmtelemetry", email_body),
+  "Cost values present" = grepl("\\$[0-9]+\\.[0-9]{2}", email_body)
+)
+for (nm in names(pos_checks)) {
+  if (!isTRUE(pos_checks[[nm]])) {
+    qa_errors <- c(qa_errors, sprintf("Missing feature: %s", nm))
+  }
+}
+
+# Ordering: blocks must appear before summary
+blocks_pos <- regexpr("Time Block Activity", email_body)
+summary_pos <- regexpr(">Summary<", email_body)
+if (blocks_pos > 0 && summary_pos > 0 && blocks_pos > summary_pos) {
+  qa_errors <- c(qa_errors, "Time Block Activity appears AFTER Summary")
+}
+
+# QA markers must exist
+for (marker in c("QA:blocks_grouped_by_day=", "QA:model_breakdown_days=", "QA:models_found=")) {
+  if (!grepl(marker, email_body, fixed = TRUE)) {
+    qa_errors <- c(qa_errors, sprintf("Missing QA marker: %s", marker))
+  }
+}
+
+if (length(qa_errors) > 0) {
+  cli::cli_abort(c(
+    "!" = "Email QA failed with {length(qa_errors)} issue(s):",
+    set_names(qa_errors, rep("x", length(qa_errors))),
+    "i" = "Debug HTML saved to /tmp/email_qa.html"
+  ))
+}
+message("Email QA passed: all checks OK")
 
 # Create and send email
 london_time <- format(Sys.time(), tz = "Europe/London", "%Y-%m-%d %H:%M")
