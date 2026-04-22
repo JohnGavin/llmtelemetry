@@ -463,9 +463,16 @@ if (!has_data) {
             .groups = "drop"
           )
 
-        for (d in sort(unique(activity_df$date), decreasing = TRUE)) {
+        sorted_dates <- sort(unique(activity_df$date), decreasing = TRUE)
+        for (di in seq_along(sorted_dates)) {
+          d <- sorted_dates[di]
           ds <- day_summary[day_summary$date == d, ]
-          day_label <- format(d, "%a %Y-%m-%d")
+          d_nblocks  <- as.integer(ds$n_blocks[1])
+          d_mins     <- as.numeric(ds$total_mins[1])
+          d_cost     <- as.numeric(ds$total_cost[1])
+          d_tokens   <- as.numeric(ds$total_tokens[1])
+          d_cost_hr  <- if (d_mins > 0) d_cost / (d_mins / 60) else 0
+          day_label  <- format(d, "%a %Y-%m-%d")
           # Day summary row (bold, darker background)
           email_body <- paste0(email_body, sprintf('\n  <tr style="background-color: #1a3a5c; font-weight: bold;">
     <td colspan="2" style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">%s (%d blocks)</td>
@@ -475,11 +482,11 @@ if (!has_data) {
     <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
     <td style="padding: 8px; border: 1px solid %s;"></td>
   </tr>',
-            dark_border, "#ffffff", day_label, ds$n_blocks,
-            dark_border, "#ffffff", format_hhmm(ds$total_mins),
-            dark_border, accent_green, dollar(ds$total_cost),
-            dark_border, "#ffffff", dollar(if (ds$total_mins > 0) ds$total_cost / (ds$total_mins / 60) else 0),
-            dark_border, accent_blue, comma(ds$total_tokens),
+            dark_border, "#ffffff", day_label, d_nblocks,
+            dark_border, "#ffffff", format_hhmm(d_mins),
+            dark_border, accent_green, dollar(d_cost),
+            dark_border, "#ffffff", dollar(d_cost_hr),
+            dark_border, accent_blue, comma(d_tokens),
             dark_border))
 
           # Individual blocks for this day
