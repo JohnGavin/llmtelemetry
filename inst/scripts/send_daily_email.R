@@ -452,26 +452,59 @@ if (!has_data) {
   </tr>', accent_orange, "#607D8B",
             dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border))
 
-        for (i in seq_len(nrow(activity_df))) {
-          bg <- if (i %% 2 == 0) dark_row_alt else dark_card
-          email_body <- paste0(email_body, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-  </tr>', 
-            bg,
-            dark_border, dark_muted, format(activity_df$start[i], "%Y-%m-%d %H:%M"),
-            dark_border, dark_muted, format(activity_df$end[i], "%Y-%m-%d %H:%M"),
-            dark_border, dark_text, format_hhmm(activity_df$duration_mins[i]),
-            dark_border, accent_green, dollar(activity_df$costUSD[i]),
-            dark_border, dark_text, dollar(activity_df$cost_per_hr[i]),
-            dark_border, accent_blue, comma(activity_df$totalTokens[i]),
-            dark_border, dark_text, comma(round(activity_df$tokens_per_hr[i]))
-          ))
+        # Day summaries for group headers
+        day_summary <- activity_df |>
+          group_by(date) |>
+          summarise(
+            n_blocks = n(),
+            total_mins = sum(duration_mins, na.rm = TRUE),
+            total_cost = sum(costUSD, na.rm = TRUE),
+            total_tokens = sum(totalTokens, na.rm = TRUE),
+            .groups = "drop"
+          )
+
+        for (d in sort(unique(activity_df$date), decreasing = TRUE)) {
+          ds <- day_summary[day_summary$date == d, ]
+          day_label <- format(d, "%a %Y-%m-%d")
+          # Day summary row (bold, darker background)
+          email_body <- paste0(email_body, sprintf('\n  <tr style="background-color: #1a3a5c; font-weight: bold;">
+    <td colspan="2" style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">%s (%d blocks)</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s;"></td>
+  </tr>',
+            dark_border, "#ffffff", day_label, ds$n_blocks,
+            dark_border, "#ffffff", format_hhmm(ds$total_mins),
+            dark_border, accent_green, dollar(ds$total_cost),
+            dark_border, "#ffffff", dollar(if (ds$total_mins > 0) ds$total_cost / (ds$total_mins / 60) else 0),
+            dark_border, accent_blue, comma(ds$total_tokens),
+            dark_border))
+
+          # Individual blocks for this day
+          day_blocks <- activity_df |> filter(date == d) |> arrange(desc(end))
+          for (i in seq_len(nrow(day_blocks))) {
+            bg <- if (i %% 2 == 0) dark_row_alt else dark_card
+            email_body <- paste0(email_body, sprintf('\n  <tr style="background-color: %s;">
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s; padding-left: 20px;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+  </tr>',
+              bg,
+              dark_border, dark_muted, format(day_blocks$start[i], "%H:%M"),
+              dark_border, dark_muted, format(day_blocks$end[i], "%H:%M"),
+              dark_border, dark_text, format_hhmm(day_blocks$duration_mins[i]),
+              dark_border, accent_green, dollar(day_blocks$costUSD[i]),
+              dark_border, dark_text, dollar(day_blocks$cost_per_hr[i]),
+              dark_border, accent_blue, comma(day_blocks$totalTokens[i]),
+              dark_border, dark_text, comma(round(day_blocks$tokens_per_hr[i]))
+            ))
+          }
         }
         email_body <- paste0(email_body, "</table>")
       }
