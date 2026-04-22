@@ -120,9 +120,15 @@ if (has_cmonitor) {
 } else {
   # CI fallback: read existing ccusage JSON files from inst/extdata/
   blocks_all <- list()
-  for (f in c("ccusage_daily_all.json", "ccusage_session_all.json", "ccusage_blocks_all.json")) {
+  # Map source files to expected output names (dashboard expects these exact names)
+  fallback_map <- list(
+    "ccusage_daily_all.json"   = "ccusage_daily.json",
+    "ccusage_session_all.json" = "ccusage_sessions.json",
+    "ccusage_blocks_all.json"  = "ccusage_blocks.json"
+  )
+  for (f in names(fallback_map)) {
     src <- file.path(extdata, f)
-    dst <- file.path(out_dir, sub("_all", "", f))
+    dst <- file.path(out_dir, fallback_map[[f]])
     if (file.exists(src)) {
       file.copy(src, dst, overwrite = TRUE)
       cat(sprintf("  -> copied %s\n", f))
