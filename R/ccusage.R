@@ -10,7 +10,11 @@ utils::globalVariables(c(
   "block_date", "block_hour", "block_id", "cacheCreationTokens",
   "cacheReadTokens", "cost", "date", "fetch_timestamp", "gap_days",
   "gap_end", "gap_start", "group", "inputTokens", "modelName",
-  "outputTokens", "timestamp", "total_cost", "total_tokens", "totalTokens"
+  "outputTokens", "timestamp", "total_cost", "total_tokens", "totalTokens",
+  # read_unified / read_git_pulse
+  "commits", "ended_at", "file_path", "metric", "n", "n_changes",
+  "period", "period_label", "project", "snapshot_date", "started_at",
+  "value", "week"
 ))
 
 #' Fetch ccusage data from command line
