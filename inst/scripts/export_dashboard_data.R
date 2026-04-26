@@ -284,7 +284,38 @@ if (length(commit_rows) > 0) {
   write_json(list(), file.path(out_dir, "git_commits.json"))
 }
 
-# --- 7. Generate API index.json -----------------------------------------------
+# --- 7. Export unified.duckdb sessions and costs ------------------------------
+cat("Exporting unified.duckdb data...\n")
+unified_db <- file.path(Sys.getenv("HOME"), ".claude/logs/unified.duckdb")
+if (file.exists(unified_db)) {
+  ucon <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+  on.exit(dbDisconnect(ucon, shutdown = TRUE), add = TRUE)
+
+  u_sess <- dbReadTable(ucon, "sessions") |>
+    as_tibble() |>
+    mutate(
+      started_at = as.character(started_at),
+      ended_at = as.character(ended_at),
+      duration_min = round(duration_min, 1)
+    ) |>
+    select(session_id, project, started_at, ended_at, duration_min) |>
+    arrange(desc(started_at))
+  write_json(u_sess, file.path(out_dir, "unified_sessions.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d sessions\n", nrow(u_sess)))
+
+  u_costs <- dbReadTable(ucon, "costs") |>
+    as_tibble() |>
+    mutate(date = as.character(date),
+           across(where(is.numeric), \(x) round(x, 2)))
+  write_json(u_costs, file.path(out_dir, "unified_costs.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d cost rows\n", nrow(u_costs)))
+} else {
+  cat("  -> unified.duckdb not found, writing empty arrays\n")
+  write_json(list(), file.path(out_dir, "unified_sessions.json"))
+  write_json(list(), file.path(out_dir, "unified_costs.json"))
+}
+
+# --- 8. Generate API index.json -----------------------------------------------
 cat("Generating index.json...\n")
 api_index <- list(
   version  = "1.0.0",
@@ -391,6 +422,35 @@ api_index <- list(
         lines_deleted = "integer",
         lines_changed = "integer",
         files_changed = "integer"
+      )
+    ),
+    list(
+      path        = "/unified_sessions.json",
+      description = "Claude Code sessions from unified.duckdb hook telemetry",
+      type        = "array",
+      source      = "~/.claude/logs/unified.duckdb (sessions table)",
+      schema      = list(
+        session_id  = "string",
+        project     = "string",
+        started_at  = "string",
+        ended_at    = "string",
+        duration_min = "number"
+      )
+    ),
+    list(
+      path        = "/unified_costs.json",
+      description = "Daily costs with model breakdown from unified.duckdb",
+      type        = "array",
+      source      = "~/.claude/logs/unified.duckdb (costs table)",
+      schema      = list(
+        date        = "string",
+        opus_cost   = "number",
+        sonnet_cost = "number",
+        haiku_cost  = "number",
+        total_cost  = "number",
+        opus_pct    = "number",
+        sonnet_pct  = "number",
+        haiku_pct   = "number"
       )
     )
   )

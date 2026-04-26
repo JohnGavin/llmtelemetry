@@ -15,6 +15,8 @@ format:
       - data/gemini_sessions.json
       - data/cmonitor_summary.json
       - data/git_commits.json
+      - data/unified_sessions.json
+      - data/unified_costs.json
 filters:
   - shinylive
 ---
@@ -53,6 +55,8 @@ gem_daily   <- load_json("gemini_daily.json")
 gem_sess    <- load_json("gemini_sessions.json")
 cmon        <- load_json("cmonitor_summary.json")
 git_commits <- load_json("git_commits.json")
+u_sessions  <- load_json("unified_sessions.json")
+u_costs     <- load_json("unified_costs.json")
 
 # Parse dates
 if (!is.null(cc_daily) && nrow(cc_daily) > 0) {
@@ -89,6 +93,13 @@ if (!is.null(gem_daily) && nrow(gem_daily) > 0) {
 }
 if (!is.null(git_commits) && nrow(git_commits) > 0) {
   git_commits$date <- as.Date(git_commits$date)
+}
+if (!is.null(u_sessions) && nrow(u_sessions) > 0) {
+  u_sessions$started_at <- as.POSIXct(u_sessions$started_at, tz = "UTC")
+  u_sessions$date <- as.Date(u_sessions$started_at)
+}
+if (!is.null(u_costs) && nrow(u_costs) > 0) {
+  u_costs$date <- as.Date(u_costs$date)
 }
 
 # All project names for filter
@@ -319,17 +330,17 @@ ui <- page_navbar(
   nav_panel("Sessions", value = "Sessions",
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Top Claude Sessions"), DTOutput("sess_claude"),
-        card_footer(class = "text-muted small", "Most expensive Claude sessions by total cost")),
+      card(card_header("Claude Sessions"), DTOutput("sess_claude"),
+        card_footer(class = "text-muted small", "Claude Code sessions from unified.duckdb telemetry")),
       card(card_header("Top Gemini Sessions"), DTOutput("sess_gemini"),
         card_footer(class = "text-muted small", "Most expensive Gemini sessions by total cost"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Session Cost Distribution"), plotlyOutput("sess_hist", height = "300px"),
-        card_footer(class = "text-muted small", "Histogram of per-session costs")),
+      card(card_header("Session Duration Distribution"), plotlyOutput("sess_hist", height = "300px"),
+        card_footer(class = "text-muted small", "Histogram of session durations (minutes)")),
       card(card_header("Sessions Over Time"), plotlyOutput("sess_scatter", height = "300px"),
-        card_footer(class = "text-muted small", "Bubble chart of Claude sessions by date, cost, and token volume"))
+        card_footer(class = "text-muted small", "Daily session count, bubble size = total minutes"))
     )
   ),
 
@@ -373,7 +384,7 @@ ui <- page_navbar(
     class = "text-muted small text-center py-2",
     style = "background-color: #1a1a1a;",
     tags$a(href = "https://github.com/johngavin/llmtelemetry", style = "color: #7cb5ec;", "GitHub"),
-    " | Data: ccusage, Gemini, cmonitor",
+    " | Data: ccusage, Gemini, cmonitor, unified.duckdb",
     " | Built: ", format(Sys.Date(), "%Y-%m-%d")
   ),
 
@@ -422,7 +433,11 @@ server <- function(input, output, session) {
     as.character(length(unique(dates)))
   })
   output$vb_sessions <- renderText({
-    n <- if (!is.null(cc_sessions)) nrow(cc_sessions) else 0
+    n <- if (!is.null(u_sessions) && nrow(u_sessions) > 0) {
+      nrow(u_sessions |> filter(date >= cutoff()))
+    } else {
+      0L
+    }
     n <- n + if (!is.null(gem_sess)) nrow(gem_sess) else 0
     as.character(n)
   })
@@ -642,14 +657,16 @@ server <- function(input, output, session) {
 
   # --- Sessions ---------------------------------------------------------------
   output$sess_claude <- renderDT({
-    if (is.null(cc_sessions) || nrow(cc_sessions) == 0) return(datatable(tibble()))
-    cc_sessions |>
-      arrange(desc(totalCost)) |>
+    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(datatable(tibble()))
+    u_sessions |>
+      filter(date >= cutoff()) |>
+      arrange(desc(started_at)) |>
       head(input$top_n) |>
-      mutate(totalCost = sprintf("$%.2f", totalCost),
-             totalTokens = format(totalTokens, big.mark = ",")) |>
-      select(Session = sessionId, Cost = totalCost, Tokens = totalTokens,
-             `Last Active` = lastActivity, Models = modelsUsed) |>
+      mutate(
+        Duration = sprintf("%.0f min", duration_min),
+        Started = format(started_at, "%Y-%m-%d %H:%M")
+      ) |>
+      select(Project = project, Started, Duration) |>
       datatable(options = list(dom = "t", pageLength = 20, scrollX = TRUE),
         rownames = FALSE)
   })
@@ -668,23 +685,28 @@ server <- function(input, output, session) {
   })
 
   output$sess_hist <- renderPlotly({
-    costs <- c()
-    if (!is.null(cc_sessions) && nrow(cc_sessions) > 0) costs <- c(costs, cc_sessions$totalCost)
-    if (!is.null(gem_sess) && nrow(gem_sess) > 0) costs <- c(costs, gem_sess$total_cost)
-    if (length(costs) == 0) return(plotly_empty())
-    p <- plot_ly(x = ~costs, type = "histogram", nbinsx = 20,
+    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(plotly_empty())
+    d <- u_sessions |> filter(date >= cutoff(), duration_min > 0)
+    if (nrow(d) == 0) return(plotly_empty())
+    p <- plot_ly(d, x = ~duration_min, type = "histogram", nbinsx = 20,
       marker = list(color = pal$hist, opacity = 0.8))
-    dark_layout(p, xaxis = list(title = "Session Cost (USD)"), yaxis = list(title = "Count"))
+    dark_layout(p, xaxis = list(title = "Session Duration (min)"), yaxis = list(title = "Count"))
   })
 
   output$sess_scatter <- renderPlotly({
-    if (is.null(cc_sessions) || nrow(cc_sessions) == 0) return(plotly_empty())
-    p <- plot_ly(cc_sessions, x = ~lastActivity, y = ~totalCost,
-      size = ~totalTokens, type = "scatter", mode = "markers",
-      text = ~sessionId, hoverinfo = "text+x+y",
-      marker = list(sizemode = "area", sizeref = max(cc_sessions$totalTokens) / 1000,
+    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(plotly_empty())
+    d <- u_sessions |> filter(date >= cutoff(), duration_min > 0)
+    if (nrow(d) == 0) return(plotly_empty())
+    daily <- d |> group_by(date) |>
+      summarise(n = n(), total_min = sum(duration_min, na.rm = TRUE), .groups = "drop")
+    p <- plot_ly(daily, x = ~date, y = ~n, size = ~total_min,
+      type = "scatter", mode = "markers",
+      text = ~paste0(n, " sessions, ", round(total_min), " min total"),
+      hoverinfo = "text+x",
+      marker = list(sizemode = "area",
+        sizeref = max(daily$total_min, na.rm = TRUE) / 1000,
         color = pal$claude, opacity = 0.7))
-    dark_layout(p, xaxis = list(title = "Last Activity"), yaxis = list(title = "Total Cost (USD)"))
+    dark_layout(p, xaxis = list(title = ""), yaxis = list(title = "Sessions per Day"))
   })
 
   # --- Time Blocks ------------------------------------------------------------
