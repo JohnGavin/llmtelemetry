@@ -25,9 +25,12 @@ filters:
 #| standalone: true
 #| viewerHeight: 1200
 
-# WebR bundles rlang 1.1.6 but ggplot2 (via plotly) needs >= 1.1.7.
-# Must install before any library() call so preload scanner picks it up.
+# WebR package repo has recurring version mismatches (previously munsell,
+# now rlang 1.1.6 bundled but ggplot2 needs >= 1.1.7). Fix: explicit
+# install of problem deps THEN ggplot2 BEFORE any library() calls.
+# See memory/shinylive-issues.md for history of this pattern.
 webr::install("rlang")
+webr::install("ggplot2")
 
 library(shiny)
 library(bslib)
