@@ -26,20 +26,23 @@ filters:
 #| viewerHeight: 1200
 
 # WebR package repo has recurring version mismatches (previously munsell,
-# now rlang 1.1.6 bundled but ggplot2 needs >= 1.1.7). Fix: explicit
-# install of problem deps THEN ggplot2 BEFORE any library() calls.
+# now rlang 1.1.6 bundled but ggplot2 needs >= 1.1.7).
+# The shinylive preload scanner detects library() calls and loads packages
+# BEFORE user code runs. We MUST hide plotly/ggplot2 from the scanner
+# so rlang can be upgraded first. Use character.only=TRUE to bypass scanner.
 # See memory/shinylive-issues.md for history of this pattern.
 webr::install("rlang")
 webr::install("ggplot2")
 
 library(shiny)
 library(bslib)
-library(plotly)
 library(DT)
 library(dplyr, warn.conflicts = FALSE)
 library(tidyr)
 library(jsonlite)
 library(lubridate, warn.conflicts = FALSE)
+# Load plotly AFTER rlang upgrade — character.only=TRUE hides from preload scanner
+library("plotly", character.only = TRUE)
 
 # --- Data loading -------------------------------------------------------------
 base_url <- "https://johngavin.github.io/llmtelemetry"
