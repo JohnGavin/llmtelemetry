@@ -25,6 +25,9 @@ filters:
 #| standalone: true
 #| viewerHeight: 1200
 
+# Ensure rlang is recent enough for ggplot2/plotly (WebR bundles 1.1.6, need >= 1.1.7)
+if (packageVersion("rlang") < "1.1.7") webr::install("rlang")
+
 library(shiny)
 library(bslib)
 library(plotly)
