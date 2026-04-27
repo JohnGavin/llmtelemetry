@@ -44,6 +44,8 @@ jobs:
             any::here
             any::tibble
             any::shinylive
+            any::knitr
+            any::rmarkdown
 
       - uses: quarto-dev/quarto-actions/setup@v2
 
@@ -138,7 +140,8 @@ jobs:
                       "/data/index.json" "/data/ccusage_daily.json" "/data/gemini_daily.json" \
                       "/data/ccusage_sessions.json" "/data/ccusage_blocks.json" \
                       "/data/gemini_sessions.json" "/data/cmonitor_summary.json" \
-                      "/data/git_commits.json"; do
+                      "/data/git_commits.json" \
+                      "/data/unified_sessions.json" "/data/unified_costs.json"; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${BASE}${path}")
             if [ "$STATUS" != "200" ]; then
               echo "FAIL: ${path} returned HTTP ${STATUS}"
