@@ -7064,6 +7064,76 @@
       ],
       "burnRate": null,
       "projection": null
+    },
+    {
+      "id": "gap-2026-04-25T21:23:52.537Z",
+      "startTime": "2026-04-25T21:23:52.537Z",
+      "endTime": "2026-04-26T15:50:41.427Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-04-26T15:00:00.000Z",
+      "startTime": "2026-04-26T15:00:00.000Z",
+      "endTime": "2026-04-26T20:00:00.000Z",
+      "actualEndTime": "2026-04-26T18:56:37.390Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 655,
+      "tokenCounts": {
+        "inputTokens": 12427,
+        "outputTokens": 169304,
+        "cacheCreationInputTokens": 2563663,
+        "cacheReadInputTokens": 82077006
+      },
+      "totalTokens": 84822400,
+      "costUSD": 55.182131149999975,
+      "models": [
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+        "<synthetic>"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-04-26T20:00:00.000Z",
+      "startTime": "2026-04-26T20:00:00.000Z",
+      "endTime": "2026-04-27T01:00:00.000Z",
+      "actualEndTime": "2026-04-26T21:55:27.228Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 453,
+      "tokenCounts": {
+        "inputTokens": 540,
+        "outputTokens": 119179,
+        "cacheCreationInputTokens": 1696447,
+        "cacheReadInputTokens": 104219485
+      },
+      "totalTokens": 106035651,
+      "costUSD": 62.72435215,
+      "models": [
+        "<synthetic>",
+        "claude-opus-4-6",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-6"
+      ],
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
