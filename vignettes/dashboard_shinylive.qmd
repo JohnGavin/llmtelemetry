@@ -25,14 +25,9 @@ filters:
 #| standalone: true
 #| viewerHeight: 1200
 
-# WebR package repo has recurring version mismatches (previously munsell,
-# now rlang 1.1.6 bundled but ggplot2 needs >= 1.1.7).
-# The shinylive preload scanner detects library() calls and loads packages
-# BEFORE user code runs. We MUST hide plotly/ggplot2 from the scanner
-# so rlang can be upgraded first. Use character.only=TRUE to bypass scanner.
+# echarts4r replaces plotly: no ggplot2/rlang dependency, available in WebR repo.
+# Previously used plotly but WebR bundles rlang 1.1.6 while ggplot2 needs >= 1.1.7.
 # See memory/shinylive-issues.md for history of this pattern.
-webr::install("rlang")
-webr::install("ggplot2")
 
 library(shiny)
 library(bslib)
@@ -41,8 +36,7 @@ library(dplyr, warn.conflicts = FALSE)
 library(tidyr)
 library(jsonlite)
 library(lubridate, warn.conflicts = FALSE)
-# Load plotly AFTER rlang upgrade — character.only=TRUE hides from preload scanner
-library("plotly", character.only = TRUE)
+library(echarts4r)
 
 # --- Data loading -------------------------------------------------------------
 base_url <- "https://johngavin.github.io/llmtelemetry"
@@ -128,37 +122,24 @@ date_min <- if (length(all_dates) > 0) min(all_dates, na.rm = TRUE) else Sys.Dat
 date_max <- if (length(all_dates) > 0) max(all_dates, na.rm = TRUE) else Sys.Date()
 max_days <- as.numeric(date_max - date_min)
 
-# --- Plotly dark theme (irishbuoys style) ------------------------------------
-# Exact irishbuoys_layout() settings from irishbuoys/R/plotly_helpers.R
-dark_axis <- list(
-  gridcolor = "rgba(255, 255, 255, 0.4)",
-  gridwidth = 1,
-  zerolinecolor = "rgba(255, 255, 255, 0.3)",
-  tickfont = list(color = "#cccccc"),
-  titlefont = list(color = "#e0e0e0")
-)
-dark_layout <- function(p, title = NULL, xaxis = list(), yaxis = list(), ...) {
-  p |> layout(
-    plot_bgcolor = "#1a1a1a",
-    paper_bgcolor = "#1a1a1a",
-    title = if (!is.null(title)) list(text = title, font = list(size = 14, color = "#e0e0e0")),
-    xaxis = modifyList(dark_axis, xaxis),
-    yaxis = modifyList(dark_axis, yaxis),
-    legend = list(
-      orientation = "h", y = -0.15, x = 0.5, xanchor = "center",
-      font = list(color = "#e0e0e0", size = 12),
-      bgcolor = "#1a1a1a",
-      bordercolor = "#555555", borderwidth = 1
-    ),
-    hoverlabel = list(bgcolor = "white", font = list(color = "black", size = 12)),
-    margin = list(b = 80),
-    ...
-  ) |> config(scrollZoom = TRUE, displayModeBar = TRUE)
-}
-
-# Color palette
+# --- echarts4r dark theme helper ---------------------------------------------
 pal <- list(claude = "#377eb8", gemini = "#e41a1c", accent = "#4daf4a",
             purple = "#984ea3", orange = "#ff7f00", hist = "#377eb8")
+
+dark_echart <- function(e) {
+  e |>
+    e_theme("dark") |>
+    e_tooltip(trigger = "axis") |>
+    e_legend(bottom = 0, textStyle = list(color = "#ccc")) |>
+    e_grid(containLabel = TRUE)
+}
+
+empty_echart <- function(msg = "No data available") {
+  e_charts() |>
+    e_theme("dark") |>
+    e_title(msg, textStyle = list(color = "#ccc", fontSize = 14)) |>
+    e_grid(containLabel = TRUE)
+}
 
 # --- UI -----------------------------------------------------------------------
 ui <- page_navbar(
@@ -194,7 +175,7 @@ ui <- page_navbar(
         padding: 10px !important; margin: 0 !important;
         box-shadow: 0 0 60px rgba(0,0,0,0.9) !important;
       }
-      .card.card-fullscreen .js-plotly-plot {
+      .card.card-fullscreen .echarts4r-container {
         width: calc(96vw - 40px) !important; height: 42vh !important;
       }
       .card.card-fullscreen .dataTables_wrapper {
@@ -212,12 +193,6 @@ ui <- page_navbar(
       function exitFullscreen() {
         if (!fsCard) return;
         fsCard.classList.remove('card-fullscreen');
-        // Resize plotly back to original dimensions
-        var plot = fsCard.querySelector('.js-plotly-plot');
-        if (plot && window.Plotly) {
-          window.Plotly.relayout(plot, { autosize: true });
-          window.Plotly.Plots.resize(plot);
-        }
         fsCard = null;
         if (fsHint) { fsHint.remove(); fsHint = null; }
       }
@@ -231,15 +206,6 @@ ui <- page_navbar(
         fsHint.className = 'card-fullscreen-hint';
         fsHint.textContent = 'Click card or press Esc to exit';
         document.body.appendChild(fsHint);
-        // Resize plotly to fit ~50vh centred card
-        var plot = card.querySelector('.js-plotly-plot');
-        if (plot && window.Plotly) {
-          setTimeout(function() {
-            var w = Math.round(window.innerWidth * 0.96 - 60);
-            var h = Math.round(window.innerHeight * 0.42);
-            window.Plotly.relayout(plot, { width: w, height: h });
-          }, 50);
-        }
         // Recalc DT column widths
         var dtApi = card.querySelector('.dataTable');
         if (dtApi && dtApi.DataTable) {
@@ -300,7 +266,7 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(12),
-      card(card_header("Daily Cost (All Sources)"), plotlyOutput("overview_cost_ts", height = "350px"),
+      card(card_header("Daily Cost (All Sources)"), echarts4rOutput("overview_cost_ts", height = "350px"),
         card_footer(class = "text-muted small", "Daily cost time series combining Claude and Gemini usage"))
     )
   ),
@@ -308,16 +274,16 @@ ui <- page_navbar(
   nav_panel("Cost Trends", value = "Cost Trends",
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Daily Cost by Project"), plotlyOutput("cost_by_project", height = "300px"),
+      card(card_header("Daily Cost by Project"), echarts4rOutput("cost_by_project", height = "300px"),
         card_footer(class = "text-muted small", "Daily Claude cost by project (lines+markers)")),
-      card(card_header("Cumulative Cost"), plotlyOutput("cost_cumulative", height = "300px"),
+      card(card_header("Cumulative Cost"), echarts4rOutput("cost_cumulative", height = "300px"),
         card_footer(class = "text-muted small", "Running total of cost over time by source"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Weekly Cost by Source"), plotlyOutput("cost_weekly", height = "300px"),
+      card(card_header("Weekly Cost by Source"), echarts4rOutput("cost_weekly", height = "300px"),
         card_footer(class = "text-muted small", "Weekly cost grouped by Claude vs Gemini")),
-      card(card_header("Weekly Cost by Model"), plotlyOutput("cost_by_model", height = "300px"),
+      card(card_header("Weekly Cost by Model"), echarts4rOutput("cost_by_model", height = "300px"),
         card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
     )
   ),
@@ -325,14 +291,14 @@ ui <- page_navbar(
   nav_panel("Token Analysis", value = "Token Analysis",
     layout_columns(
       col_widths = c(12),
-      card(card_header("Daily Tokens"), plotlyOutput("token_daily", height = "350px"),
+      card(card_header("Daily Tokens"), echarts4rOutput("token_daily", height = "350px"),
         card_footer(class = "text-muted small", "Daily token consumption across all sources"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Token Composition"), plotlyOutput("token_comp", height = "300px"),
+      card(card_header("Token Composition"), echarts4rOutput("token_comp", height = "300px"),
         card_footer(class = "text-muted small", "Grouped bars: input, output, cache-create, and cache-read tokens")),
-      card(card_header("Weekly Tokens by Source"), plotlyOutput("token_weekly", height = "300px"),
+      card(card_header("Weekly Tokens by Source"), echarts4rOutput("token_weekly", height = "300px"),
         card_footer(class = "text-muted small", "Weekly token usage by source"))
     )
   ),
@@ -347,9 +313,9 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Session Duration Distribution"), plotlyOutput("sess_hist", height = "300px"),
+      card(card_header("Session Duration Distribution"), echarts4rOutput("sess_hist", height = "300px"),
         card_footer(class = "text-muted small", "Histogram of session durations (minutes)")),
-      card(card_header("Sessions Over Time"), plotlyOutput("sess_scatter", height = "300px"),
+      card(card_header("Sessions Over Time"), echarts4rOutput("sess_scatter", height = "300px"),
         card_footer(class = "text-muted small", "Daily session count, bubble size = total minutes"))
     )
   ),
@@ -362,9 +328,9 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Block Timeline"), plotlyOutput("block_timeline", height = "300px"),
+      card(card_header("Block Timeline"), echarts4rOutput("block_timeline", height = "300px"),
         card_footer(class = "text-muted small", "Cost per block, dot size = duration")),
-      card(card_header("Hourly Activity Heatmap"), plotlyOutput("block_heatmap", height = "300px"),
+      card(card_header("Hourly Activity Heatmap"), echarts4rOutput("block_heatmap", height = "300px"),
         card_footer(class = "text-muted small", "Cost heatmap by day of week and hour"))
     )
   ),
@@ -378,14 +344,14 @@ ui <- page_navbar(
     ),
     layout_columns(
       col_widths = c(12),
-      card(card_header("Lines Changed per Commit"), plotlyOutput("commit_hist", height = "350px"),
+      card(card_header("Lines Changed per Commit"), echarts4rOutput("commit_hist", height = "350px"),
         card_footer(class = "text-muted small", "Distribution of total lines changed per commit"))
     ),
     layout_columns(
       col_widths = c(6, 6),
-      card(card_header("Lines Changed Over Time"), plotlyOutput("commit_scatter_time", height = "300px"),
+      card(card_header("Lines Changed Over Time"), echarts4rOutput("commit_scatter_time", height = "300px"),
         card_footer(class = "text-muted small", "Lines changed per commit over time, sized by files changed")),
-      card(card_header("Additions vs Deletions"), plotlyOutput("commit_scatter_add_del", height = "300px"),
+      card(card_header("Additions vs Deletions"), echarts4rOutput("commit_scatter_add_del", height = "300px"),
         card_footer(class = "text-muted small", "Lines added vs deleted per commit"))
     )
   ),
@@ -509,58 +475,84 @@ server <- function(input, output, session) {
       rownames = FALSE)
   })
 
-  output$overview_cost_ts <- renderPlotly({
-    traces <- list()
-    if (nrow(cc_d()) > 0) {
-      cc_agg <- cc_d() |> group_by(date) |> summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
-      traces[[1]] <- list(data = cc_agg, name = "Claude", color = pal$claude)
+  output$overview_cost_ts <- renderEcharts4r({
+    has_cc  <- nrow(cc_d()) > 0
+    has_gem <- nrow(gem_d()) > 0
+    if (!has_cc && !has_gem) return(empty_echart())
+
+    if (has_cc) {
+      cc_agg <- cc_d() |> group_by(date) |>
+        summarise(claude = sum(totalCost, na.rm = TRUE), .groups = "drop")
     }
-    if (nrow(gem_d()) > 0) {
-      gm_agg <- gem_d() |> rename(cost = total_cost)
-      traces[[length(traces) + 1]] <- list(data = gm_agg, name = "Gemini", color = pal$gemini)
+    if (has_gem) {
+      gm_agg <- gem_d() |> group_by(date) |>
+        summarise(gemini = sum(total_cost, na.rm = TRUE), .groups = "drop")
     }
-    p <- plot_ly()
-    for (tr in traces) {
-      p <- p |> add_trace(data = tr$data, x = ~date, y = ~cost, type = "scatter",
-        mode = "lines+markers", name = tr$name,
-        line = list(color = tr$color, width = 2),
-        marker = list(color = tr$color, size = 5, opacity = 0.7))
+
+    if (has_cc && has_gem) {
+      d <- full_join(cc_agg, gm_agg, by = "date") |>
+        mutate(across(c(claude, gemini), ~replace_na(.x, 0))) |>
+        arrange(date)
+      e <- d |> e_charts(date) |>
+        e_line(claude, name = "Claude", color = pal$claude) |>
+        e_line(gemini, name = "Gemini", color = pal$gemini)
+    } else if (has_cc) {
+      e <- cc_agg |> e_charts(date) |>
+        e_line(claude, name = "Claude", color = pal$claude)
+    } else {
+      e <- gm_agg |> e_charts(date) |>
+        e_line(gemini, name = "Gemini", color = pal$gemini)
     }
-    dark_layout(p, xaxis = list(title = ""), yaxis = list(title = "Cost (USD)"))
+    dark_echart(e)
   })
 
   # --- Cost Trends ------------------------------------------------------------
-  output$cost_by_project <- renderPlotly({
+  output$cost_by_project <- renderEcharts4r({
     d <- cc_d_proj()
-    if (nrow(d) == 0) return(plotly_empty())
+    if (nrow(d) == 0) return(empty_echart())
     d_agg <- d |> group_by(date, project) |>
       summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
-    p <- plot_ly(d_agg, x = ~date, y = ~cost, color = ~project, type = "scatter",
-      mode = "lines+markers", marker = list(size = 3, opacity = 0.6))
-    dark_layout(p, xaxis = list(title = ""), yaxis = list(title = "Cost (USD)"))
+    e <- d_agg |> group_by(project) |>
+      e_charts(date) |>
+      e_line(cost)
+    dark_echart(e)
   })
 
-  output$cost_cumulative <- renderPlotly({
-    traces <- list()
-    if (nrow(cc_d()) > 0) {
+  output$cost_cumulative <- renderEcharts4r({
+    has_cc  <- nrow(cc_d()) > 0
+    has_gem <- nrow(gem_d()) > 0
+    if (!has_cc && !has_gem) return(empty_echart())
+
+    if (has_cc) {
       cc_cum <- cc_d() |> group_by(date) |>
         summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop") |>
-        arrange(date) |> mutate(cum_cost = cumsum(cost))
-      traces[[1]] <- list(data = cc_cum, name = "Claude", color = pal$claude)
+        arrange(date) |> mutate(claude = cumsum(cost))
     }
-    if (nrow(gem_d()) > 0) {
-      gm_cum <- gem_d() |> arrange(date) |> mutate(cum_cost = cumsum(total_cost))
-      traces[[length(traces) + 1]] <- list(data = gm_cum, name = "Gemini", color = pal$gemini)
+    if (has_gem) {
+      gm_cum <- gem_d() |> arrange(date) |>
+        mutate(gemini = cumsum(total_cost))
     }
-    p <- plot_ly()
-    for (tr in traces) {
-      p <- p |> add_trace(data = tr$data, x = ~date, y = ~cum_cost, type = "scatter",
-        mode = "lines", name = tr$name, line = list(color = tr$color, width = 2))
+
+    if (has_cc && has_gem) {
+      d <- full_join(
+        cc_cum |> select(date, claude),
+        gm_cum |> select(date, gemini),
+        by = "date"
+      ) |> mutate(across(c(claude, gemini), ~replace_na(.x, 0))) |> arrange(date)
+      e <- d |> e_charts(date) |>
+        e_line(claude, name = "Claude", color = pal$claude) |>
+        e_line(gemini, name = "Gemini", color = pal$gemini)
+    } else if (has_cc) {
+      e <- cc_cum |> e_charts(date) |>
+        e_line(claude, name = "Claude", color = pal$claude)
+    } else {
+      e <- gm_cum |> e_charts(date) |>
+        e_line(gemini, name = "Gemini", color = pal$gemini)
     }
-    dark_layout(p, xaxis = list(title = ""), yaxis = list(title = "Cumulative Cost (USD)"))
+    dark_echart(e)
   })
 
-  output$cost_weekly <- renderPlotly({
+  output$cost_weekly <- renderEcharts4r({
     rows <- list()
     if (nrow(cc_d()) > 0) {
       cc_wk <- cc_d() |> mutate(week = floor_date(date, "week")) |>
@@ -574,17 +566,17 @@ server <- function(input, output, session) {
         mutate(source = "Gemini")
       rows[[length(rows) + 1]] <- gm_wk
     }
-    if (length(rows) == 0) return(plotly_empty())
+    if (length(rows) == 0) return(empty_echart())
     d <- bind_rows(rows)
-    p <- plot_ly(d, x = ~week, y = ~cost, color = ~source, type = "bar",
-      colors = c("Claude" = pal$claude, "Gemini" = pal$gemini))
-    dark_layout(p, barmode = "group",
-      xaxis = list(title = "Week"), yaxis = list(title = "Cost (USD)"))
+    e <- d |> group_by(source) |>
+      e_charts(week) |>
+      e_bar(cost)
+    dark_echart(e)
   })
 
-  output$cost_by_model <- renderPlotly({
+  output$cost_by_model <- renderEcharts4r({
     d <- cc_d_proj()
-    if (nrow(d) == 0) return(plotly_empty())
+    if (nrow(d) == 0) return(empty_echart())
 
     model_weekly <- d |>
       separate_rows(modelsUsed, sep = ",\\s*") |>
@@ -596,37 +588,47 @@ server <- function(input, output, session) {
       group_by(week, model) |>
       summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
 
-    p <- plot_ly(model_weekly, x = ~week, y = ~cost, color = ~model,
-      type = "scatter", mode = "lines+markers",
-      marker = list(size = 4, opacity = 0.7))
-    dark_layout(p, xaxis = list(title = "Week"), yaxis = list(title = "Cost (USD)"))
+    e <- model_weekly |> group_by(model) |>
+      e_charts(week) |>
+      e_line(cost)
+    dark_echart(e)
   })
 
   # --- Token Analysis ---------------------------------------------------------
-  output$token_daily <- renderPlotly({
-    traces <- list()
-    if (nrow(cc_d_proj()) > 0) {
+  output$token_daily <- renderEcharts4r({
+    has_cc  <- nrow(cc_d_proj()) > 0
+    has_gem <- nrow(gem_d()) > 0
+    if (!has_cc && !has_gem) return(empty_echart())
+
+    if (has_cc) {
       cc_tok <- cc_d_proj() |> group_by(date) |>
-        summarise(tokens = sum(totalTokens, na.rm = TRUE), .groups = "drop")
-      traces[[1]] <- list(data = cc_tok, name = "Claude", color = pal$claude)
+        summarise(claude = sum(totalTokens, na.rm = TRUE), .groups = "drop")
     }
-    if (nrow(gem_d()) > 0) {
-      gm_tok <- gem_d() |> rename(tokens = total_tokens)
-      traces[[length(traces) + 1]] <- list(data = gm_tok, name = "Gemini", color = pal$gemini)
+    if (has_gem) {
+      gm_tok <- gem_d() |> group_by(date) |>
+        summarise(gemini = sum(total_tokens, na.rm = TRUE), .groups = "drop")
     }
-    p <- plot_ly()
-    for (tr in traces) {
-      p <- p |> add_trace(data = tr$data, x = ~date, y = ~tokens, type = "scatter",
-        mode = "lines+markers", name = tr$name,
-        line = list(color = tr$color, width = 2),
-        marker = list(color = tr$color, size = 4, opacity = 0.7))
+
+    if (has_cc && has_gem) {
+      d <- full_join(cc_tok, gm_tok, by = "date") |>
+        mutate(across(c(claude, gemini), ~replace_na(.x, 0))) |>
+        arrange(date)
+      e <- d |> e_charts(date) |>
+        e_line(claude, name = "Claude", color = pal$claude) |>
+        e_line(gemini, name = "Gemini", color = pal$gemini)
+    } else if (has_cc) {
+      e <- cc_tok |> e_charts(date) |>
+        e_line(claude, name = "Claude", color = pal$claude)
+    } else {
+      e <- gm_tok |> e_charts(date) |>
+        e_line(gemini, name = "Gemini", color = pal$gemini)
     }
-    dark_layout(p, xaxis = list(title = ""), yaxis = list(title = "Tokens"))
+    dark_echart(e)
   })
 
-  output$token_comp <- renderPlotly({
+  output$token_comp <- renderEcharts4r({
     d <- cc_d_proj()
-    if (nrow(d) == 0) return(plotly_empty())
+    if (nrow(d) == 0) return(empty_echart())
     tok <- d |> group_by(date) |>
       summarise(
         Input = sum(inputTokens, na.rm = TRUE),
@@ -636,14 +638,13 @@ server <- function(input, output, session) {
         .groups = "drop"
       ) |>
       pivot_longer(-date, names_to = "type", values_to = "tokens")
-    p <- plot_ly(tok, x = ~date, y = ~tokens, color = ~type, type = "bar",
-      colors = c("Input" = pal$claude, "Output" = pal$gemini,
-                 "Cache Create" = pal$accent, "Cache Read" = pal$orange))
-    dark_layout(p, barmode = "group",
-      xaxis = list(title = ""), yaxis = list(title = "Tokens"))
+    e <- tok |> group_by(type) |>
+      e_charts(date) |>
+      e_bar(tokens)
+    dark_echart(e)
   })
 
-  output$token_weekly <- renderPlotly({
+  output$token_weekly <- renderEcharts4r({
     rows <- list()
     if (nrow(cc_d_proj()) > 0) {
       cc_wk <- cc_d_proj() |> mutate(week = floor_date(date, "week")) |>
@@ -657,12 +658,12 @@ server <- function(input, output, session) {
         mutate(source = "Gemini")
       rows[[length(rows) + 1]] <- gm_wk
     }
-    if (length(rows) == 0) return(plotly_empty())
+    if (length(rows) == 0) return(empty_echart())
     d <- bind_rows(rows)
-    p <- plot_ly(d, x = ~week, y = ~tokens, color = ~source, type = "bar",
-      colors = c("Claude" = pal$claude, "Gemini" = pal$gemini))
-    dark_layout(p, barmode = "group",
-      xaxis = list(title = "Week"), yaxis = list(title = "Tokens"))
+    e <- d |> group_by(source) |>
+      e_charts(week) |>
+      e_bar(tokens)
+    dark_echart(e)
   })
 
   # --- Sessions ---------------------------------------------------------------
@@ -694,29 +695,30 @@ server <- function(input, output, session) {
         rownames = FALSE)
   })
 
-  output$sess_hist <- renderPlotly({
-    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(plotly_empty())
+  output$sess_hist <- renderEcharts4r({
+    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(empty_echart())
     d <- u_sessions |> filter(date >= cutoff(), duration_min > 0)
-    if (nrow(d) == 0) return(plotly_empty())
-    p <- plot_ly(d, x = ~duration_min, type = "histogram", nbinsx = 20,
-      marker = list(color = pal$hist, opacity = 0.8))
-    dark_layout(p, xaxis = list(title = "Session Duration (min)"), yaxis = list(title = "Count"))
+    if (nrow(d) == 0) return(empty_echart())
+    # Pre-bin for histogram using base R hist()
+    h <- hist(d$duration_min, breaks = 20, plot = FALSE)
+    bins <- tibble(
+      mid = h$mids,
+      count = h$counts
+    )
+    e <- bins |> e_charts(mid) |>
+      e_bar(count, name = "Sessions", color = pal$hist, legend = FALSE)
+    dark_echart(e)
   })
 
-  output$sess_scatter <- renderPlotly({
-    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(plotly_empty())
+  output$sess_scatter <- renderEcharts4r({
+    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(empty_echart())
     d <- u_sessions |> filter(date >= cutoff(), duration_min > 0)
-    if (nrow(d) == 0) return(plotly_empty())
+    if (nrow(d) == 0) return(empty_echart())
     daily <- d |> group_by(date) |>
       summarise(n = n(), total_min = sum(duration_min, na.rm = TRUE), .groups = "drop")
-    p <- plot_ly(daily, x = ~date, y = ~n, size = ~total_min,
-      type = "scatter", mode = "markers",
-      text = ~paste0(n, " sessions, ", round(total_min), " min total"),
-      hoverinfo = "text+x",
-      marker = list(sizemode = "area",
-        sizeref = max(daily$total_min, na.rm = TRUE) / 1000,
-        color = pal$claude, opacity = 0.7))
-    dark_layout(p, xaxis = list(title = ""), yaxis = list(title = "Sessions per Day"))
+    e <- daily |> e_charts(date) |>
+      e_scatter(n, size = total_min, name = "Sessions/Day", color = pal$claude, legend = FALSE)
+    dark_echart(e)
   })
 
   # --- Time Blocks ------------------------------------------------------------
@@ -756,43 +758,32 @@ server <- function(input, output, session) {
         rownames = FALSE)
   })
 
-  output$block_timeline <- renderPlotly({
+  output$block_timeline <- renderEcharts4r({
     d <- blk()
-    if (nrow(d) == 0) return(plotly_empty())
+    if (nrow(d) == 0) return(empty_echart())
     d <- d |>
-      mutate(
-        label = format(startTime, "%m-%d %H:%M"),
-        duration_label = sprintf("%.1fh", duration_hrs)
-      ) |>
+      mutate(label = format(startTime, "%m-%d %H:%M")) |>
       arrange(startTime)
-    p <- plot_ly(d, x = ~costUSD, y = ~reorder(label, as.numeric(startTime)),
-      type = "scatter", mode = "markers",
-      marker = list(
-        size = ~pmax(duration_hrs * 5, 8),
-        color = ~costUSD,
-        colorscale = list(c(0, pal$claude), c(1, pal$gemini)),
-        colorbar = list(title = list(text = "Cost ($)"),
-          tickfont = list(color = "#ccc"), titlefont = list(color = "#ccc")),
-        line = list(color = "#1a1a1a", width = 1)
-      ),
-      text = ~paste0("$", round(costUSD, 2), " | ", duration_label,
-                     " | ", format(totalTokens, big.mark = ","), " tok\n", models),
-      hoverinfo = "text")
-    dark_layout(p, showlegend = FALSE,
-      xaxis = list(title = "Cost (USD)"), yaxis = list(title = "", automargin = TRUE))
+    e <- d |> e_charts(costUSD) |>
+      e_scatter(duration_hrs, size = costUSD, name = "Block", color = pal$claude, legend = FALSE) |>
+      e_tooltip(formatter = htmlwidgets::JS(
+        "function(p) { return '$' + p.value[0].toFixed(2) + ' | ' + p.value[1].toFixed(1) + 'h'; }"
+      ))
+    dark_echart(e)
   })
 
-  output$block_heatmap <- renderPlotly({
+  output$block_heatmap <- renderEcharts4r({
     d <- blk()
-    if (nrow(d) == 0) return(plotly_empty())
+    if (nrow(d) == 0) return(empty_echart())
     heat <- d |>
       group_by(wday, hour) |>
       summarise(cost = sum(costUSD, na.rm = TRUE), .groups = "drop") |>
-      complete(wday, hour = 0:23, fill = list(cost = 0))
-    p <- plot_ly(heat, x = ~hour, y = ~wday, z = ~cost,
-      type = "heatmap", colorscale = list(c(0, "#1a1a1a"), c(0.5, "#ff7f00"), c(1, "#e41a1c")),
-      hovertemplate = "Hour: %{x}<br>Day: %{y}<br>Cost: $%{z:.2f}<extra></extra>")
-    dark_layout(p, xaxis = list(title = "Hour of Day", dtick = 3), yaxis = list(title = ""))
+      complete(wday, hour = 0:23, fill = list(cost = 0)) |>
+      mutate(wday = as.character(wday))
+    e <- heat |> e_charts(hour) |>
+      e_heatmap(wday, cost) |>
+      e_visual_map(cost, inRange = list(color = c("#1a1a1a", pal$orange, pal$gemini)))
+    dark_echart(e)
   })
 
   # --- Commits -----------------------------------------------------------------
@@ -817,38 +808,32 @@ server <- function(input, output, session) {
     as.character(round(mean(d$lines_changed, na.rm = TRUE)))
   })
 
-  output$commit_hist <- renderPlotly({
+  output$commit_hist <- renderEcharts4r({
     d <- commits_filt()
-    if (nrow(d) == 0) return(plotly_empty())
-    p <- plot_ly(d, x = ~lines_changed, type = "histogram", nbinsx = 30,
-      marker = list(color = pal$hist, opacity = 0.8))
-    dark_layout(p, xaxis = list(title = "Lines Changed"), yaxis = list(title = "Number of Commits"))
+    if (nrow(d) == 0) return(empty_echart())
+    h <- hist(d$lines_changed, breaks = 30, plot = FALSE)
+    bins <- tibble(mid = h$mids, count = h$counts)
+    e <- bins |> e_charts(mid) |>
+      e_bar(count, name = "Commits", color = pal$hist, legend = FALSE)
+    dark_echart(e)
   })
 
-  output$commit_scatter_time <- renderPlotly({
+  output$commit_scatter_time <- renderEcharts4r({
     d <- commits_filt()
-    if (nrow(d) == 0) return(plotly_empty())
-    p <- plot_ly(d, x = ~date, y = ~lines_changed,
-      size = ~files_changed, type = "scatter", mode = "markers",
-      text = ~paste0(hash, ": ", message),
-      hoverinfo = "text+x+y",
-      marker = list(sizemode = "area",
-        sizeref = max(d$files_changed, na.rm = TRUE) / 500,
-        color = pal$claude, opacity = 0.7))
-    dark_layout(p, xaxis = list(title = "Date"), yaxis = list(title = "Lines Changed"))
+    if (nrow(d) == 0) return(empty_echart())
+    e <- d |> e_charts(date) |>
+      e_scatter(lines_changed, size = files_changed, name = "Commit",
+                color = pal$claude, legend = FALSE)
+    dark_echart(e)
   })
 
-  output$commit_scatter_add_del <- renderPlotly({
+  output$commit_scatter_add_del <- renderEcharts4r({
     d <- commits_filt()
-    if (nrow(d) == 0) return(plotly_empty())
-    p <- plot_ly(d, x = ~lines_added, y = ~lines_deleted,
-      size = ~files_changed, type = "scatter", mode = "markers",
-      text = ~paste0(hash, ": ", message),
-      hoverinfo = "text+x+y",
-      marker = list(sizemode = "area",
-        sizeref = max(d$files_changed, na.rm = TRUE) / 500,
-        color = pal$gemini, opacity = 0.7))
-    dark_layout(p, xaxis = list(title = "Lines Added"), yaxis = list(title = "Lines Deleted"))
+    if (nrow(d) == 0) return(empty_echart())
+    e <- d |> e_charts(lines_added) |>
+      e_scatter(lines_deleted, size = files_changed, name = "Commit",
+                color = pal$gemini, legend = FALSE)
+    dark_echart(e)
   })
 }
 
