@@ -25,9 +25,11 @@ filters:
 #| standalone: true
 #| viewerHeight: 1200
 
-# echarts4r replaces plotly: no ggplot2/rlang dependency, available in WebR repo.
-# Previously used plotly but WebR bundles rlang 1.1.6 while ggplot2 needs >= 1.1.7.
+# WebR runtime bundles rlang 1.1.6 but R 4.5 repo has 1.2.0.
+# Loading rlang FIRST forces the preload scanner to download 1.2.0
+# from repo before shiny/bslib lock in the bundled 1.1.6.
 # See memory/shinylive-issues.md for history of this pattern.
+library(rlang)
 
 library(shiny)
 library(bslib)
