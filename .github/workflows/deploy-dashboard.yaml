@@ -60,66 +60,50 @@ jobs:
 
       - name: QA — validate exported data (fail early on empty/malformed)
         run: |
-          echo "=== Data QA: checking for empty or malformed JSON ==="
-          FAIL=0
-          WARN=0
-          DATA_DIR="vignettes/data"
-
-          # Critical files: MUST have rows (error if empty)
-          for f in ccusage_daily ccusage_blocks git_commits git_bus_factor \
-                   git_velocity git_timing git_churn git_bugs; do
-            FILE="$DATA_DIR/${f}.json"
-            if [ ! -f "$FILE" ]; then
-              echo "ERROR: $FILE missing"
-              FAIL=1
-              continue
-            fi
-            ROWS=$(python3 -c "
-import json,sys
-d=json.load(open('$FILE'))
-if isinstance(d, list): print(len(d))
-elif isinstance(d, dict):
-  # Handle nested formats: {projects: {name: [rows]}} or {blocks: [rows]}
-  total=0
-  for v in d.values():
-    if isinstance(v, list): total+=len(v)
-    elif isinstance(v, dict):
-      for vv in v.values():
-        if isinstance(vv, list): total+=len(vv)
-  print(total)
-else: print(0)
-" 2>/dev/null)
-            if [ "$ROWS" = "0" ] || [ -z "$ROWS" ]; then
-              echo "ERROR: $f.json has 0 rows — dashboard charts will show 'No data available'"
-              FAIL=1
-            else
-              echo "OK: $f.json ($ROWS rows)"
-            fi
-          done
-
-          # Optional files: warn if empty (not all environments have these)
-          for f in gemini_daily gemini_sessions unified_sessions unified_costs git_tags git_crisis git_todo; do
-            FILE="$DATA_DIR/${f}.json"
-            if [ ! -f "$FILE" ]; then
-              echo "WARN: $FILE missing (optional)"
-              WARN=$((WARN+1))
-              continue
-            fi
-            ROWS=$(python3 -c "import json; d=json.load(open('$FILE')); print(len(d) if isinstance(d,list) else sum(len(v) for v in d.values() if isinstance(v,list)))" 2>/dev/null)
-            if [ "$ROWS" = "0" ] || [ -z "$ROWS" ]; then
-              echo "WARN: $f.json is empty (optional data source)"
-              WARN=$((WARN+1))
-            else
-              echo "OK: $f.json ($ROWS rows)"
-            fi
-          done
-
-          echo ""
-          echo "=== QA Summary: $FAIL errors, $WARN warnings ==="
-          if [ "$FAIL" -gt 0 ]; then
-            echo "::error::$FAIL critical data files are empty — dashboard will have broken charts"
-            exit 1
-          fi
+          python3 << 'PYEOF'
+          import json, os, sys
+          data_dir = "vignettes/data"
+          critical = ["ccusage_daily", "ccusage_blocks", "git_commits",
+                      "git_bus_factor", "git_velocity", "git_timing",
+                      "git_churn", "git_bugs"]
+          optional = ["gemini_daily", "gemini_sessions", "unified_sessions",
+                      "unified_costs", "git_tags", "git_crisis", "git_todo"]
+          def count_rows(d):
+              if isinstance(d, list): return len(d)
+              if isinstance(d, dict):
+                  total = 0
+                  for v in d.values():
+                      if isinstance(v, list): total += len(v)
+                      elif isinstance(v, dict):
+                          for vv in v.values():
+                              if isinstance(vv, list): total += len(vv)
+                  return total
+              return 0
+          errors, warns = 0, 0
+          print("=== Data QA ===")
+          for f in critical:
+              path = os.path.join(data_dir, f + ".json")
+              if not os.path.exists(path):
+                  print(f"ERROR: {f}.json missing"); errors += 1; continue
+              rows = count_rows(json.load(open(path)))
+              if rows == 0:
+                  print(f"ERROR: {f}.json has 0 rows"); errors += 1
+              else:
+                  print(f"OK: {f}.json ({rows} rows)")
+          for f in optional:
+              path = os.path.join(data_dir, f + ".json")
+              if not os.path.exists(path):
+                  print(f"WARN: {f}.json missing (optional)"); warns += 1; continue
+              rows = count_rows(json.load(open(path)))
+              if rows == 0:
+                  print(f"WARN: {f}.json empty (optional)"); warns += 1
+              else:
+                  print(f"OK: {f}.json ({rows} rows)")
+          print(f"\n=== QA: {errors} errors, {warns} warnings ===")
+          if errors > 0:
+              print(f"::error::{errors} critical data files empty")
+              sys.exit(1)
+          PYEOF
 
       - name: Render dashboard
         working-directory: vignettes
