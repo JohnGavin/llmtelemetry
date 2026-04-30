@@ -651,4 +651,42 @@ api_index <- list(
 write_json(api_index, file.path(out_dir, "index.json"), auto_unbox = TRUE, pretty = TRUE)
 cat("  -> index.json written\n")
 
+# --- 9. QA validation — fail early on empty critical data ---------------------
+cat("\n=== Data QA Validation ===\n")
+critical_files <- c("ccusage_daily", "ccusage_blocks", "git_commits",
+                     "git_bus_factor", "git_velocity", "git_timing",
+                     "git_churn", "git_bugs")
+qa_errors <- 0L
+for (f in critical_files) {
+  path <- file.path(out_dir, paste0(f, ".json"))
+  if (!file.exists(path)) {
+    cat(sprintf("  QA ERROR: %s.json missing\n", f))
+    qa_errors <- qa_errors + 1L
+    next
+  }
+  d <- fromJSON(path, simplifyDataFrame = FALSE)
+  n <- if (is.list(d) && !is.data.frame(d)) {
+    # Handle nested: {projects: {name: [rows]}} or {all_time: [...]}
+    sum(vapply(d, function(v) {
+      if (is.data.frame(v)) nrow(v)
+      else if (is.list(v) && all(vapply(v, is.list, logical(1)))) length(v)
+      else if (is.list(v)) sum(vapply(v, function(vv) {
+        if (is.data.frame(vv)) nrow(vv) else if (is.list(vv)) length(vv) else 0L
+      }, integer(1)))
+      else 0L
+    }, integer(1)))
+  } else if (is.data.frame(d)) nrow(d)
+  else 0L
+  if (n == 0L) {
+    cat(sprintf("  QA ERROR: %s.json has 0 rows — chart will show 'No data available'\n", f))
+    qa_errors <- qa_errors + 1L
+  } else {
+    cat(sprintf("  QA OK: %s.json (%d rows)\n", f, n))
+  }
+}
+if (qa_errors > 0L) {
+  stop(sprintf("QA FAILED: %d critical data files are empty", qa_errors))
+}
+cat("QA passed: all critical data files have rows\n\n")
+
 cat("Done. Output in", out_dir, "\n")
