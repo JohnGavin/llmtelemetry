@@ -326,9 +326,17 @@ ui <- page_navbar(
       var fsHint = null;
       function exitFullscreen() {
         if (!fsCard) return;
-        fsCard.classList.remove('card-fullscreen');
+        var card = fsCard;
+        card.classList.remove('card-fullscreen');
         fsCard = null;
         if (fsHint) { fsHint.remove(); fsHint = null; }
+        // Resize charts back to normal size
+        setTimeout(function() {
+          card.querySelectorAll('.echart-div').forEach(function(el) {
+            var inst = echarts.getInstanceByDom(el);
+            if (inst) inst.resize();
+          });
+        }, 100);
       }
       function enterFullscreen(card) {
         if (fsCard) exitFullscreen();

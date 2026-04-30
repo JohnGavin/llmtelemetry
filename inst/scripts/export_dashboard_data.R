@@ -290,8 +290,8 @@ if (length(commit_rows) > 0) {
 cat("Exporting git-recon metrics...\n")
 
 # Bus factor: contributor commit counts (all-time + 6 months)
-bus_all <- system("git shortlog -sn --no-merges", intern = TRUE)
-bus_6mo <- system('git shortlog -sn --no-merges --since="6 months ago"', intern = TRUE)
+bus_all <- system("git shortlog -sn --no-merges HEAD", intern = TRUE)
+bus_6mo <- system('git shortlog -sn --no-merges --since="6 months ago" HEAD', intern = TRUE)
 parse_shortlog <- function(lines) {
   lines <- trimws(lines)
   lines <- lines[nzchar(lines)]
