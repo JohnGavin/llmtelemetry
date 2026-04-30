@@ -657,6 +657,24 @@ critical_files <- c("ccusage_daily", "ccusage_blocks", "git_commits",
                      "git_bus_factor", "git_velocity", "git_timing",
                      "git_churn", "git_bugs")
 qa_errors <- 0L
+count_json_rows <- function(path) {
+  d <- fromJSON(path, simplifyDataFrame = TRUE)
+  if (is.data.frame(d)) return(nrow(d))
+  if (is.list(d)) {
+    # Nested: sum rows of all data.frame children (e.g. bus_factor$all_time)
+    total <- 0L
+    for (v in d) {
+      if (is.data.frame(v)) total <- total + nrow(v)
+      else if (is.list(v)) {
+        for (vv in v) {
+          if (is.data.frame(vv)) total <- total + nrow(vv)
+        }
+      }
+    }
+    return(total)
+  }
+  0L
+}
 for (f in critical_files) {
   path <- file.path(out_dir, paste0(f, ".json"))
   if (!file.exists(path)) {
@@ -664,19 +682,7 @@ for (f in critical_files) {
     qa_errors <- qa_errors + 1L
     next
   }
-  d <- fromJSON(path, simplifyDataFrame = FALSE)
-  n <- if (is.list(d) && !is.data.frame(d)) {
-    # Handle nested: {projects: {name: [rows]}} or {all_time: [...]}
-    sum(vapply(d, function(v) {
-      if (is.data.frame(v)) nrow(v)
-      else if (is.list(v) && all(vapply(v, is.list, logical(1)))) length(v)
-      else if (is.list(v)) sum(vapply(v, function(vv) {
-        if (is.data.frame(vv)) nrow(vv) else if (is.list(vv)) length(vv) else 0L
-      }, integer(1)))
-      else 0L
-    }, integer(1)))
-  } else if (is.data.frame(d)) nrow(d)
-  else 0L
+  n <- count_json_rows(path)
   if (n == 0L) {
     cat(sprintf("  QA ERROR: %s.json has 0 rows — chart will show 'No data available'\n", f))
     qa_errors <- qa_errors + 1L
