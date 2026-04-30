@@ -38,7 +38,6 @@ jobs:
         with:
           packages: |
             any::jsonlite
-            any::dplyr
             any::DBI
             any::duckdb
             any::here
@@ -46,6 +45,8 @@ jobs:
             any::shinylive
             any::knitr
             any::rmarkdown
+            any::DT
+            any::lubridate
 
       - uses: quarto-dev/quarto-actions/setup@v2
 
