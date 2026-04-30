@@ -130,14 +130,41 @@ git_commits <- load_json("git_commits.json")
 u_sessions  <- load_json("unified_sessions.json")
 u_costs     <- load_json("unified_costs.json")
 
+# Normalize data: fromJSON("[]") returns list(), nested objects need extraction
+as_df <- function(x) if (is.data.frame(x)) x else NULL
+has_rows <- function(x) is.data.frame(x) && nrow(x) > 0
+
+# ccusage_daily may be flat array OR nested {"projects": {...}} (CI fallback)
+if (is.list(cc_daily) && !is.data.frame(cc_daily)) {
+  if ("projects" %in% names(cc_daily)) {
+    parts <- lapply(names(cc_daily$projects), function(p) {
+      d <- cc_daily$projects[[p]]
+      if (is.data.frame(d) && nrow(d) > 0) { d$project <- p; d } else NULL
+    })
+    cc_daily <- do.call(rbind, Filter(Negate(is.null), parts))
+  } else {
+    cc_daily <- NULL
+  }
+}
+# ccusage_blocks may be wrapped in {"blocks": [...]}
+if (is.list(cc_blocks) && !is.data.frame(cc_blocks)) {
+  cc_blocks <- as_df(cc_blocks$blocks)
+}
+cc_sessions <- as_df(cc_sessions)
+gem_daily   <- as_df(gem_daily)
+gem_sess    <- as_df(gem_sess)
+git_commits <- as_df(git_commits)
+u_sessions  <- as_df(u_sessions)
+u_costs     <- as_df(u_costs)
+
 # Parse dates
-if (!is.null(cc_daily) && nrow(cc_daily) > 0) {
+if (has_rows(cc_daily)) {
   cc_daily$date <- as.Date(cc_daily$date)
 }
-if (!is.null(cc_sessions) && nrow(cc_sessions) > 0) {
+if (has_rows(cc_sessions)) {
   cc_sessions$lastActivity <- as.Date(cc_sessions$lastActivity)
 }
-if (!is.null(cc_blocks) && nrow(cc_blocks) > 0) {
+if (has_rows(cc_blocks)) {
   parse_ts <- function(x) {
     t <- as.POSIXct(x, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
     na_idx <- is.na(t) & !is.na(x)
@@ -157,19 +184,19 @@ if (!is.null(cc_blocks) && nrow(cc_blocks) > 0) {
   cc_blocks$tok_per_hr <- ifelse(cc_blocks$duration_hrs > 0,
     round(cc_blocks$totalTokens / cc_blocks$duration_hrs, 0), 0)
 }
-if (!is.null(gem_daily) && nrow(gem_daily) > 0) gem_daily$date <- as.Date(gem_daily$date)
-if (!is.null(git_commits) && nrow(git_commits) > 0) git_commits$date <- as.Date(git_commits$date)
-if (!is.null(u_sessions) && nrow(u_sessions) > 0) {
+if (has_rows(gem_daily)) gem_daily$date <- as.Date(gem_daily$date)
+if (has_rows(git_commits)) git_commits$date <- as.Date(git_commits$date)
+if (has_rows(u_sessions)) {
   u_sessions$started_at <- as.POSIXct(u_sessions$started_at, tz = "UTC")
   u_sessions$date <- as.Date(u_sessions$started_at)
 }
-if (!is.null(u_costs) && nrow(u_costs) > 0) u_costs$date <- as.Date(u_costs$date)
+if (has_rows(u_costs)) u_costs$date <- as.Date(u_costs$date)
 
-all_projects <- if (!is.null(cc_daily) && nrow(cc_daily) > 0) sort(unique(cc_daily$project)) else character(0)
+all_projects <- if (has_rows(cc_daily)) sort(unique(cc_daily$project)) else character(0)
 
 all_dates <- c(
-  if (!is.null(cc_daily) && nrow(cc_daily) > 0) cc_daily$date,
-  if (!is.null(gem_daily) && nrow(gem_daily) > 0) gem_daily$date
+  if (has_rows(cc_daily)) cc_daily$date,
+  if (has_rows(gem_daily)) gem_daily$date
 )
 date_min <- if (length(all_dates) > 0) min(all_dates, na.rm = TRUE) else Sys.Date() - 90
 date_max <- if (length(all_dates) > 0) max(all_dates, na.rm = TRUE) else Sys.Date()
@@ -385,11 +412,11 @@ server <- function(input, output, session) {
   cutoff <- reactive(date_max - input$horizon)
 
   cc_d <- reactive({
-    if (is.null(cc_daily) || nrow(cc_daily) == 0) return(data.frame())
+    if (!has_rows(cc_daily)) return(data.frame())
     cc_daily[cc_daily$date >= cutoff(), ]
   })
   gem_d <- reactive({
-    if (is.null(gem_daily) || nrow(gem_daily) == 0) return(data.frame())
+    if (!has_rows(gem_daily)) return(data.frame())
     gem_daily[gem_daily$date >= cutoff(), ]
   })
   cc_d_proj <- reactive({
@@ -422,10 +449,10 @@ server <- function(input, output, session) {
   })
   output$vb_sessions <- renderText({
     n <- 0L
-    if (!is.null(u_sessions) && nrow(u_sessions) > 0) {
+    if (has_rows(u_sessions)) {
       n <- nrow(u_sessions[u_sessions$date >= cutoff(), ])
     }
-    if (!is.null(gem_sess)) n <- n + nrow(gem_sess)
+    if (has_rows(gem_sess)) n <- n + nrow(gem_sess)
     as.character(n)
   })
 
@@ -439,7 +466,7 @@ server <- function(input, output, session) {
         `$/Day` = sprintf("$%.2f", sum(d$totalCost, na.rm = TRUE) / max(length(unique(d$date)), 1)),
         Tokens = format(sum(d$totalTokens, na.rm = TRUE), big.mark = ","),
         Days = length(unique(d$date)),
-        Sessions = if (!is.null(cc_sessions)) nrow(cc_sessions) else 0L,
+        Sessions = if (has_rows(cc_sessions)) nrow(cc_sessions) else 0L,
         `Date Range` = paste(min(d$date), "to", max(d$date)),
         check.names = FALSE, stringsAsFactors = FALSE
       )
@@ -452,7 +479,7 @@ server <- function(input, output, session) {
         `$/Day` = sprintf("$%.2f", sum(d$total_cost, na.rm = TRUE) / max(length(unique(d$date)), 1)),
         Tokens = format(sum(d$total_tokens, na.rm = TRUE), big.mark = ","),
         Days = length(unique(d$date)),
-        Sessions = if (!is.null(gem_sess)) nrow(gem_sess) else 0L,
+        Sessions = if (has_rows(gem_sess)) nrow(gem_sess) else 0L,
         `Date Range` = paste(min(d$date), "to", max(d$date)),
         check.names = FALSE, stringsAsFactors = FALSE
       )
@@ -720,7 +747,7 @@ server <- function(input, output, session) {
 
   # --- Sessions ---------------------------------------------------------------
   output$sess_claude <- renderDT({
-    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(datatable(data.frame()))
+    if (!has_rows(u_sessions)) return(datatable(data.frame()))
     d <- u_sessions[u_sessions$date >= cutoff(), ]
     d <- d[order(d$started_at, decreasing = TRUE), ]
     d <- head(d, input$top_n)
@@ -734,7 +761,7 @@ server <- function(input, output, session) {
   })
 
   output$sess_gemini <- renderDT({
-    if (is.null(gem_sess) || nrow(gem_sess) == 0) return(datatable(data.frame()))
+    if (!has_rows(gem_sess)) return(datatable(data.frame()))
     d <- gem_sess[order(gem_sess$total_cost, decreasing = TRUE), ]
     d <- head(d, input$top_n)
     out <- data.frame(
@@ -749,7 +776,7 @@ server <- function(input, output, session) {
   })
 
   output$sess_hist <- renderUI({
-    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(ec_empty())
+    if (!has_rows(u_sessions)) return(ec_empty())
     d <- u_sessions[u_sessions$date >= cutoff() & u_sessions$duration_min > 0, ]
     if (nrow(d) == 0) return(ec_empty())
     h <- hist(d$duration_min, breaks = 20, plot = FALSE)
@@ -759,7 +786,7 @@ server <- function(input, output, session) {
   })
 
   output$sess_scatter <- renderUI({
-    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(ec_empty())
+    if (!has_rows(u_sessions)) return(ec_empty())
     d <- u_sessions[u_sessions$date >= cutoff() & u_sessions$duration_min > 0, ]
     if (nrow(d) == 0) return(ec_empty())
     daily <- aggregate(
@@ -785,7 +812,7 @@ server <- function(input, output, session) {
 
   # --- Time Blocks ------------------------------------------------------------
   blk <- reactive({
-    if (is.null(cc_blocks) || nrow(cc_blocks) == 0) return(data.frame())
+    if (!has_rows(cc_blocks)) return(data.frame())
     cc_blocks[cc_blocks$date >= (date_max - input$block_days), ]
   })
 
@@ -878,7 +905,7 @@ server <- function(input, output, session) {
 
   # --- Commits -----------------------------------------------------------------
   commits_filt <- reactive({
-    if (is.null(git_commits) || nrow(git_commits) == 0) return(data.frame())
+    if (!has_rows(git_commits)) return(data.frame())
     git_commits[git_commits$date >= cutoff(), ]
   })
 
