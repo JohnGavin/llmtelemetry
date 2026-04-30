@@ -1068,23 +1068,24 @@ server <- function(input, output, session) {
   })
 
   # --- Repo Health ------------------------------------------------------------
-  bus_pie <- function(d) {
+  bus_dot <- function(d) {
     if (!has_rows(d)) return(ec_empty())
     d <- head(d[order(d$commits, decreasing = TRUE), ], 10)
-    items <- lapply(seq_len(nrow(d)), function(i)
-      list(name = d$author[i], value = d$commits[i]))
+    d <- d[nrow(d):1, ]  # reverse for bottom-up display
+    total <- sum(d$commits)
+    labels <- paste0(d$author, " (", round(d$commits / total * 100), "%)")
     ec(list(
-      tooltip = list(trigger = "item", formatter = "{b}: {c} ({d}%)"),
-      series = list(list(
-        type = "pie", radius = c("40%", "70%"),
-        data = items,
-        label = list(color = "#ccc", fontSize = 10),
-        emphasis = list(itemStyle = list(shadowBlur = 10))
-      ))
+      tooltip = list(trigger = "axis"),
+      grid = list(containLabel = TRUE, left = 120),
+      xAxis = list(type = "value", name = "Commits"),
+      yAxis = list(type = "category", data = I(labels)),
+      series = list(list(type = "bar", data = I(d$commits),
+        itemStyle = list(color = pal$claude),
+        label = list(show = TRUE, position = "right", color = "#ccc")))
     ))
   }
-  output$rh_bus_all <- renderUI(bus_pie(git_bus$all_time))
-  output$rh_bus_6mo <- renderUI(bus_pie(git_bus$recent_6mo))
+  output$rh_bus_all <- renderUI(bus_dot(git_bus$all_time))
+  output$rh_bus_6mo <- renderUI(bus_dot(git_bus$recent_6mo))
 
   output$rh_velocity <- renderUI({
     if (!has_rows(git_vel)) return(ec_empty())
