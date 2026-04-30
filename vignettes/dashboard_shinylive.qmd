@@ -134,22 +134,57 @@ u_costs     <- load_json("unified_costs.json")
 as_df <- function(x) if (is.data.frame(x)) x else NULL
 has_rows <- function(x) is.data.frame(x) && nrow(x) > 0
 
+# Shorten project path: keep last 2 meaningful segments
+shorten_proj <- function(x) {
+  x <- sub("^-Users-johngavin-docs[-_]gh-", "", x)
+  x <- sub("^llm-", "", x)
+  x <- sub("^proj-", "", x)
+  gsub("-", "/", x)
+}
+
 # ccusage_daily may be flat array OR nested {"projects": {...}} (CI fallback)
 if (is.list(cc_daily) && !is.data.frame(cc_daily)) {
   if ("projects" %in% names(cc_daily)) {
     parts <- lapply(names(cc_daily$projects), function(p) {
       d <- cc_daily$projects[[p]]
-      if (is.data.frame(d) && nrow(d) > 0) { d$project <- p; d } else NULL
+      if (is.data.frame(d) && nrow(d) > 0) { d$project <- shorten_proj(p); d } else NULL
     })
     cc_daily <- do.call(rbind, Filter(Negate(is.null), parts))
   } else {
     cc_daily <- NULL
   }
 }
+# Normalize column names: raw ccusage uses cacheCreationTokens, cmonitor uses cacheCreation
+if (has_rows(cc_daily)) {
+  nm <- names(cc_daily)
+  if ("cacheCreationTokens" %in% nm && !"cacheCreation" %in% nm)
+    names(cc_daily)[nm == "cacheCreationTokens"] <- "cacheCreation"
+  if ("cacheReadTokens" %in% nm && !"cacheRead" %in% nm)
+    names(cc_daily)[nm == "cacheReadTokens"] <- "cacheRead"
+}
+
 # ccusage_blocks may be wrapped in {"blocks": [...]}
 if (is.list(cc_blocks) && !is.data.frame(cc_blocks)) {
   cc_blocks <- as_df(cc_blocks$blocks)
 }
+# Normalize blocks: extract nested tokenCounts, filter out gaps
+if (has_rows(cc_blocks)) {
+  if ("isGap" %in% names(cc_blocks)) {
+    cc_blocks <- cc_blocks[!cc_blocks$isGap, ]
+  }
+  if ("tokenCounts" %in% names(cc_blocks) && is.data.frame(cc_blocks$tokenCounts)) {
+    tc <- cc_blocks$tokenCounts
+    if ("inputTokens" %in% names(tc)) cc_blocks$inputTokens <- tc$inputTokens
+    if ("outputTokens" %in% names(tc)) cc_blocks$outputTokens <- tc$outputTokens
+    if ("cacheCreationInputTokens" %in% names(tc)) cc_blocks$cacheCreation <- tc$cacheCreationInputTokens
+    if ("cacheReadInputTokens" %in% names(tc)) cc_blocks$cacheRead <- tc$cacheReadInputTokens
+  }
+  # models may be a list column — collapse to string
+  if ("models" %in% names(cc_blocks) && is.list(cc_blocks$models)) {
+    cc_blocks$models <- vapply(cc_blocks$models, function(m) paste(m, collapse = ", "), "")
+  }
+}
+
 cc_sessions <- as_df(cc_sessions)
 gem_daily   <- as_df(gem_daily)
 gem_sess    <- as_df(gem_sess)
@@ -158,6 +193,13 @@ u_sessions  <- as_df(u_sessions)
 u_costs     <- as_df(u_costs)
 
 # Parse dates
+parse_ts <- function(x) {
+  t <- as.POSIXct(x, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
+  na_idx <- is.na(t) & !is.na(x)
+  if (any(na_idx)) t[na_idx] <- as.POSIXct(x[na_idx], format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+  t
+}
+
 if (has_rows(cc_daily)) {
   cc_daily$date <- as.Date(cc_daily$date)
 }
@@ -165,12 +207,6 @@ if (has_rows(cc_sessions)) {
   cc_sessions$lastActivity <- as.Date(cc_sessions$lastActivity)
 }
 if (has_rows(cc_blocks)) {
-  parse_ts <- function(x) {
-    t <- as.POSIXct(x, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
-    na_idx <- is.na(t) & !is.na(x)
-    if (any(na_idx)) t[na_idx] <- as.POSIXct(x[na_idx], format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
-    t
-  }
   cc_blocks$startTime <- parse_ts(cc_blocks$startTime)
   cc_blocks$endTime   <- parse_ts(cc_blocks$endTime)
   cc_blocks$actualEndTime <- parse_ts(cc_blocks$actualEndTime)
@@ -192,13 +228,22 @@ if (has_rows(u_sessions)) {
 }
 if (has_rows(u_costs)) u_costs$date <- as.Date(u_costs$date)
 
-all_projects <- if (has_rows(cc_daily)) sort(unique(cc_daily$project)) else character(0)
+# Top 5 projects by cost in last 28 days
+all_projects <- character(0)
+if (has_rows(cc_daily)) {
+  recent <- cc_daily[cc_daily$date >= (max(cc_daily$date) - 28), ]
+  if (nrow(recent) > 0) {
+    proj_cost <- aggregate(totalCost ~ project, data = recent, FUN = sum, na.rm = TRUE)
+    proj_cost <- proj_cost[order(proj_cost$totalCost, decreasing = TRUE), ]
+    all_projects <- head(proj_cost$project, 5)
+  }
+}
 
 all_dates <- c(
   if (has_rows(cc_daily)) cc_daily$date,
   if (has_rows(gem_daily)) gem_daily$date
 )
-date_min <- if (length(all_dates) > 0) min(all_dates, na.rm = TRUE) else Sys.Date() - 90
+date_min <- if (length(all_dates) > 0) min(all_dates, na.rm = TRUE) else Sys.Date() - 30
 date_max <- if (length(all_dates) > 0) max(all_dates, na.rm = TRUE) else Sys.Date()
 max_days <- as.numeric(date_max - date_min)
 
@@ -287,7 +332,7 @@ ui <- page_navbar(
   sidebar = sidebar(
     width = 220,
     sliderInput("horizon", "Time Horizon (days)",
-      min = 7, max = max(max_days, 30), value = min(90, max_days), step = 7),
+      min = 1, max = 30, value = 30, step = 1),
     conditionalPanel(
       condition = "input.tabs == 'Cost Trends' || input.tabs == 'Token Analysis'",
       selectInput("projects", "Projects", choices = all_projects,
@@ -691,26 +736,32 @@ server <- function(input, output, session) {
   output$token_comp <- renderUI({
     d <- cc_d_proj()
     if (nrow(d) == 0) return(ec_empty())
-    tok_input <- aggregate(inputTokens ~ date, data = d, FUN = sum, na.rm = TRUE)
-    tok_output <- aggregate(outputTokens ~ date, data = d, FUN = sum, na.rm = TRUE)
-    tok_ccreate <- aggregate(cacheCreation ~ date, data = d, FUN = sum, na.rm = TRUE)
-    tok_cread <- aggregate(cacheRead ~ date, data = d, FUN = sum, na.rm = TRUE)
     all_d <- sort(unique(d$date))
     val_at <- function(agg, col, dates) {
       vals <- rep(0, length(dates))
       vals[match(agg$date, dates)] <- agg[[col]]
       vals
     }
-    series <- list(
-      list(name = "Input", type = "bar", stack = "tokens",
-           data = I(val_at(tok_input, "inputTokens", all_d))),
-      list(name = "Output", type = "bar", stack = "tokens",
-           data = I(val_at(tok_output, "outputTokens", all_d))),
-      list(name = "Cache Create", type = "bar", stack = "tokens",
-           data = I(val_at(tok_ccreate, "cacheCreation", all_d))),
-      list(name = "Cache Read", type = "bar", stack = "tokens",
-           data = I(val_at(tok_cread, "cacheRead", all_d)))
+    series <- list()
+    # Use whichever column names exist (cmonitor vs raw ccusage format)
+    tok_cols <- list(
+      Input = intersect(c("inputTokens"), names(d)),
+      Output = intersect(c("outputTokens"), names(d)),
+      `Cache Create` = intersect(c("cacheCreation", "cacheCreationTokens"), names(d)),
+      `Cache Read` = intersect(c("cacheRead", "cacheReadTokens"), names(d))
     )
+    for (nm in names(tok_cols)) {
+      col <- tok_cols[[nm]]
+      if (length(col) > 0 && col[1] %in% names(d)) {
+        agg <- aggregate(d[[col[1]]] ~ date, data = d, FUN = sum, na.rm = TRUE)
+        names(agg)[2] <- "val"
+        series[[length(series) + 1]] <- list(
+          name = nm, type = "bar", stack = "tokens",
+          data = I(val_at(agg, "val", all_d))
+        )
+      }
+    }
+    if (length(series) == 0) return(ec_empty())
     ec_bar(all_d, series)
   })
 
@@ -819,6 +870,7 @@ server <- function(input, output, session) {
   output$block_table <- renderDT({
     d <- blk()
     if (nrow(d) == 0) return(datatable(data.frame()))
+    n <- nrow(d)
     eff_end <- coalesce2(d$actualEndTime, d$endTime)
     out <- data.frame(
       Day = format(d$date, "%a %Y-%m-%d"),
@@ -827,9 +879,9 @@ server <- function(input, output, session) {
       Duration = sprintf("%.1fh", d$duration_hrs),
       Cost = sprintf("$%.2f", d$costUSD),
       `$/hr` = sprintf("$%.2f", d$cost_per_hr),
-      Tokens = format(d$totalTokens, big.mark = ","),
-      `Tok/hr` = format(d$tok_per_hr, big.mark = ","),
-      Models = d$models,
+      Tokens = format(if ("totalTokens" %in% names(d)) d$totalTokens else rep(0, n), big.mark = ","),
+      `Tok/hr` = format(if ("tok_per_hr" %in% names(d)) d$tok_per_hr else rep(0, n), big.mark = ","),
+      Models = if ("models" %in% names(d)) d$models else rep("-", n),
       check.names = FALSE, stringsAsFactors = FALSE
     )
     datatable(out,
