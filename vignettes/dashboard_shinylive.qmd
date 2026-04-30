@@ -25,20 +25,86 @@ filters:
 #| standalone: true
 #| viewerHeight: 1200
 
-# WebR runtime bundles rlang 1.1.6 but R 4.5 repo has 1.2.0.
-# Loading rlang FIRST forces the preload scanner to download 1.2.0
-# from repo before shiny/bslib lock in the bundled 1.1.6.
-# See memory/shinylive-issues.md for history of this pattern.
-library(rlang)
-
+# WebR bundles rlang 1.1.6. dplyr 1.2.1/echarts4r need rlang >= 1.1.7.
+# The preload scanner skips re-downloading bundled rlang, so the conflict
+# is unavoidable. Solution: use base R + JS ECharts (no dplyr/echarts4r).
 library(shiny)
 library(bslib)
 library(DT)
-library(dplyr, warn.conflicts = FALSE)
-library(tidyr)
 library(jsonlite)
 library(lubridate, warn.conflicts = FALSE)
-library(echarts4r)
+
+# --- Helpers ------------------------------------------------------------------
+coalesce2 <- function(x, y) { x[is.na(x)] <- y[is.na(x)]; x }
+
+ec <- function(option, h = "300px") {
+  id <- paste0("ec", sample.int(1e7, 1))
+  j <- toJSON(option, auto_unbox = TRUE, null = "null")
+  tagList(
+    tags$div(id = id, class = "echart-div", style = paste0("width:100%;height:", h)),
+    tags$script(HTML(paste0(
+      "(function(){var c=echarts.init(document.getElementById('", id,
+      "'),'dark');c.setOption(", j, ");new ResizeObserver(function(){c.resize()})",
+      ".observe(document.getElementById('", id, "'))})();"
+    )))
+  )
+}
+
+ec_empty <- function(msg = "No data available", h = "300px") {
+  ec(list(title = list(text = msg, textStyle = list(color = "#ccc", fontSize = 14)),
+          grid = list(containLabel = TRUE)), h)
+}
+
+ec_line <- function(dates, series, h = "300px") {
+  ec(list(
+    tooltip = list(trigger = "axis"),
+    legend = list(bottom = 0, textStyle = list(color = "#ccc")),
+    grid = list(containLabel = TRUE),
+    xAxis = list(type = "category", data = I(as.character(dates))),
+    yAxis = list(type = "value"),
+    series = series
+  ), h)
+}
+
+ec_bar <- function(cats, series, h = "300px") {
+  ec(list(
+    tooltip = list(trigger = "axis"),
+    legend = list(bottom = 0, textStyle = list(color = "#ccc")),
+    grid = list(containLabel = TRUE),
+    xAxis = list(type = "category", data = I(as.character(cats)),
+                 axisLabel = list(rotate = 30)),
+    yAxis = list(type = "value"),
+    series = series
+  ), h)
+}
+
+ec_scatter <- function(data_pts, color = "#377eb8", h = "300px",
+                       x_type = "value", size_col = 3, scale = 3) {
+  id <- paste0("ec", sample.int(1e7, 1))
+  opt <- list(
+    tooltip = list(trigger = "item"),
+    grid = list(containLabel = TRUE),
+    xAxis = list(type = x_type),
+    yAxis = list(type = "value"),
+    series = list(list(type = "scatter", data = data_pts,
+                       itemStyle = list(color = color)))
+  )
+  j <- toJSON(opt, auto_unbox = TRUE, null = "null")
+  tagList(
+    tags$div(id = id, class = "echart-div", style = paste0("width:100%;height:", h)),
+    tags$script(HTML(paste0(
+      "(function(){var c=echarts.init(document.getElementById('", id, "'),'dark');",
+      "var o=", j, ";",
+      "o.series[0].symbolSize=function(d){return Math.max(5,Math.sqrt(Math.abs(d[",
+      size_col - 1, "]))*", scale, ")};",
+      "c.setOption(o);new ResizeObserver(function(){c.resize()})",
+      ".observe(document.getElementById('", id, "'))})();"
+    )))
+  )
+}
+
+pal <- list(claude = "#377eb8", gemini = "#e41a1c", accent = "#4daf4a",
+            purple = "#984ea3", orange = "#ff7f00", hist = "#377eb8")
 
 # --- Data loading -------------------------------------------------------------
 base_url <- "https://johngavin.github.io/llmtelemetry"
@@ -72,7 +138,6 @@ if (!is.null(cc_sessions) && nrow(cc_sessions) > 0) {
   cc_sessions$lastActivity <- as.Date(cc_sessions$lastActivity)
 }
 if (!is.null(cc_blocks) && nrow(cc_blocks) > 0) {
-  # Support both ISO 8601 (ccusage: 2026-04-21T12:00:00) and space-separated (cmonitor-rs: 2026-04-21 12:00:00)
   parse_ts <- function(x) {
     t <- as.POSIXct(x, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
     na_idx <- is.na(t) & !is.na(x)
@@ -85,37 +150,23 @@ if (!is.null(cc_blocks) && nrow(cc_blocks) > 0) {
   cc_blocks$date <- as.Date(cc_blocks$startTime)
   cc_blocks$hour <- hour(cc_blocks$startTime)
   cc_blocks$wday <- wday(cc_blocks$startTime, label = TRUE)
-  cc_blocks$duration_hrs <- as.numeric(
-    difftime(coalesce(cc_blocks$actualEndTime, cc_blocks$endTime),
-             cc_blocks$startTime, units = "hours")
-  )
+  eff_end <- coalesce2(cc_blocks$actualEndTime, cc_blocks$endTime)
+  cc_blocks$duration_hrs <- as.numeric(difftime(eff_end, cc_blocks$startTime, units = "hours"))
   cc_blocks$cost_per_hr <- ifelse(cc_blocks$duration_hrs > 0,
     round(cc_blocks$costUSD / cc_blocks$duration_hrs, 2), 0)
   cc_blocks$tok_per_hr <- ifelse(cc_blocks$duration_hrs > 0,
     round(cc_blocks$totalTokens / cc_blocks$duration_hrs, 0), 0)
 }
-if (!is.null(gem_daily) && nrow(gem_daily) > 0) {
-  gem_daily$date <- as.Date(gem_daily$date)
-}
-if (!is.null(git_commits) && nrow(git_commits) > 0) {
-  git_commits$date <- as.Date(git_commits$date)
-}
+if (!is.null(gem_daily) && nrow(gem_daily) > 0) gem_daily$date <- as.Date(gem_daily$date)
+if (!is.null(git_commits) && nrow(git_commits) > 0) git_commits$date <- as.Date(git_commits$date)
 if (!is.null(u_sessions) && nrow(u_sessions) > 0) {
   u_sessions$started_at <- as.POSIXct(u_sessions$started_at, tz = "UTC")
   u_sessions$date <- as.Date(u_sessions$started_at)
 }
-if (!is.null(u_costs) && nrow(u_costs) > 0) {
-  u_costs$date <- as.Date(u_costs$date)
-}
+if (!is.null(u_costs) && nrow(u_costs) > 0) u_costs$date <- as.Date(u_costs$date)
 
-# All project names for filter
-all_projects <- if (!is.null(cc_daily) && nrow(cc_daily) > 0) {
-  sort(unique(cc_daily$project))
-} else {
-  character(0)
-}
+all_projects <- if (!is.null(cc_daily) && nrow(cc_daily) > 0) sort(unique(cc_daily$project)) else character(0)
 
-# Date range
 all_dates <- c(
   if (!is.null(cc_daily) && nrow(cc_daily) > 0) cc_daily$date,
   if (!is.null(gem_daily) && nrow(gem_daily) > 0) gem_daily$date
@@ -123,25 +174,6 @@ all_dates <- c(
 date_min <- if (length(all_dates) > 0) min(all_dates, na.rm = TRUE) else Sys.Date() - 90
 date_max <- if (length(all_dates) > 0) max(all_dates, na.rm = TRUE) else Sys.Date()
 max_days <- as.numeric(date_max - date_min)
-
-# --- echarts4r dark theme helper ---------------------------------------------
-pal <- list(claude = "#377eb8", gemini = "#e41a1c", accent = "#4daf4a",
-            purple = "#984ea3", orange = "#ff7f00", hist = "#377eb8")
-
-dark_echart <- function(e) {
-  e |>
-    e_theme("dark") |>
-    e_tooltip(trigger = "axis") |>
-    e_legend(bottom = 0, textStyle = list(color = "#ccc")) |>
-    e_grid(containLabel = TRUE)
-}
-
-empty_echart <- function(msg = "No data available") {
-  e_charts() |>
-    e_theme("dark") |>
-    e_title(msg, textStyle = list(color = "#ccc", fontSize = 14)) |>
-    e_grid(containLabel = TRUE)
-}
 
 # --- UI -----------------------------------------------------------------------
 ui <- page_navbar(
@@ -152,6 +184,7 @@ ui <- page_navbar(
     font_scale = 0.85
   ),
   header = tagList(
+    tags$script(src = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"),
     tags$style(HTML("
       .bslib-value-box .value-box-value { font-size: 1.4rem !important; white-space: nowrap; }
       .bslib-value-box .value-box-title { font-size: 0.75rem !important; white-space: nowrap; }
@@ -159,7 +192,6 @@ ui <- page_navbar(
       .card-header { background-color: #2a2a2a !important; color: #e0e0e0 !important; font-size: 0.85rem; }
       .card-footer { background-color: #1a1a1a !important; border-color: #333 !important; }
       .sidebar-content { background-color: #222 !important; }
-      /* All table cells: never wrap */
       table.dataTable th, table.dataTable td { white-space: nowrap !important; }
       table.dataTable { color: #e0e0e0 !important; }
       table.dataTable thead th { color: #e0e0e0 !important; background-color: #2a2a2a !important; }
@@ -167,7 +199,6 @@ ui <- page_navbar(
       .dataTables_wrapper .dataTables_filter input { background-color: #333; color: #e0e0e0; border-color: #555; }
       .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #ccc !important; }
       .dataTables_scrollBody { max-height: none !important; }
-      /* Fullscreen card: in-place, centred, ~50vh tall to fit 15in laptop */
       .card.card-fullscreen {
         position: fixed !important; top: 50% !important; left: 50% !important;
         transform: translate(-50%, -50%) !important;
@@ -177,7 +208,7 @@ ui <- page_navbar(
         padding: 10px !important; margin: 0 !important;
         box-shadow: 0 0 60px rgba(0,0,0,0.9) !important;
       }
-      .card.card-fullscreen .echarts4r-container {
+      .card.card-fullscreen .echart-div {
         width: calc(96vw - 40px) !important; height: 42vh !important;
       }
       .card.card-fullscreen .dataTables_wrapper {
@@ -191,43 +222,36 @@ ui <- page_navbar(
     tags$script(HTML("
       var fsCard = null;
       var fsHint = null;
-
       function exitFullscreen() {
         if (!fsCard) return;
         fsCard.classList.remove('card-fullscreen');
         fsCard = null;
         if (fsHint) { fsHint.remove(); fsHint = null; }
       }
-
       function enterFullscreen(card) {
         if (fsCard) exitFullscreen();
         fsCard = card;
         card.classList.add('card-fullscreen');
-        // Add hint
         fsHint = document.createElement('div');
         fsHint.className = 'card-fullscreen-hint';
         fsHint.textContent = 'Click card or press Esc to exit';
         document.body.appendChild(fsHint);
-        // Recalc DT column widths
         var dtApi = card.querySelector('.dataTable');
         if (dtApi && dtApi.DataTable) {
           try { dtApi.DataTable().columns.adjust(); } catch(e) {}
         }
+        card.querySelectorAll('.echart-div').forEach(function(el) {
+          var inst = echarts.getInstanceByDom(el);
+          if (inst) inst.resize();
+        });
       }
-
-      // Click card -> toggle fullscreen (not value boxes)
       document.addEventListener('click', function(e) {
         var card = e.target.closest('.card');
         if (!card) return;
-        // Skip value boxes
         if (card.querySelector('.value-box-value')) return;
-        if (fsCard === card) {
-          exitFullscreen();
-        } else if (!fsCard) {
-          enterFullscreen(card);
-        }
+        if (fsCard === card) exitFullscreen();
+        else if (!fsCard) enterFullscreen(card);
       });
-
       document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') exitFullscreen();
       });
@@ -261,78 +285,68 @@ ui <- page_navbar(
       value_box("Active Days", textOutput("vb_days"), theme = "success"),
       value_box("Sessions", textOutput("vb_sessions"), theme = "warning")
     ),
-    layout_columns(
-      col_widths = c(12),
+    layout_columns(col_widths = c(12),
       card(card_header("Source Summary"), DTOutput("overview_table"),
         card_footer(class = "text-muted small", "Cost, tokens, and session counts per data source"))
     ),
-    layout_columns(
-      col_widths = c(12),
-      card(card_header("Daily Cost (All Sources)"), echarts4rOutput("overview_cost_ts", height = "350px"),
+    layout_columns(col_widths = c(12),
+      card(card_header("Daily Cost (All Sources)"), uiOutput("overview_cost_ts"),
         card_footer(class = "text-muted small", "Daily cost time series combining Claude and Gemini usage"))
     )
   ),
 
   nav_panel("Cost Trends", value = "Cost Trends",
-    layout_columns(
-      col_widths = c(6, 6),
-      card(card_header("Daily Cost by Project"), echarts4rOutput("cost_by_project", height = "300px"),
-        card_footer(class = "text-muted small", "Daily Claude cost by project (lines+markers)")),
-      card(card_header("Cumulative Cost"), echarts4rOutput("cost_cumulative", height = "300px"),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Daily Cost by Project"), uiOutput("cost_by_project"),
+        card_footer(class = "text-muted small", "Daily Claude cost by project")),
+      card(card_header("Cumulative Cost"), uiOutput("cost_cumulative"),
         card_footer(class = "text-muted small", "Running total of cost over time by source"))
     ),
-    layout_columns(
-      col_widths = c(6, 6),
-      card(card_header("Weekly Cost by Source"), echarts4rOutput("cost_weekly", height = "300px"),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Weekly Cost by Source"), uiOutput("cost_weekly"),
         card_footer(class = "text-muted small", "Weekly cost grouped by Claude vs Gemini")),
-      card(card_header("Weekly Cost by Model"), echarts4rOutput("cost_by_model", height = "300px"),
+      card(card_header("Weekly Cost by Model"), uiOutput("cost_by_model"),
         card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
     )
   ),
 
   nav_panel("Token Analysis", value = "Token Analysis",
-    layout_columns(
-      col_widths = c(12),
-      card(card_header("Daily Tokens"), echarts4rOutput("token_daily", height = "350px"),
+    layout_columns(col_widths = c(12),
+      card(card_header("Daily Tokens"), uiOutput("token_daily"),
         card_footer(class = "text-muted small", "Daily token consumption across all sources"))
     ),
-    layout_columns(
-      col_widths = c(6, 6),
-      card(card_header("Token Composition"), echarts4rOutput("token_comp", height = "300px"),
-        card_footer(class = "text-muted small", "Grouped bars: input, output, cache-create, and cache-read tokens")),
-      card(card_header("Weekly Tokens by Source"), echarts4rOutput("token_weekly", height = "300px"),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Token Composition"), uiOutput("token_comp"),
+        card_footer(class = "text-muted small", "Stacked bars: input, output, cache-create, and cache-read tokens")),
+      card(card_header("Weekly Tokens by Source"), uiOutput("token_weekly"),
         card_footer(class = "text-muted small", "Weekly token usage by source"))
     )
   ),
 
   nav_panel("Sessions", value = "Sessions",
-    layout_columns(
-      col_widths = c(6, 6),
+    layout_columns(col_widths = c(6, 6),
       card(card_header("Claude Sessions"), DTOutput("sess_claude"),
         card_footer(class = "text-muted small", "Claude Code sessions from unified.duckdb telemetry")),
       card(card_header("Top Gemini Sessions"), DTOutput("sess_gemini"),
         card_footer(class = "text-muted small", "Most expensive Gemini sessions by total cost"))
     ),
-    layout_columns(
-      col_widths = c(6, 6),
-      card(card_header("Session Duration Distribution"), echarts4rOutput("sess_hist", height = "300px"),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Session Duration Distribution"), uiOutput("sess_hist"),
         card_footer(class = "text-muted small", "Histogram of session durations (minutes)")),
-      card(card_header("Sessions Over Time"), echarts4rOutput("sess_scatter", height = "300px"),
+      card(card_header("Sessions Over Time"), uiOutput("sess_scatter"),
         card_footer(class = "text-muted small", "Daily session count, bubble size = total minutes"))
     )
   ),
 
   nav_panel("Time Blocks", value = "Time Blocks",
-    layout_columns(
-      col_widths = c(12),
+    layout_columns(col_widths = c(12),
       card(card_header("Block Activity"), DTOutput("block_table"),
         card_footer(class = "text-muted small", "Claude coding blocks with cost and efficiency metrics"))
     ),
-    layout_columns(
-      col_widths = c(6, 6),
-      card(card_header("Block Timeline"), echarts4rOutput("block_timeline", height = "300px"),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Block Timeline"), uiOutput("block_timeline"),
         card_footer(class = "text-muted small", "Cost per block, dot size = duration")),
-      card(card_header("Hourly Activity Heatmap"), echarts4rOutput("block_heatmap", height = "300px"),
+      card(card_header("Hourly Activity Heatmap"), uiOutput("block_heatmap"),
         card_footer(class = "text-muted small", "Cost heatmap by day of week and hour"))
     )
   ),
@@ -344,16 +358,14 @@ ui <- page_navbar(
       value_box("Median Lines", textOutput("vb_median_lines"), theme = "info"),
       value_box("Mean Lines", textOutput("vb_mean_lines"), theme = "success")
     ),
-    layout_columns(
-      col_widths = c(12),
-      card(card_header("Lines Changed per Commit"), echarts4rOutput("commit_hist", height = "350px"),
+    layout_columns(col_widths = c(12),
+      card(card_header("Lines Changed per Commit"), uiOutput("commit_hist"),
         card_footer(class = "text-muted small", "Distribution of total lines changed per commit"))
     ),
-    layout_columns(
-      col_widths = c(6, 6),
-      card(card_header("Lines Changed Over Time"), echarts4rOutput("commit_scatter_time", height = "300px"),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Lines Changed Over Time"), uiOutput("commit_scatter_time"),
         card_footer(class = "text-muted small", "Lines changed per commit over time, sized by files changed")),
-      card(card_header("Additions vs Deletions"), echarts4rOutput("commit_scatter_add_del", height = "300px"),
+      card(card_header("Additions vs Deletions"), uiOutput("commit_scatter_add_del"),
         card_footer(class = "text-muted small", "Lines added vs deleted per commit"))
     )
   ),
@@ -365,7 +377,6 @@ ui <- page_navbar(
     " | Data: ccusage, Gemini, cmonitor, unified.duckdb",
     " | Built: ", format(Sys.Date(), "%Y-%m-%d")
   ),
-
   id = "tabs"
 )
 
@@ -373,19 +384,18 @@ ui <- page_navbar(
 server <- function(input, output, session) {
   cutoff <- reactive(date_max - input$horizon)
 
-  # Filtered datasets
   cc_d <- reactive({
-    if (is.null(cc_daily) || nrow(cc_daily) == 0) return(tibble())
-    cc_daily |> filter(date >= cutoff())
+    if (is.null(cc_daily) || nrow(cc_daily) == 0) return(data.frame())
+    cc_daily[cc_daily$date >= cutoff(), ]
   })
   gem_d <- reactive({
-    if (is.null(gem_daily) || nrow(gem_daily) == 0) return(tibble())
-    gem_daily |> filter(date >= cutoff())
+    if (is.null(gem_daily) || nrow(gem_daily) == 0) return(data.frame())
+    gem_daily[gem_daily$date >= cutoff(), ]
   })
   cc_d_proj <- reactive({
     d <- cc_d()
     if (nrow(d) == 0) return(d)
-    if (length(input$projects) > 0) d <- d |> filter(project %in% input$projects)
+    if (length(input$projects) > 0) d <- d[d$project %in% input$projects, ]
     d
   })
 
@@ -411,387 +421,465 @@ server <- function(input, output, session) {
     as.character(length(unique(dates)))
   })
   output$vb_sessions <- renderText({
-    n <- if (!is.null(u_sessions) && nrow(u_sessions) > 0) {
-      nrow(u_sessions |> filter(date >= cutoff()))
-    } else {
-      0L
+    n <- 0L
+    if (!is.null(u_sessions) && nrow(u_sessions) > 0) {
+      n <- nrow(u_sessions[u_sessions$date >= cutoff(), ])
     }
-    n <- n + if (!is.null(gem_sess)) nrow(gem_sess) else 0
+    if (!is.null(gem_sess)) n <- n + nrow(gem_sess)
     as.character(n)
   })
 
   output$overview_table <- renderDT({
     rows <- list()
-
     if (nrow(cc_d()) > 0) {
-      cc_sum <- cc_d() |>
-        summarise(
-          cost = sum(totalCost, na.rm = TRUE), tokens = sum(totalTokens, na.rm = TRUE),
-          days = n_distinct(date),
-          min_date = min(date), max_date = max(date)
-        )
-      rows[[1]] <- tibble(
+      d <- cc_d()
+      rows[[1]] <- data.frame(
         Source = "Claude (ccusage)",
-        Cost = sprintf("$%.2f", cc_sum$cost),
-        `$/Day` = sprintf("$%.2f", cc_sum$cost / max(cc_sum$days, 1)),
-        Tokens = format(cc_sum$tokens, big.mark = ","),
-        Days = cc_sum$days,
+        Cost = sprintf("$%.2f", sum(d$totalCost, na.rm = TRUE)),
+        `$/Day` = sprintf("$%.2f", sum(d$totalCost, na.rm = TRUE) / max(length(unique(d$date)), 1)),
+        Tokens = format(sum(d$totalTokens, na.rm = TRUE), big.mark = ","),
+        Days = length(unique(d$date)),
         Sessions = if (!is.null(cc_sessions)) nrow(cc_sessions) else 0L,
-        `Date Range` = paste(cc_sum$min_date, "to", cc_sum$max_date)
+        `Date Range` = paste(min(d$date), "to", max(d$date)),
+        check.names = FALSE, stringsAsFactors = FALSE
       )
     }
-
     if (nrow(gem_d()) > 0) {
-      gm_sum <- gem_d() |>
-        summarise(
-          cost = sum(total_cost, na.rm = TRUE), tokens = sum(total_tokens, na.rm = TRUE),
-          days = n_distinct(date),
-          min_date = min(date), max_date = max(date)
-        )
-      rows[[length(rows) + 1]] <- tibble(
+      d <- gem_d()
+      rows[[length(rows) + 1]] <- data.frame(
         Source = "Gemini",
-        Cost = sprintf("$%.2f", gm_sum$cost),
-        `$/Day` = sprintf("$%.2f", gm_sum$cost / max(gm_sum$days, 1)),
-        Tokens = format(gm_sum$tokens, big.mark = ","),
-        Days = gm_sum$days,
+        Cost = sprintf("$%.2f", sum(d$total_cost, na.rm = TRUE)),
+        `$/Day` = sprintf("$%.2f", sum(d$total_cost, na.rm = TRUE) / max(length(unique(d$date)), 1)),
+        Tokens = format(sum(d$total_tokens, na.rm = TRUE), big.mark = ","),
+        Days = length(unique(d$date)),
         Sessions = if (!is.null(gem_sess)) nrow(gem_sess) else 0L,
-        `Date Range` = paste(gm_sum$min_date, "to", gm_sum$max_date)
+        `Date Range` = paste(min(d$date), "to", max(d$date)),
+        check.names = FALSE, stringsAsFactors = FALSE
       )
     }
-
     if (!is.null(cmon) && !is.null(cmon$total_cost)) {
-      rows[[length(rows) + 1]] <- tibble(
+      rows[[length(rows) + 1]] <- data.frame(
         Source = "cmonitor",
         Cost = sprintf("$%.2f", cmon$total_cost),
         `$/Day` = "-",
         Tokens = format(cmon$total_tokens, big.mark = ","),
         Days = NA_integer_,
         Sessions = NA_integer_,
-        `Date Range` = if (!is.null(cmon$date_range)) cmon$date_range else "-"
+        `Date Range` = if (!is.null(cmon$date_range)) cmon$date_range else "-",
+        check.names = FALSE, stringsAsFactors = FALSE
       )
     }
-
-    tbl <- bind_rows(rows)
+    tbl <- if (length(rows) > 0) do.call(rbind, rows) else data.frame()
     datatable(tbl, options = list(dom = "t", paging = FALSE, searching = FALSE,
-        scrollX = TRUE, autoWidth = FALSE),
-      rownames = FALSE)
+        scrollX = TRUE, autoWidth = FALSE), rownames = FALSE)
   })
 
-  output$overview_cost_ts <- renderEcharts4r({
-    has_cc  <- nrow(cc_d()) > 0
+  output$overview_cost_ts <- renderUI({
+    has_cc <- nrow(cc_d()) > 0
     has_gem <- nrow(gem_d()) > 0
-    if (!has_cc && !has_gem) return(empty_echart())
+    if (!has_cc && !has_gem) return(ec_empty(h = "350px"))
 
+    cc_agg <- gem_agg <- NULL
     if (has_cc) {
-      cc_agg <- cc_d() |> group_by(date) |>
-        summarise(claude = sum(totalCost, na.rm = TRUE), .groups = "drop")
+      cc_agg <- aggregate(totalCost ~ date, data = cc_d(), FUN = sum, na.rm = TRUE)
+      names(cc_agg)[2] <- "claude"
     }
     if (has_gem) {
-      gm_agg <- gem_d() |> group_by(date) |>
-        summarise(gemini = sum(total_cost, na.rm = TRUE), .groups = "drop")
+      gem_agg <- aggregate(total_cost ~ date, data = gem_d(), FUN = sum, na.rm = TRUE)
+      names(gem_agg)[2] <- "gemini"
     }
 
     if (has_cc && has_gem) {
-      d <- full_join(cc_agg, gm_agg, by = "date") |>
-        mutate(across(c(claude, gemini), ~replace_na(.x, 0))) |>
-        arrange(date)
-      e <- d |> e_charts(date) |>
-        e_line(claude, name = "Claude", color = pal$claude) |>
-        e_line(gemini, name = "Gemini", color = pal$gemini)
+      d <- merge(cc_agg, gem_agg, by = "date", all = TRUE)
+      d$claude[is.na(d$claude)] <- 0
+      d$gemini[is.na(d$gemini)] <- 0
+      d <- d[order(d$date), ]
+      series <- list(
+        list(name = "Claude", type = "line", data = I(round(d$claude, 2)),
+             itemStyle = list(color = pal$claude)),
+        list(name = "Gemini", type = "line", data = I(round(d$gemini, 2)),
+             itemStyle = list(color = pal$gemini)))
+      ec_line(d$date, series, "350px")
     } else if (has_cc) {
-      e <- cc_agg |> e_charts(date) |>
-        e_line(claude, name = "Claude", color = pal$claude)
+      cc_agg <- cc_agg[order(cc_agg$date), ]
+      ec_line(cc_agg$date, list(
+        list(name = "Claude", type = "line", data = I(round(cc_agg$claude, 2)),
+             itemStyle = list(color = pal$claude))), "350px")
     } else {
-      e <- gm_agg |> e_charts(date) |>
-        e_line(gemini, name = "Gemini", color = pal$gemini)
+      gem_agg <- gem_agg[order(gem_agg$date), ]
+      ec_line(gem_agg$date, list(
+        list(name = "Gemini", type = "line", data = I(round(gem_agg$gemini, 2)),
+             itemStyle = list(color = pal$gemini))), "350px")
     }
-    dark_echart(e)
   })
 
   # --- Cost Trends ------------------------------------------------------------
-  output$cost_by_project <- renderEcharts4r({
+  output$cost_by_project <- renderUI({
     d <- cc_d_proj()
-    if (nrow(d) == 0) return(empty_echart())
-    d_agg <- d |> group_by(date, project) |>
-      summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
-    e <- d_agg |> group_by(project) |>
-      e_charts(date) |>
-      e_line(cost)
-    dark_echart(e)
+    if (nrow(d) == 0) return(ec_empty())
+    agg <- aggregate(totalCost ~ date + project, data = d, FUN = sum, na.rm = TRUE)
+    all_d <- sort(unique(agg$date))
+    projects <- unique(agg$project)
+    series <- lapply(projects, function(p) {
+      pd <- agg[agg$project == p, ]
+      vals <- rep(0, length(all_d))
+      vals[match(pd$date, all_d)] <- pd$totalCost
+      list(name = p, type = "line", data = I(round(vals, 2)))
+    })
+    ec_line(all_d, series)
   })
 
-  output$cost_cumulative <- renderEcharts4r({
-    has_cc  <- nrow(cc_d()) > 0
+  output$cost_cumulative <- renderUI({
+    has_cc <- nrow(cc_d()) > 0
     has_gem <- nrow(gem_d()) > 0
-    if (!has_cc && !has_gem) return(empty_echart())
+    if (!has_cc && !has_gem) return(ec_empty())
 
+    cc_cum <- gem_cum <- NULL
     if (has_cc) {
-      cc_cum <- cc_d() |> group_by(date) |>
-        summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop") |>
-        arrange(date) |> mutate(claude = cumsum(cost))
+      a <- aggregate(totalCost ~ date, data = cc_d(), FUN = sum, na.rm = TRUE)
+      a <- a[order(a$date), ]
+      cc_cum <- data.frame(date = a$date, claude = cumsum(a$totalCost))
     }
     if (has_gem) {
-      gm_cum <- gem_d() |> arrange(date) |>
-        mutate(gemini = cumsum(total_cost))
+      g <- gem_d()[order(gem_d()$date), ]
+      gem_cum <- data.frame(date = g$date, gemini = cumsum(g$total_cost))
     }
 
     if (has_cc && has_gem) {
-      d <- full_join(
-        cc_cum |> select(date, claude),
-        gm_cum |> select(date, gemini),
-        by = "date"
-      ) |> mutate(across(c(claude, gemini), ~replace_na(.x, 0))) |> arrange(date)
-      e <- d |> e_charts(date) |>
-        e_line(claude, name = "Claude", color = pal$claude) |>
-        e_line(gemini, name = "Gemini", color = pal$gemini)
+      d <- merge(cc_cum, gem_cum, by = "date", all = TRUE)
+      d$claude[is.na(d$claude)] <- 0
+      d$gemini[is.na(d$gemini)] <- 0
+      d <- d[order(d$date), ]
+      # Forward-fill cumulative values after merge
+      for (i in seq_len(nrow(d))[-1]) {
+        if (d$claude[i] == 0 && d$claude[i-1] > 0) d$claude[i] <- d$claude[i-1]
+        if (d$gemini[i] == 0 && d$gemini[i-1] > 0) d$gemini[i] <- d$gemini[i-1]
+      }
+      series <- list(
+        list(name = "Claude", type = "line", data = I(round(d$claude, 2)),
+             itemStyle = list(color = pal$claude)),
+        list(name = "Gemini", type = "line", data = I(round(d$gemini, 2)),
+             itemStyle = list(color = pal$gemini)))
+      ec_line(d$date, series)
     } else if (has_cc) {
-      e <- cc_cum |> e_charts(date) |>
-        e_line(claude, name = "Claude", color = pal$claude)
+      ec_line(cc_cum$date, list(list(name = "Claude", type = "line",
+        data = I(round(cc_cum$claude, 2)), itemStyle = list(color = pal$claude))))
     } else {
-      e <- gm_cum |> e_charts(date) |>
-        e_line(gemini, name = "Gemini", color = pal$gemini)
+      ec_line(gem_cum$date, list(list(name = "Gemini", type = "line",
+        data = I(round(gem_cum$gemini, 2)), itemStyle = list(color = pal$gemini))))
     }
-    dark_echart(e)
   })
 
-  output$cost_weekly <- renderEcharts4r({
+  output$cost_weekly <- renderUI({
     rows <- list()
     if (nrow(cc_d()) > 0) {
-      cc_wk <- cc_d() |> mutate(week = floor_date(date, "week")) |>
-        group_by(week) |> summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop") |>
-        mutate(source = "Claude")
-      rows[[1]] <- cc_wk
+      d <- cc_d()
+      d$week <- floor_date(d$date, "week")
+      a <- aggregate(totalCost ~ week, data = d, FUN = sum, na.rm = TRUE)
+      a$source <- "Claude"
+      rows[[1]] <- a
     }
     if (nrow(gem_d()) > 0) {
-      gm_wk <- gem_d() |> mutate(week = floor_date(date, "week")) |>
-        group_by(week) |> summarise(cost = sum(total_cost, na.rm = TRUE), .groups = "drop") |>
-        mutate(source = "Gemini")
-      rows[[length(rows) + 1]] <- gm_wk
+      d <- gem_d()
+      d$week <- floor_date(d$date, "week")
+      a <- aggregate(total_cost ~ week, data = d, FUN = sum, na.rm = TRUE)
+      names(a)[2] <- "totalCost"
+      a$source <- "Gemini"
+      rows[[length(rows) + 1]] <- a
     }
-    if (length(rows) == 0) return(empty_echart())
-    d <- bind_rows(rows)
-    e <- d |> group_by(source) |>
-      e_charts(week) |>
-      e_bar(cost)
-    dark_echart(e)
+    if (length(rows) == 0) return(ec_empty())
+    d <- do.call(rbind, rows)
+    all_weeks <- sort(unique(d$week))
+    sources <- unique(d$source)
+    series <- lapply(sources, function(s) {
+      sd <- d[d$source == s, ]
+      vals <- rep(0, length(all_weeks))
+      vals[match(sd$week, all_weeks)] <- sd$totalCost
+      list(name = s, type = "bar", data = I(round(vals, 2)),
+           itemStyle = list(color = if (s == "Claude") pal$claude else pal$gemini))
+    })
+    ec_bar(all_weeks, series)
   })
 
-  output$cost_by_model <- renderEcharts4r({
+  output$cost_by_model <- renderUI({
     d <- cc_d_proj()
-    if (nrow(d) == 0) return(empty_echart())
-
-    model_weekly <- d |>
-      separate_rows(modelsUsed, sep = ",\\s*") |>
-      filter(modelsUsed != "") |>
-      mutate(
-        model = gsub("claude-", "", modelsUsed),
-        week = floor_date(date, "week")
-      ) |>
-      group_by(week, model) |>
-      summarise(cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
-
-    e <- model_weekly |> group_by(model) |>
-      e_charts(week) |>
-      e_line(cost)
-    dark_echart(e)
+    if (nrow(d) == 0 || is.null(d$modelsUsed)) return(ec_empty())
+    # Expand rows by model
+    models_split <- strsplit(as.character(d$modelsUsed), ",\\s*")
+    n_each <- lengths(models_split)
+    d_exp <- d[rep(seq_len(nrow(d)), n_each), ]
+    d_exp$model <- sub("claude-", "", unlist(models_split))
+    d_exp <- d_exp[d_exp$model != "", ]
+    d_exp$week <- floor_date(d_exp$date, "week")
+    agg <- aggregate(totalCost ~ week + model, data = d_exp, FUN = sum, na.rm = TRUE)
+    all_weeks <- sort(unique(agg$week))
+    models <- unique(agg$model)
+    series <- lapply(models, function(m) {
+      md <- agg[agg$model == m, ]
+      vals <- rep(0, length(all_weeks))
+      vals[match(md$week, all_weeks)] <- md$totalCost
+      list(name = m, type = "line", data = I(round(vals, 2)))
+    })
+    ec_line(all_weeks, series)
   })
 
   # --- Token Analysis ---------------------------------------------------------
-  output$token_daily <- renderEcharts4r({
-    has_cc  <- nrow(cc_d_proj()) > 0
+  output$token_daily <- renderUI({
+    has_cc <- nrow(cc_d_proj()) > 0
     has_gem <- nrow(gem_d()) > 0
-    if (!has_cc && !has_gem) return(empty_echart())
+    if (!has_cc && !has_gem) return(ec_empty(h = "350px"))
 
+    cc_tok <- gem_tok <- NULL
     if (has_cc) {
-      cc_tok <- cc_d_proj() |> group_by(date) |>
-        summarise(claude = sum(totalTokens, na.rm = TRUE), .groups = "drop")
+      cc_tok <- aggregate(totalTokens ~ date, data = cc_d_proj(), FUN = sum, na.rm = TRUE)
+      names(cc_tok)[2] <- "claude"
     }
     if (has_gem) {
-      gm_tok <- gem_d() |> group_by(date) |>
-        summarise(gemini = sum(total_tokens, na.rm = TRUE), .groups = "drop")
+      gem_tok <- aggregate(total_tokens ~ date, data = gem_d(), FUN = sum, na.rm = TRUE)
+      names(gem_tok)[2] <- "gemini"
     }
 
     if (has_cc && has_gem) {
-      d <- full_join(cc_tok, gm_tok, by = "date") |>
-        mutate(across(c(claude, gemini), ~replace_na(.x, 0))) |>
-        arrange(date)
-      e <- d |> e_charts(date) |>
-        e_line(claude, name = "Claude", color = pal$claude) |>
-        e_line(gemini, name = "Gemini", color = pal$gemini)
+      d <- merge(cc_tok, gem_tok, by = "date", all = TRUE)
+      d$claude[is.na(d$claude)] <- 0
+      d$gemini[is.na(d$gemini)] <- 0
+      d <- d[order(d$date), ]
+      series <- list(
+        list(name = "Claude", type = "line", data = I(d$claude),
+             itemStyle = list(color = pal$claude)),
+        list(name = "Gemini", type = "line", data = I(d$gemini),
+             itemStyle = list(color = pal$gemini)))
+      ec_line(d$date, series, "350px")
     } else if (has_cc) {
-      e <- cc_tok |> e_charts(date) |>
-        e_line(claude, name = "Claude", color = pal$claude)
+      cc_tok <- cc_tok[order(cc_tok$date), ]
+      ec_line(cc_tok$date, list(list(name = "Claude", type = "line",
+        data = I(cc_tok$claude), itemStyle = list(color = pal$claude))), "350px")
     } else {
-      e <- gm_tok |> e_charts(date) |>
-        e_line(gemini, name = "Gemini", color = pal$gemini)
+      gem_tok <- gem_tok[order(gem_tok$date), ]
+      ec_line(gem_tok$date, list(list(name = "Gemini", type = "line",
+        data = I(gem_tok$gemini), itemStyle = list(color = pal$gemini))), "350px")
     }
-    dark_echart(e)
   })
 
-  output$token_comp <- renderEcharts4r({
+  output$token_comp <- renderUI({
     d <- cc_d_proj()
-    if (nrow(d) == 0) return(empty_echart())
-    tok <- d |> group_by(date) |>
-      summarise(
-        Input = sum(inputTokens, na.rm = TRUE),
-        Output = sum(outputTokens, na.rm = TRUE),
-        `Cache Create` = sum(cacheCreation, na.rm = TRUE),
-        `Cache Read` = sum(cacheRead, na.rm = TRUE),
-        .groups = "drop"
-      ) |>
-      pivot_longer(-date, names_to = "type", values_to = "tokens")
-    e <- tok |> group_by(type) |>
-      e_charts(date) |>
-      e_bar(tokens)
-    dark_echart(e)
+    if (nrow(d) == 0) return(ec_empty())
+    tok_input <- aggregate(inputTokens ~ date, data = d, FUN = sum, na.rm = TRUE)
+    tok_output <- aggregate(outputTokens ~ date, data = d, FUN = sum, na.rm = TRUE)
+    tok_ccreate <- aggregate(cacheCreation ~ date, data = d, FUN = sum, na.rm = TRUE)
+    tok_cread <- aggregate(cacheRead ~ date, data = d, FUN = sum, na.rm = TRUE)
+    all_d <- sort(unique(d$date))
+    val_at <- function(agg, col, dates) {
+      vals <- rep(0, length(dates))
+      vals[match(agg$date, dates)] <- agg[[col]]
+      vals
+    }
+    series <- list(
+      list(name = "Input", type = "bar", stack = "tokens",
+           data = I(val_at(tok_input, "inputTokens", all_d))),
+      list(name = "Output", type = "bar", stack = "tokens",
+           data = I(val_at(tok_output, "outputTokens", all_d))),
+      list(name = "Cache Create", type = "bar", stack = "tokens",
+           data = I(val_at(tok_ccreate, "cacheCreation", all_d))),
+      list(name = "Cache Read", type = "bar", stack = "tokens",
+           data = I(val_at(tok_cread, "cacheRead", all_d)))
+    )
+    ec_bar(all_d, series)
   })
 
-  output$token_weekly <- renderEcharts4r({
+  output$token_weekly <- renderUI({
     rows <- list()
     if (nrow(cc_d_proj()) > 0) {
-      cc_wk <- cc_d_proj() |> mutate(week = floor_date(date, "week")) |>
-        group_by(week) |> summarise(tokens = sum(totalTokens, na.rm = TRUE), .groups = "drop") |>
-        mutate(source = "Claude")
-      rows[[1]] <- cc_wk
+      d <- cc_d_proj()
+      d$week <- floor_date(d$date, "week")
+      a <- aggregate(totalTokens ~ week, data = d, FUN = sum, na.rm = TRUE)
+      a$source <- "Claude"
+      rows[[1]] <- a
     }
     if (nrow(gem_d()) > 0) {
-      gm_wk <- gem_d() |> mutate(week = floor_date(date, "week")) |>
-        group_by(week) |> summarise(tokens = sum(total_tokens, na.rm = TRUE), .groups = "drop") |>
-        mutate(source = "Gemini")
-      rows[[length(rows) + 1]] <- gm_wk
+      d <- gem_d()
+      d$week <- floor_date(d$date, "week")
+      a <- aggregate(total_tokens ~ week, data = d, FUN = sum, na.rm = TRUE)
+      names(a)[2] <- "totalTokens"
+      a$source <- "Gemini"
+      rows[[length(rows) + 1]] <- a
     }
-    if (length(rows) == 0) return(empty_echart())
-    d <- bind_rows(rows)
-    e <- d |> group_by(source) |>
-      e_charts(week) |>
-      e_bar(tokens)
-    dark_echart(e)
+    if (length(rows) == 0) return(ec_empty())
+    d <- do.call(rbind, rows)
+    all_weeks <- sort(unique(d$week))
+    sources <- unique(d$source)
+    series <- lapply(sources, function(s) {
+      sd <- d[d$source == s, ]
+      vals <- rep(0, length(all_weeks))
+      vals[match(sd$week, all_weeks)] <- sd$totalTokens
+      list(name = s, type = "bar", data = I(vals),
+           itemStyle = list(color = if (s == "Claude") pal$claude else pal$gemini))
+    })
+    ec_bar(all_weeks, series)
   })
 
   # --- Sessions ---------------------------------------------------------------
   output$sess_claude <- renderDT({
-    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(datatable(tibble()))
-    u_sessions |>
-      filter(date >= cutoff()) |>
-      arrange(desc(started_at)) |>
-      head(input$top_n) |>
-      mutate(
-        Duration = sprintf("%.0f min", duration_min),
-        Started = format(started_at, "%Y-%m-%d %H:%M")
-      ) |>
-      select(Project = project, Started, Duration) |>
-      datatable(options = list(dom = "t", pageLength = 20, scrollX = TRUE),
-        rownames = FALSE)
+    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(datatable(data.frame()))
+    d <- u_sessions[u_sessions$date >= cutoff(), ]
+    d <- d[order(d$started_at, decreasing = TRUE), ]
+    d <- head(d, input$top_n)
+    out <- data.frame(
+      Project = d$project,
+      Started = format(d$started_at, "%Y-%m-%d %H:%M"),
+      Duration = sprintf("%.0f min", d$duration_min),
+      stringsAsFactors = FALSE
+    )
+    datatable(out, options = list(dom = "t", pageLength = 20, scrollX = TRUE), rownames = FALSE)
   })
 
   output$sess_gemini <- renderDT({
-    if (is.null(gem_sess) || nrow(gem_sess) == 0) return(datatable(tibble()))
-    gem_sess |>
-      arrange(desc(total_cost)) |>
-      head(input$top_n) |>
-      mutate(total_cost = sprintf("$%.4f", total_cost),
-             total_tokens = format(total_tokens, big.mark = ",")) |>
-      select(Session = sessionId, Project = project, Cost = total_cost,
-             Tokens = total_tokens, Started = start_time) |>
-      datatable(options = list(dom = "t", pageLength = 20, scrollX = TRUE),
-        rownames = FALSE)
-  })
-
-  output$sess_hist <- renderEcharts4r({
-    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(empty_echart())
-    d <- u_sessions |> filter(date >= cutoff(), duration_min > 0)
-    if (nrow(d) == 0) return(empty_echart())
-    # Pre-bin for histogram using base R hist()
-    h <- hist(d$duration_min, breaks = 20, plot = FALSE)
-    bins <- tibble(
-      mid = h$mids,
-      count = h$counts
+    if (is.null(gem_sess) || nrow(gem_sess) == 0) return(datatable(data.frame()))
+    d <- gem_sess[order(gem_sess$total_cost, decreasing = TRUE), ]
+    d <- head(d, input$top_n)
+    out <- data.frame(
+      Session = d$sessionId,
+      Project = d$project,
+      Cost = sprintf("$%.4f", d$total_cost),
+      Tokens = format(d$total_tokens, big.mark = ","),
+      Started = d$start_time,
+      stringsAsFactors = FALSE
     )
-    e <- bins |> e_charts(mid) |>
-      e_bar(count, name = "Sessions", color = pal$hist, legend = FALSE)
-    dark_echart(e)
+    datatable(out, options = list(dom = "t", pageLength = 20, scrollX = TRUE), rownames = FALSE)
   })
 
-  output$sess_scatter <- renderEcharts4r({
-    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(empty_echart())
-    d <- u_sessions |> filter(date >= cutoff(), duration_min > 0)
-    if (nrow(d) == 0) return(empty_echart())
-    daily <- d |> group_by(date) |>
-      summarise(n = n(), total_min = sum(duration_min, na.rm = TRUE), .groups = "drop")
-    e <- daily |> e_charts(date) |>
-      e_scatter(n, size = total_min, name = "Sessions/Day", color = pal$claude, legend = FALSE)
-    dark_echart(e)
+  output$sess_hist <- renderUI({
+    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(ec_empty())
+    d <- u_sessions[u_sessions$date >= cutoff() & u_sessions$duration_min > 0, ]
+    if (nrow(d) == 0) return(ec_empty())
+    h <- hist(d$duration_min, breaks = 20, plot = FALSE)
+    ec_bar(round(h$mids, 1), list(
+      list(name = "Sessions", type = "bar", data = I(h$counts),
+           itemStyle = list(color = pal$hist))))
+  })
+
+  output$sess_scatter <- renderUI({
+    if (is.null(u_sessions) || nrow(u_sessions) == 0) return(ec_empty())
+    d <- u_sessions[u_sessions$date >= cutoff() & u_sessions$duration_min > 0, ]
+    if (nrow(d) == 0) return(ec_empty())
+    daily <- aggregate(
+      cbind(n = duration_min, total_min = duration_min) ~ date,
+      data = d, FUN = function(x) c(length(x), sum(x))
+    )
+    # aggregate with cbind produces a matrix column; flatten
+    if (is.matrix(daily$n)) {
+      daily_n <- daily$n[, 1]
+      daily_tot <- daily$total_min[, 2]
+      daily <- data.frame(date = daily$date, n = daily_n, total_min = daily_tot)
+    } else {
+      # fallback: compute separately
+      n_agg <- aggregate(duration_min ~ date, data = d, FUN = length)
+      t_agg <- aggregate(duration_min ~ date, data = d, FUN = sum, na.rm = TRUE)
+      daily <- merge(n_agg, t_agg, by = "date", suffixes = c("_n", "_sum"))
+      names(daily) <- c("date", "n", "total_min")
+    }
+    pts <- lapply(seq_len(nrow(daily)), function(i)
+      list(as.character(daily$date[i]), daily$n[i], round(daily$total_min[i], 1)))
+    ec_scatter(pts, pal$claude, x_type = "time", size_col = 3, scale = 2)
   })
 
   # --- Time Blocks ------------------------------------------------------------
   blk <- reactive({
-    if (is.null(cc_blocks) || nrow(cc_blocks) == 0) return(tibble())
-    cc_blocks |> filter(date >= (date_max - input$block_days))
+    if (is.null(cc_blocks) || nrow(cc_blocks) == 0) return(data.frame())
+    cc_blocks[cc_blocks$date >= (date_max - input$block_days), ]
   })
 
   output$block_table <- renderDT({
     d <- blk()
-    if (nrow(d) == 0) return(datatable(tibble()))
-    d |>
-      mutate(
-        Day = format(date, "%a %Y-%m-%d"),
-        Start = format(startTime, "%H:%M"),
-        End = format(coalesce(actualEndTime, endTime), "%H:%M"),
-        Duration = sprintf("%.1fh", duration_hrs),
-        Cost = sprintf("$%.2f", costUSD),
-        `$/hr` = sprintf("$%.2f", cost_per_hr),
-        Tokens = format(totalTokens, big.mark = ","),
-        `Tok/hr` = format(tok_per_hr, big.mark = ",")
-      ) |>
-      select(Day, Start, End, Duration, Cost, `$/hr`, Tokens, `Tok/hr`, Models = models) |>
-      datatable(
-        extensions = "RowGroup",
-        options = list(
-          pageLength = 25, dom = "frtip", scrollX = TRUE,
-          rowGroup = list(dataSrc = 0),
-          columnDefs = list(
-            list(visible = FALSE, targets = 0),
-            list(targets = 8, render = DT::JS(
-              "function(data, type, row) { return '<span style=\"white-space:nowrap\">' + data + '</span>'; }"
-            ))
-          ),
-          order = list(list(0, "desc"))
+    if (nrow(d) == 0) return(datatable(data.frame()))
+    eff_end <- coalesce2(d$actualEndTime, d$endTime)
+    out <- data.frame(
+      Day = format(d$date, "%a %Y-%m-%d"),
+      Start = format(d$startTime, "%H:%M"),
+      End = format(eff_end, "%H:%M"),
+      Duration = sprintf("%.1fh", d$duration_hrs),
+      Cost = sprintf("$%.2f", d$costUSD),
+      `$/hr` = sprintf("$%.2f", d$cost_per_hr),
+      Tokens = format(d$totalTokens, big.mark = ","),
+      `Tok/hr` = format(d$tok_per_hr, big.mark = ","),
+      Models = d$models,
+      check.names = FALSE, stringsAsFactors = FALSE
+    )
+    datatable(out,
+      extensions = "RowGroup",
+      options = list(
+        pageLength = 25, dom = "frtip", scrollX = TRUE,
+        rowGroup = list(dataSrc = 0),
+        columnDefs = list(
+          list(visible = FALSE, targets = 0),
+          list(targets = 8, render = DT::JS(
+            "function(data, type, row) { return '<span style=\"white-space:nowrap\">' + data + '</span>'; }"
+          ))
         ),
-        rownames = FALSE)
+        order = list(list(0, "desc"))
+      ),
+      rownames = FALSE)
   })
 
-  output$block_timeline <- renderEcharts4r({
+  output$block_timeline <- renderUI({
     d <- blk()
-    if (nrow(d) == 0) return(empty_echart())
-    d <- d |>
-      mutate(label = format(startTime, "%m-%d %H:%M")) |>
-      arrange(startTime)
-    e <- d |> e_charts(costUSD) |>
-      e_scatter(duration_hrs, size = costUSD, name = "Block", color = pal$claude, legend = FALSE) |>
-      e_tooltip(formatter = htmlwidgets::JS(
-        "function(p) { return '$' + p.value[0].toFixed(2) + ' | ' + p.value[1].toFixed(1) + 'h'; }"
-      ))
-    dark_echart(e)
+    if (nrow(d) == 0) return(ec_empty())
+    d <- d[order(d$startTime), ]
+    pts <- lapply(seq_len(nrow(d)), function(i)
+      list(round(d$costUSD[i], 2), round(d$duration_hrs[i], 2), round(d$costUSD[i], 2)))
+    id <- paste0("ec", sample.int(1e7, 1))
+    opt <- list(
+      tooltip = list(trigger = "item",
+        formatter = "{c}"),
+      grid = list(containLabel = TRUE),
+      xAxis = list(type = "value", name = "Cost ($)"),
+      yAxis = list(type = "value", name = "Duration (h)"),
+      series = list(list(type = "scatter", data = pts,
+                         itemStyle = list(color = pal$claude)))
+    )
+    j <- toJSON(opt, auto_unbox = TRUE, null = "null")
+    tagList(
+      tags$div(id = id, class = "echart-div", style = "width:100%;height:300px"),
+      tags$script(HTML(paste0(
+        "(function(){var c=echarts.init(document.getElementById('", id, "'),'dark');",
+        "var o=", j, ";",
+        "o.series[0].symbolSize=function(d){return Math.max(6,Math.sqrt(d[2])*8)};",
+        "o.tooltip.formatter=function(p){return '$'+p.value[0].toFixed(2)+' | '+p.value[1].toFixed(1)+'h'};",
+        "c.setOption(o);new ResizeObserver(function(){c.resize()})",
+        ".observe(document.getElementById('", id, "'))})();"
+      )))
+    )
   })
 
-  output$block_heatmap <- renderEcharts4r({
+  output$block_heatmap <- renderUI({
     d <- blk()
-    if (nrow(d) == 0) return(empty_echart())
-    heat <- d |>
-      group_by(wday, hour) |>
-      summarise(cost = sum(costUSD, na.rm = TRUE), .groups = "drop") |>
-      complete(wday, hour = 0:23, fill = list(cost = 0)) |>
-      mutate(wday = as.character(wday))
-    e <- heat |> e_charts(hour) |>
-      e_heatmap(wday, cost) |>
-      e_visual_map(cost, inRange = list(color = c("#1a1a1a", pal$orange, pal$gemini)))
-    dark_echart(e)
+    if (nrow(d) == 0) return(ec_empty())
+    d$wday_chr <- as.character(d$wday)
+    heat_agg <- aggregate(costUSD ~ wday_chr + hour, data = d, FUN = sum, na.rm = TRUE)
+    day_names <- c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    all_combos <- expand.grid(hour = 0:23, wday_chr = day_names, stringsAsFactors = FALSE)
+    heat <- merge(all_combos, heat_agg, by = c("wday_chr", "hour"), all.x = TRUE)
+    heat$costUSD[is.na(heat$costUSD)] <- 0
+    heat_data <- lapply(seq_len(nrow(heat)), function(i)
+      list(heat$hour[i], match(heat$wday_chr[i], day_names) - 1, round(heat$costUSD[i], 2)))
+    max_cost <- max(heat$costUSD, na.rm = TRUE)
+    ec(list(
+      tooltip = list(trigger = "item"),
+      grid = list(containLabel = TRUE),
+      xAxis = list(type = "category", data = I(0:23), name = "Hour"),
+      yAxis = list(type = "category", data = I(day_names)),
+      visualMap = list(min = 0, max = max(max_cost, 1), calculable = TRUE,
+        inRange = list(color = I(c("#1a1a1a", pal$orange, pal$gemini))),
+        textStyle = list(color = "#ccc")),
+      series = list(list(type = "heatmap", data = heat_data,
+        label = list(show = FALSE)))
+    ))
   })
 
   # --- Commits -----------------------------------------------------------------
   commits_filt <- reactive({
-    if (is.null(git_commits) || nrow(git_commits) == 0) return(tibble())
-    git_commits |> filter(date >= cutoff())
+    if (is.null(git_commits) || nrow(git_commits) == 0) return(data.frame())
+    git_commits[git_commits$date >= cutoff(), ]
   })
 
   output$vb_commits <- renderText({
@@ -810,32 +898,29 @@ server <- function(input, output, session) {
     as.character(round(mean(d$lines_changed, na.rm = TRUE)))
   })
 
-  output$commit_hist <- renderEcharts4r({
+  output$commit_hist <- renderUI({
     d <- commits_filt()
-    if (nrow(d) == 0) return(empty_echart())
+    if (nrow(d) == 0) return(ec_empty(h = "350px"))
     h <- hist(d$lines_changed, breaks = 30, plot = FALSE)
-    bins <- tibble(mid = h$mids, count = h$counts)
-    e <- bins |> e_charts(mid) |>
-      e_bar(count, name = "Commits", color = pal$hist, legend = FALSE)
-    dark_echart(e)
+    ec_bar(round(h$mids), list(
+      list(name = "Commits", type = "bar", data = I(h$counts),
+           itemStyle = list(color = pal$hist))), "350px")
   })
 
-  output$commit_scatter_time <- renderEcharts4r({
+  output$commit_scatter_time <- renderUI({
     d <- commits_filt()
-    if (nrow(d) == 0) return(empty_echart())
-    e <- d |> e_charts(date) |>
-      e_scatter(lines_changed, size = files_changed, name = "Commit",
-                color = pal$claude, legend = FALSE)
-    dark_echart(e)
+    if (nrow(d) == 0) return(ec_empty())
+    pts <- lapply(seq_len(nrow(d)), function(i)
+      list(as.character(d$date[i]), d$lines_changed[i], d$files_changed[i]))
+    ec_scatter(pts, pal$claude, x_type = "time", size_col = 3, scale = 3)
   })
 
-  output$commit_scatter_add_del <- renderEcharts4r({
+  output$commit_scatter_add_del <- renderUI({
     d <- commits_filt()
-    if (nrow(d) == 0) return(empty_echart())
-    e <- d |> e_charts(lines_added) |>
-      e_scatter(lines_deleted, size = files_changed, name = "Commit",
-                color = pal$gemini, legend = FALSE)
-    dark_echart(e)
+    if (nrow(d) == 0) return(ec_empty())
+    pts <- lapply(seq_len(nrow(d)), function(i)
+      list(d$lines_added[i], d$lines_deleted[i], d$files_changed[i]))
+    ec_scatter(pts, pal$gemini, size_col = 3, scale = 3)
   })
 }
 
