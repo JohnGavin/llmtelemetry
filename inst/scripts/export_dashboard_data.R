@@ -284,6 +284,151 @@ if (length(commit_rows) > 0) {
   write_json(list(), file.path(out_dir, "git_commits.json"))
 }
 
+# --- 6b. git-recon metrics (bus factor, velocity, timing, crisis, churn, bugs)
+# Based on https://piechowski.io/post/git-commands-before-reading-code/
+# and https://gist.github.com/gadenbuie/463ff1e9f3b0f48cddc44db2224d286b
+cat("Exporting git-recon metrics...\n")
+
+# Bus factor: contributor commit counts (all-time + 6 months)
+bus_all <- system("git shortlog -sn --no-merges", intern = TRUE)
+bus_6mo <- system('git shortlog -sn --no-merges --since="6 months ago"', intern = TRUE)
+parse_shortlog <- function(lines) {
+  lines <- trimws(lines)
+  lines <- lines[nzchar(lines)]
+  if (length(lines) == 0) return(data.frame(commits = integer(0), author = character(0)))
+  parts <- regmatches(lines, regexec("^\\s*(\\d+)\\s+(.+)$", lines))
+  data.frame(
+    commits = as.integer(vapply(parts, `[`, "", 2)),
+    author = vapply(parts, `[`, "", 3),
+    stringsAsFactors = FALSE
+  )
+}
+bus_factor <- list(
+  all_time = parse_shortlog(bus_all),
+  recent_6mo = parse_shortlog(bus_6mo)
+)
+write_json(bus_factor, file.path(out_dir, "git_bus_factor.json"), auto_unbox = TRUE)
+cat(sprintf("  -> bus factor: %d contributors (all-time), %d (6mo)\n",
+  nrow(bus_factor$all_time), nrow(bus_factor$recent_6mo)))
+
+# Velocity: commits per month
+velocity_raw <- system("git log --format='%ad' --date=format:'%Y-%m'", intern = TRUE)
+if (length(velocity_raw) > 0) {
+  vel_tbl <- as.data.frame(table(velocity_raw), stringsAsFactors = FALSE)
+  names(vel_tbl) <- c("month", "commits")
+  vel_tbl <- vel_tbl[order(vel_tbl$month), ]
+} else {
+  vel_tbl <- data.frame(month = character(0), commits = integer(0))
+}
+write_json(vel_tbl, file.path(out_dir, "git_velocity.json"), auto_unbox = TRUE)
+cat(sprintf("  -> velocity: %d months\n", nrow(vel_tbl)))
+
+# Commit timing: hour × weekday
+timing_raw <- system("git log --format='%ad' --date=format:'%u %H'", intern = TRUE)
+if (length(timing_raw) > 0) {
+  parts <- strsplit(timing_raw, " ")
+  timing_df <- data.frame(
+    weekday = as.integer(vapply(parts, `[`, "", 1)),
+    hour = as.integer(vapply(parts, `[`, "", 2)),
+    stringsAsFactors = FALSE
+  )
+  timing_agg <- as.data.frame(table(timing_df$weekday, timing_df$hour), stringsAsFactors = FALSE)
+  names(timing_agg) <- c("weekday", "hour", "commits")
+  timing_agg$weekday <- as.integer(timing_agg$weekday)
+  timing_agg$hour <- as.integer(timing_agg$hour)
+  day_labels <- c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+  timing_agg$day_name <- day_labels[timing_agg$weekday]
+} else {
+  timing_agg <- data.frame(weekday = integer(0), hour = integer(0),
+    commits = integer(0), day_name = character(0))
+}
+write_json(timing_agg, file.path(out_dir, "git_timing.json"), auto_unbox = TRUE)
+cat(sprintf("  -> timing: %d cells\n", nrow(timing_agg)))
+
+# Crisis patterns: reverts, hotfixes, emergency commits (last year)
+crisis_raw <- system(
+  'git log --oneline --since="1 year ago" --grep="revert\\|hotfix\\|emergency\\|rollback\\|urgent\\|BREAKING" -i',
+  intern = TRUE
+)
+crisis_df <- if (length(crisis_raw) > 0) {
+  data.frame(commit = crisis_raw, stringsAsFactors = FALSE)
+} else {
+  data.frame(commit = character(0))
+}
+write_json(crisis_df, file.path(out_dir, "git_crisis.json"), auto_unbox = TRUE)
+cat(sprintf("  -> crisis: %d commits\n", nrow(crisis_df)))
+
+# Churn hotspots: most-modified files (6 months)
+churn_raw <- system(
+  'git log --since="6 months ago" --name-only --pretty=format: | sort | uniq -c | sort -rn | head -20',
+  intern = TRUE
+)
+churn_raw <- trimws(churn_raw[nzchar(trimws(churn_raw))])
+if (length(churn_raw) > 0) {
+  parts <- regmatches(churn_raw, regexec("^\\s*(\\d+)\\s+(.+)$", churn_raw))
+  churn_df <- data.frame(
+    changes = as.integer(vapply(parts, `[`, "", 2)),
+    file = vapply(parts, `[`, "", 3),
+    stringsAsFactors = FALSE
+  )
+} else {
+  churn_df <- data.frame(changes = integer(0), file = character(0))
+}
+write_json(churn_df, file.path(out_dir, "git_churn.json"), auto_unbox = TRUE)
+cat(sprintf("  -> churn: %d hotspot files\n", nrow(churn_df)))
+
+# Bug hotspots: files frequently touched by fix/bug commits (6 months)
+bug_raw <- system(
+  'git log --since="6 months ago" --name-only --pretty=format: --grep="fix\\|bug\\|broken\\|patch" -i | sort | uniq -c | sort -rn | head -15',
+  intern = TRUE
+)
+bug_raw <- trimws(bug_raw[nzchar(trimws(bug_raw))])
+if (length(bug_raw) > 0) {
+  parts <- regmatches(bug_raw, regexec("^\\s*(\\d+)\\s+(.+)$", bug_raw))
+  bug_df <- data.frame(
+    fixes = as.integer(vapply(parts, `[`, "", 2)),
+    file = vapply(parts, `[`, "", 3),
+    stringsAsFactors = FALSE
+  )
+} else {
+  bug_df <- data.frame(fixes = integer(0), file = character(0))
+}
+write_json(bug_df, file.path(out_dir, "git_bugs.json"), auto_unbox = TRUE)
+cat(sprintf("  -> bugs: %d hotspot files\n", nrow(bug_df)))
+
+# TODO/FIXME debt
+todo_raw <- system(
+  'grep -rn "TODO\\|FIXME\\|HACK\\|XXX" --include="*.R" --include="*.qmd" --include="*.yaml" --include="*.yml" -c 2>/dev/null | grep -v ":0$" | sort -t: -k2 -rn | head -20',
+  intern = TRUE
+)
+if (length(todo_raw) > 0) {
+  parts <- strsplit(todo_raw, ":")
+  todo_df <- data.frame(
+    file = vapply(parts, `[`, "", 1),
+    count = as.integer(vapply(parts, `[`, "", 2)),
+    stringsAsFactors = FALSE
+  )
+} else {
+  todo_df <- data.frame(file = character(0), count = integer(0))
+}
+write_json(todo_df, file.path(out_dir, "git_todo.json"), auto_unbox = TRUE)
+cat(sprintf("  -> TODO/FIXME: %d files with debt\n", nrow(todo_df)))
+
+# Tags / releases
+tag_raw <- system("git tag -l --format='%(refname:short)|%(creatordate:short)' --sort=-creatordate", intern = TRUE)
+if (length(tag_raw) > 0) {
+  parts <- strsplit(tag_raw, "\\|")
+  tag_df <- data.frame(
+    tag = vapply(parts, `[`, "", 1),
+    date = vapply(parts, function(p) if (length(p) >= 2) p[2] else NA_character_, ""),
+    stringsAsFactors = FALSE
+  )
+} else {
+  tag_df <- data.frame(tag = character(0), date = character(0))
+}
+write_json(tag_df, file.path(out_dir, "git_tags.json"), auto_unbox = TRUE)
+cat(sprintf("  -> tags: %d releases\n", nrow(tag_df)))
+
 # --- 7. Export unified.duckdb sessions and costs ------------------------------
 cat("Exporting unified.duckdb data...\n")
 unified_db <- file.path(Sys.getenv("HOME"), ".claude/logs/unified.duckdb")
@@ -436,6 +581,54 @@ api_index <- list(
         ended_at    = "string",
         duration_min = "number"
       )
+    ),
+    list(
+      path        = "/git_bus_factor.json",
+      description = "Contributor commit counts for bus factor analysis",
+      type        = "object",
+      source      = "git shortlog -sn"
+    ),
+    list(
+      path        = "/git_velocity.json",
+      description = "Commits per month for velocity trend",
+      type        = "array",
+      source      = "git log --date=format:%Y-%m"
+    ),
+    list(
+      path        = "/git_timing.json",
+      description = "Commit counts by weekday and hour for timing heatmap",
+      type        = "array",
+      source      = "git log --date=format:%u_%H"
+    ),
+    list(
+      path        = "/git_crisis.json",
+      description = "Revert/hotfix/emergency commits in last year",
+      type        = "array",
+      source      = "git log --grep=revert|hotfix|emergency"
+    ),
+    list(
+      path        = "/git_churn.json",
+      description = "Top 20 most-modified files in last 6 months",
+      type        = "array",
+      source      = "git log --name-only | sort | uniq -c"
+    ),
+    list(
+      path        = "/git_bugs.json",
+      description = "Top 15 files touched by fix/bug commits in last 6 months",
+      type        = "array",
+      source      = "git log --grep=fix|bug --name-only | sort | uniq -c"
+    ),
+    list(
+      path        = "/git_todo.json",
+      description = "TODO/FIXME/HACK/XXX debt counts by file",
+      type        = "array",
+      source      = "grep -rn TODO|FIXME|HACK|XXX"
+    ),
+    list(
+      path        = "/git_tags.json",
+      description = "Release tags with dates",
+      type        = "array",
+      source      = "git tag -l --sort=-creatordate"
     ),
     list(
       path        = "/unified_costs.json",

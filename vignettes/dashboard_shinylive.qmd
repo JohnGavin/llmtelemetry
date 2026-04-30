@@ -15,6 +15,14 @@ format:
       - data/gemini_sessions.json
       - data/cmonitor_summary.json
       - data/git_commits.json
+      - data/git_bus_factor.json
+      - data/git_velocity.json
+      - data/git_timing.json
+      - data/git_crisis.json
+      - data/git_churn.json
+      - data/git_bugs.json
+      - data/git_todo.json
+      - data/git_tags.json
       - data/unified_sessions.json
       - data/unified_costs.json
 filters:
@@ -129,6 +137,14 @@ cmon        <- load_json("cmonitor_summary.json")
 git_commits <- load_json("git_commits.json")
 u_sessions  <- load_json("unified_sessions.json")
 u_costs     <- load_json("unified_costs.json")
+git_bus     <- load_json("git_bus_factor.json")
+git_vel     <- load_json("git_velocity.json")
+git_timing  <- load_json("git_timing.json")
+git_crisis  <- load_json("git_crisis.json")
+git_churn   <- load_json("git_churn.json")
+git_bugs    <- load_json("git_bugs.json")
+git_todo    <- load_json("git_todo.json")
+git_tags    <- load_json("git_tags.json")
 
 # Normalize data: fromJSON("[]") returns list(), nested objects need extraction
 as_df <- function(x) if (is.data.frame(x)) x else NULL
@@ -191,6 +207,20 @@ gem_sess    <- as_df(gem_sess)
 git_commits <- as_df(git_commits)
 u_sessions  <- as_df(u_sessions)
 u_costs     <- as_df(u_costs)
+git_vel     <- as_df(git_vel)
+git_timing  <- as_df(git_timing)
+git_crisis  <- as_df(git_crisis)
+git_churn   <- as_df(git_churn)
+git_bugs    <- as_df(git_bugs)
+git_todo    <- as_df(git_todo)
+git_tags    <- as_df(git_tags)
+# git_bus is a list with $all_time and $recent_6mo data frames
+if (is.list(git_bus) && !is.data.frame(git_bus)) {
+  git_bus$all_time <- as_df(git_bus$all_time)
+  git_bus$recent_6mo <- as_df(git_bus$recent_6mo)
+} else {
+  git_bus <- list(all_time = NULL, recent_6mo = NULL)
+}
 
 # Parse dates
 parse_ts <- function(x) {
@@ -442,11 +472,38 @@ ui <- page_navbar(
     )
   ),
 
+  nav_panel("Repo Health", value = "Repo Health",
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Bus Factor (All Time)"), uiOutput("rh_bus_all"),
+        card_footer(class = "text-muted small", "Contributor commit share — 1 person at 60%+ = risk")),
+      card(card_header("Bus Factor (6 Months)"), uiOutput("rh_bus_6mo"),
+        card_footer(class = "text-muted small", "Recent contributor concentration"))
+    ),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Velocity Trend"), uiOutput("rh_velocity"),
+        card_footer(class = "text-muted small", "Commits per month")),
+      card(card_header("Commit Timing Heatmap"), uiOutput("rh_timing"),
+        card_footer(class = "text-muted small", "When commits happen — hour vs day of week"))
+    ),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Churn Hotspots"), uiOutput("rh_churn"),
+        card_footer(class = "text-muted small", "Most-modified files in last 6 months")),
+      card(card_header("Bug Hotspots"), uiOutput("rh_bugs"),
+        card_footer(class = "text-muted small", "Files most often touched by fix/bug commits"))
+    ),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("TODO/FIXME Debt"), DTOutput("rh_todo"),
+        card_footer(class = "text-muted small", "Technical debt markers by file")),
+      card(card_header("Crisis Commits"), DTOutput("rh_crisis"),
+        card_footer(class = "text-muted small", "Reverts, hotfixes, and emergency commits (last year)"))
+    )
+  ),
+
   footer = tags$footer(
     class = "text-muted small text-center py-2",
     style = "background-color: #1a1a1a;",
     tags$a(href = "https://github.com/johngavin/llmtelemetry", style = "color: #7cb5ec;", "GitHub"),
-    " | Data: ccusage, Gemini, cmonitor, unified.duckdb",
+    " | Data: ccusage, Gemini, cmonitor, unified.duckdb, git-recon",
     " | Built: ", format(Sys.Date(), "%Y-%m-%d")
   ),
   id = "tabs"
@@ -1000,6 +1057,95 @@ server <- function(input, output, session) {
     pts <- lapply(seq_len(nrow(d)), function(i)
       list(d$lines_added[i], d$lines_deleted[i], d$files_changed[i]))
     ec_scatter(pts, pal$gemini, size_col = 3, scale = 3)
+  })
+
+  # --- Repo Health ------------------------------------------------------------
+  bus_pie <- function(d) {
+    if (!has_rows(d)) return(ec_empty())
+    d <- head(d[order(d$commits, decreasing = TRUE), ], 10)
+    items <- lapply(seq_len(nrow(d)), function(i)
+      list(name = d$author[i], value = d$commits[i]))
+    ec(list(
+      tooltip = list(trigger = "item", formatter = "{b}: {c} ({d}%)"),
+      series = list(list(
+        type = "pie", radius = c("40%", "70%"),
+        data = items,
+        label = list(color = "#ccc", fontSize = 10),
+        emphasis = list(itemStyle = list(shadowBlur = 10))
+      ))
+    ))
+  }
+  output$rh_bus_all <- renderUI(bus_pie(git_bus$all_time))
+  output$rh_bus_6mo <- renderUI(bus_pie(git_bus$recent_6mo))
+
+  output$rh_velocity <- renderUI({
+    if (!has_rows(git_vel)) return(ec_empty())
+    d <- git_vel[order(git_vel$month), ]
+    ec_bar(d$month, list(
+      list(name = "Commits", type = "bar", data = I(d$commits),
+           itemStyle = list(color = pal$claude))))
+  })
+
+  output$rh_timing <- renderUI({
+    if (!has_rows(git_timing)) return(ec_empty())
+    d <- git_timing
+    day_names <- c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    if (!"day_name" %in% names(d)) d$day_name <- day_names[d$weekday]
+    heat_data <- lapply(seq_len(nrow(d)), function(i)
+      list(as.integer(d$hour[i]), match(d$day_name[i], day_names) - 1,
+           as.integer(d$commits[i])))
+    max_c <- max(d$commits, na.rm = TRUE)
+    ec(list(
+      tooltip = list(trigger = "item"),
+      grid = list(containLabel = TRUE),
+      xAxis = list(type = "category", data = I(0:23), name = "Hour"),
+      yAxis = list(type = "category", data = I(day_names)),
+      visualMap = list(min = 0, max = max(max_c, 1), calculable = TRUE,
+        inRange = list(color = I(c("#1a1a1a", pal$accent, pal$claude))),
+        textStyle = list(color = "#ccc")),
+      series = list(list(type = "heatmap", data = heat_data,
+        label = list(show = FALSE)))
+    ))
+  })
+
+  output$rh_churn <- renderUI({
+    if (!has_rows(git_churn)) return(ec_empty())
+    d <- head(git_churn[order(git_churn$changes, decreasing = TRUE), ], 15)
+    d <- d[nrow(d):1, ]  # reverse for horizontal bar
+    ec(list(
+      tooltip = list(trigger = "axis"),
+      grid = list(containLabel = TRUE, left = 150),
+      xAxis = list(type = "value"),
+      yAxis = list(type = "category", data = I(basename(d$file))),
+      series = list(list(type = "bar", data = I(d$changes),
+        itemStyle = list(color = pal$orange)))
+    ))
+  })
+
+  output$rh_bugs <- renderUI({
+    if (!has_rows(git_bugs)) return(ec_empty())
+    d <- head(git_bugs[order(git_bugs$fixes, decreasing = TRUE), ], 15)
+    d <- d[nrow(d):1, ]
+    ec(list(
+      tooltip = list(trigger = "axis"),
+      grid = list(containLabel = TRUE, left = 150),
+      xAxis = list(type = "value"),
+      yAxis = list(type = "category", data = I(basename(d$file))),
+      series = list(list(type = "bar", data = I(d$fixes),
+        itemStyle = list(color = pal$gemini)))
+    ))
+  })
+
+  output$rh_todo <- renderDT({
+    if (!has_rows(git_todo)) return(datatable(data.frame()))
+    datatable(git_todo, options = list(dom = "t", pageLength = 15, scrollX = TRUE),
+      rownames = FALSE)
+  })
+
+  output$rh_crisis <- renderDT({
+    if (!has_rows(git_crisis)) return(datatable(data.frame()))
+    datatable(git_crisis, options = list(dom = "t", pageLength = 10, scrollX = TRUE),
+      rownames = FALSE)
   })
 }
 
