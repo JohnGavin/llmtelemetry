@@ -25,6 +25,8 @@ format:
       - data/git_tags.json
       - data/unified_sessions.json
       - data/unified_costs.json
+      - data/predictions.json
+      - data/calibration_buckets.json
 filters:
   - shinylive
 ---
@@ -137,6 +139,8 @@ cmon        <- load_json("cmonitor_summary.json")
 git_commits <- load_json("git_commits.json")
 u_sessions  <- load_json("unified_sessions.json")
 u_costs     <- load_json("unified_costs.json")
+preds_raw   <- load_json("predictions.json")
+cal_buckets <- load_json("calibration_buckets.json")
 git_bus     <- load_json("git_bus_factor.json")
 git_vel     <- load_json("git_velocity.json")
 git_timing  <- load_json("git_timing.json")
@@ -207,6 +211,8 @@ gem_sess    <- as_df(gem_sess)
 git_commits <- as_df(git_commits)
 u_sessions  <- as_df(u_sessions)
 u_costs     <- as_df(u_costs)
+preds_raw   <- as_df(preds_raw)
+cal_buckets <- as_df(cal_buckets)
 git_vel     <- as_df(git_vel)
 git_timing  <- as_df(git_timing)
 git_crisis  <- as_df(git_crisis)
@@ -507,11 +513,26 @@ ui <- page_navbar(
     )
   ),
 
+  nav_panel("Calibration", value = "Calibration",
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Reliability Diagram"), uiOutput("cal_reliability"),
+        card_footer(class = "text-muted small", "Predicted confidence vs actual accuracy by bucket. Diagonal = perfect calibration.")),
+      card(card_header("Brier Score Trend"), uiOutput("cal_brier"),
+        card_footer(class = "text-muted small", "Rolling Brier score over time (0 = perfect, 0.25 = uninformative)"))
+    ),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Accuracy by Task Type"), uiOutput("cal_by_type"),
+        card_footer(class = "text-muted small", "Success rate per task category")),
+      card(card_header("Prediction Log"), DTOutput("cal_log"),
+        card_footer(class = "text-muted small", "All predictions with stated confidence, outcome, and notes"))
+    )
+  ),
+
   footer = tags$footer(
     class = "text-muted small text-center py-2",
     style = "background-color: #1a1a1a;",
     tags$a(href = "https://github.com/johngavin/llmtelemetry", style = "color: #7cb5ec;", "GitHub"),
-    " | Data: ccusage, Gemini, cmonitor, unified.duckdb, git-recon",
+    " | Data: ccusage, Gemini, cmonitor, unified.duckdb, git-recon, predictions",
     " | Built: ", format(Sys.Date(), "%Y-%m-%d")
   ),
   id = "tabs"
@@ -1171,6 +1192,95 @@ server <- function(input, output, session) {
   output$rh_crisis <- renderDT({
     if (!has_rows(git_crisis)) return(datatable(data.frame()))
     datatable(git_crisis, options = list(dom = "t", pageLength = 10, scrollX = TRUE),
+      rownames = FALSE)
+  })
+
+  # --- Calibration ------------------------------------------------------------
+  output$cal_reliability <- renderUI({
+    if (!has_rows(cal_buckets)) return(ec_empty())
+    d <- cal_buckets
+    # Scatter: predicted (x) vs actual (y) + diagonal reference line
+    pts <- lapply(seq_len(nrow(d)), function(i)
+      list(d$mean_predicted[i], d$actual_accuracy[i], d$n[i]))
+    id <- paste0("ec", sample.int(1e7, 1))
+    opt <- list(
+      tooltip = list(trigger = "item"),
+      grid = list(containLabel = TRUE),
+      xAxis = list(type = "value", name = "Predicted", min = 0, max = 1),
+      yAxis = list(type = "value", name = "Actual", min = 0, max = 1),
+      series = list(
+        list(type = "line", data = list(list(0, 0), list(1, 1)),
+             lineStyle = list(type = "dashed", color = "#666"),
+             symbol = "none", name = "Perfect"),
+        list(type = "scatter", data = pts, name = "Buckets",
+             itemStyle = list(color = pal$claude))
+      )
+    )
+    j <- toJSON(opt, auto_unbox = TRUE, null = "null")
+    tagList(
+      tags$div(id = id, class = "echart-div", style = "width:100%;height:300px"),
+      tags$script(HTML(paste0(
+        "(function(){var c=echarts.init(document.getElementById('", id, "'),'dark');",
+        "var o=", j, ";",
+        "o.series[1].symbolSize=function(d){return Math.max(8,Math.sqrt(d[2])*6)};",
+        "o.series[1].label={show:true,formatter:function(p){return p.value[2]+' preds'},color:'#ccc',fontSize:10};",
+        "c.setOption(o);new ResizeObserver(function(){c.resize()})",
+        ".observe(document.getElementById('", id, "'))})();"
+      )))
+    )
+  })
+
+  output$cal_brier <- renderUI({
+    if (!has_rows(preds_raw) || !"brier" %in% names(preds_raw)) return(ec_empty())
+    d <- preds_raw[!is.na(preds_raw$outcome_recorded_at), ]
+    if (nrow(d) == 0) return(ec_empty())
+    d <- d[order(d$outcome_recorded_at), ]
+    # Cumulative rolling Brier
+    d$cum_brier <- cumsum(d$brier) / seq_len(nrow(d))
+    ec_line(d$outcome_recorded_at, list(
+      list(name = "Brier (rolling)", type = "line", data = I(round(d$cum_brier, 4)),
+           itemStyle = list(color = pal$claude),
+           markLine = list(data = list(list(yAxis = 0.25, name = "Uninformative")),
+             lineStyle = list(color = "#666", type = "dashed")))
+    ))
+  })
+
+  output$cal_by_type <- renderUI({
+    if (!has_rows(preds_raw) || !"task_type" %in% names(preds_raw)) return(ec_empty())
+    d <- preds_raw[!is.na(preds_raw$outcome), ]
+    if (nrow(d) == 0) return(ec_empty())
+    d$outcome_num <- ifelse(d$outcome == TRUE | d$outcome == "true", 1,
+                     ifelse(d$outcome == "partial", 0.5, 0))
+    agg <- aggregate(cbind(accuracy = outcome_num, n = outcome_num) ~ task_type,
+      data = d, FUN = function(x) c(mean(x), length(x)))
+    if (is.matrix(agg$accuracy)) {
+      types <- agg$task_type
+      acc <- round(agg$accuracy[, 1], 2)
+      counts <- as.integer(agg$n[, 2])
+    } else {
+      types <- agg$task_type
+      acc <- round(agg$accuracy, 2)
+      counts <- as.integer(agg$n)
+    }
+    labels <- paste0(types, " (n=", counts, ")")
+    ec(list(
+      tooltip = list(trigger = "axis"),
+      grid = list(containLabel = TRUE, left = 120),
+      xAxis = list(type = "value", name = "Accuracy", min = 0, max = 1),
+      yAxis = list(type = "category", data = I(labels)),
+      series = list(list(type = "bar", data = I(acc),
+        itemStyle = list(color = pal$accent),
+        label = list(show = TRUE, position = "right", color = "#ccc")))
+    ))
+  })
+
+  output$cal_log <- renderDT({
+    if (!has_rows(preds_raw)) return(datatable(data.frame()))
+    d <- preds_raw
+    cols <- intersect(c("prediction_id", "project_name", "task_type",
+      "task_description", "p_success", "outcome", "outcome_notes"), names(d))
+    d <- d[, cols, drop = FALSE]
+    datatable(d, options = list(dom = "ftip", pageLength = 15, scrollX = TRUE),
       rownames = FALSE)
   })
 }

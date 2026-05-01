@@ -460,6 +460,93 @@ if (file.exists(unified_db)) {
   write_json(list(), file.path(out_dir, "unified_costs.json"))
 }
 
+# --- 10. Export prediction calibration data -----------------------------------
+cat("Exporting prediction calibration data...\n")
+pred_dir <- file.path(Sys.getenv("HOME"), ".claude/predictions")
+pred_files <- list.files(pred_dir, pattern = "\\.jsonl$", full.names = TRUE)
+
+if (length(pred_files) > 0) {
+  # Read all JSONL lines, parse each as JSON
+  all_lines <- unlist(lapply(pred_files, readLines))
+  all_lines <- all_lines[nzchar(trimws(all_lines))]
+
+  if (length(all_lines) > 0) {
+    preds_list <- lapply(all_lines, function(l) {
+      tryCatch(fromJSON(l), error = function(e) NULL)
+    })
+    preds_list <- Filter(Negate(is.null), preds_list)
+
+    if (length(preds_list) > 0) {
+      preds_df <- bind_rows(lapply(preds_list, as_tibble))
+
+      # Deduplicate: keep last record per prediction_id (outcome overwrites predict)
+      preds_df <- preds_df |>
+        group_by(prediction_id) |>
+        filter(row_number() == n()) |>
+        ungroup()
+
+      # Resolved predictions (outcome recorded)
+      resolved <- preds_df |> filter(!is.na(outcome))
+      pending <- preds_df |> filter(is.na(outcome))
+
+      # Convert outcome to numeric for Brier score
+      if (nrow(resolved) > 0) {
+        resolved <- resolved |>
+          mutate(
+            outcome_num = case_when(
+              outcome == TRUE ~ 1, outcome == "true" ~ 1,
+              outcome == "partial" ~ 0.5,
+              TRUE ~ 0
+            ),
+            brier = (p_success - outcome_num)^2
+          )
+      }
+
+      # Calibration buckets
+      if (nrow(resolved) > 0) {
+        resolved$bucket <- cut(resolved$p_success,
+          breaks = c(0, 0.5, 0.7, 0.9, 1.01),
+          labels = c("0-50%", "50-70%", "70-90%", "90-100%"),
+          right = FALSE)
+        cal_buckets <- resolved |>
+          group_by(bucket) |>
+          summarise(
+            n = n(),
+            mean_predicted = round(mean(p_success, na.rm = TRUE), 3),
+            actual_accuracy = round(mean(outcome_num, na.rm = TRUE), 3),
+            mean_brier = round(mean(brier, na.rm = TRUE), 4),
+            .groups = "drop"
+          )
+      } else {
+        cal_buckets <- tibble(bucket = character(0), n = integer(0),
+          mean_predicted = numeric(0), actual_accuracy = numeric(0),
+          mean_brier = numeric(0))
+      }
+
+      # Write outputs
+      write_json(resolved |> mutate(across(where(is.numeric), ~round(.x, 4))),
+        file.path(out_dir, "predictions.json"), auto_unbox = TRUE)
+      write_json(cal_buckets, file.path(out_dir, "calibration_buckets.json"),
+        auto_unbox = TRUE)
+
+      cat(sprintf("  -> %d resolved, %d pending, %d buckets\n",
+        nrow(resolved), nrow(pending), nrow(cal_buckets)))
+    } else {
+      cat("  -> no valid JSONL records\n")
+      write_json(list(), file.path(out_dir, "predictions.json"))
+      write_json(list(), file.path(out_dir, "calibration_buckets.json"))
+    }
+  } else {
+    cat("  -> JSONL files empty\n")
+    write_json(list(), file.path(out_dir, "predictions.json"))
+    write_json(list(), file.path(out_dir, "calibration_buckets.json"))
+  }
+} else {
+  cat("  -> no prediction files found, writing empty arrays\n")
+  write_json(list(), file.path(out_dir, "predictions.json"))
+  write_json(list(), file.path(out_dir, "calibration_buckets.json"))
+}
+
 # --- 8. Generate API index.json -----------------------------------------------
 cat("Generating index.json...\n")
 api_index <- list(
@@ -645,6 +732,18 @@ api_index <- list(
         sonnet_pct  = "number",
         haiku_pct   = "number"
       )
+    ),
+    list(
+      path        = "/predictions.json",
+      description = "Resolved predictions with outcomes for calibration analysis",
+      type        = "array",
+      source      = "~/.claude/predictions/*.jsonl"
+    ),
+    list(
+      path        = "/calibration_buckets.json",
+      description = "Calibration by confidence bucket (predicted vs actual accuracy)",
+      type        = "array",
+      source      = "Computed from predictions.json"
     )
   )
 )

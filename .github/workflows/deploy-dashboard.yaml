@@ -67,7 +67,8 @@ jobs:
                       "git_bus_factor", "git_velocity", "git_timing",
                       "git_churn", "git_bugs"]
           optional = ["gemini_daily", "gemini_sessions", "unified_sessions",
-                      "unified_costs", "git_tags", "git_crisis", "git_todo"]
+                      "unified_costs", "git_tags", "git_crisis", "git_todo",
+                      "predictions", "calibration_buckets"]
           def count_rows(d):
               if isinstance(d, list): return len(d)
               if isinstance(d, dict):
