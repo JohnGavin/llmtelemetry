@@ -455,9 +455,15 @@ if (file.exists(unified_db)) {
   write_json(u_costs, file.path(out_dir, "unified_costs.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d cost rows\n", nrow(u_costs)))
 } else {
-  cat("  -> unified.duckdb not found, writing empty arrays\n")
-  write_json(list(), file.path(out_dir, "unified_sessions.json"))
-  write_json(list(), file.path(out_dir, "unified_costs.json"))
+  # Preserve existing data files if present (may have been committed by local export)
+  for (f in c("unified_sessions.json", "unified_costs.json")) {
+    if (!file.exists(file.path(out_dir, f))) {
+      write_json(list(), file.path(out_dir, f))
+      cat(sprintf("  -> %s: wrote empty (no source, no existing)\n", f))
+    } else {
+      cat(sprintf("  -> %s: preserved existing (no local source)\n", f))
+    }
+  }
 }
 
 # --- 10. Export prediction calibration data -----------------------------------
@@ -533,18 +539,19 @@ if (length(pred_files) > 0) {
         nrow(resolved), nrow(pending), nrow(cal_buckets)))
     } else {
       cat("  -> no valid JSONL records\n")
-      write_json(list(), file.path(out_dir, "predictions.json"))
-      write_json(list(), file.path(out_dir, "calibration_buckets.json"))
     }
   } else {
     cat("  -> JSONL files empty\n")
-    write_json(list(), file.path(out_dir, "predictions.json"))
-    write_json(list(), file.path(out_dir, "calibration_buckets.json"))
   }
 } else {
-  cat("  -> no prediction files found, writing empty arrays\n")
-  write_json(list(), file.path(out_dir, "predictions.json"))
-  write_json(list(), file.path(out_dir, "calibration_buckets.json"))
+  cat("  -> no prediction files found\n")
+}
+# Preserve existing prediction data if no local source produced new data
+for (f in c("predictions.json", "calibration_buckets.json")) {
+  if (!file.exists(file.path(out_dir, f))) {
+    write_json(list(), file.path(out_dir, f))
+    cat(sprintf("  -> %s: wrote empty (no source, no existing)\n", f))
+  }
 }
 
 # --- 8. Generate API index.json -----------------------------------------------
