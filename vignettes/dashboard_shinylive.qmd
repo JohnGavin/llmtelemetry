@@ -952,8 +952,25 @@ server <- function(input, output, session) {
     datatable(out,
       extensions = "RowGroup",
       options = list(
-        pageLength = 25, dom = "frtip", scrollX = TRUE,
-        rowGroup = list(dataSrc = 0),
+        pageLength = 50, dom = "rtip", scrollX = TRUE,
+        rowGroup = list(
+          dataSrc = 0,
+          startRender = DT::JS("function(rows, group) {
+            var dur=0, cost=0, tok=0;
+            rows.every(function() {
+              var d=this.data();
+              dur += parseFloat(d[3]) || 0;
+              cost += parseFloat(d[4].replace('$','')) || 0;
+              tok += parseInt(d[6].replace(/,/g,'')) || 0;
+            });
+            return $('<tr style=\"font-weight:bold;background:#2a2a2a\"/>')
+              .append('<td colspan=\"2\">' + group + '</td>')
+              .append('<td>' + dur.toFixed(1) + 'h</td>')
+              .append('<td>$' + cost.toFixed(2) + '</td>')
+              .append('<td colspan=\"2\">' + tok.toLocaleString() + ' tok</td>')
+              .append('<td colspan=\"2\">' + rows.count() + ' blocks</td>');
+          }")
+        ),
         columnDefs = list(
           list(visible = FALSE, targets = 0),
           list(targets = 8, render = DT::JS(
