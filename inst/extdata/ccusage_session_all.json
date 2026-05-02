@@ -1,13 +1,70 @@
 {
   "sessions": [
     {
+      "sessionId": "-Users-johngavin-docs-gh-proj-finance-data-acd-area-climate-design",
+      "inputTokens": 608,
+      "outputTokens": 264643,
+      "cacheCreationTokens": 1910496,
+      "cacheReadTokens": 65457877,
+      "totalTokens": 67633624,
+      "totalCost": 51.2886535,
+      "lastActivity": "2026-05-02",
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 608,
+          "outputTokens": 264643,
+          "cacheCreationTokens": 1910496,
+          "cacheReadTokens": 65457877,
+          "cost": 51.2886535
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "subagents",
+      "inputTokens": 1206,
+      "outputTokens": 84140,
+      "cacheCreationTokens": 1843446,
+      "cacheReadTokens": 56093672,
+      "totalTokens": 58022464,
+      "totalCost": 24.5221891,
+      "lastActivity": "2026-05-02",
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-6"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-sonnet-4-6",
+          "inputTokens": 1173,
+          "outputTokens": 82711,
+          "cacheCreationTokens": 1674136,
+          "cacheReadTokens": 55859062,
+          "cost": 24.279912599999992
+        },
+        {
+          "modelName": "claude-haiku-4-5-20251001",
+          "inputTokens": 33,
+          "outputTokens": 1429,
+          "cacheCreationTokens": 169310,
+          "cacheReadTokens": 234610,
+          "cost": 0.2422765
+        }
+      ],
+      "projectPath": "-Users-johngavin-docs-gh-proj-finance-data-acd-area-climate-design/bd115621-45da-485c-a919-415b2b753165"
+    },
+    {
       "sessionId": "-Users-johngavin-docs-gh-llm",
-      "inputTokens": 30512,
-      "outputTokens": 881481,
-      "cacheCreationTokens": 46579475,
-      "cacheReadTokens": 1289376536,
-      "totalTokens": 1336868004,
-      "totalCost": 957.9995717499994,
+      "inputTokens": 30522,
+      "outputTokens": 882624,
+      "cacheCreationTokens": 46585105,
+      "cacheReadTokens": 1292906678,
+      "totalTokens": 1340404929,
+      "totalCost": 959.8284552499995,
       "lastActivity": "2026-05-01",
       "modelsUsed": [
         "claude-opus-4-6",
@@ -16,11 +73,11 @@
       "modelBreakdowns": [
         {
           "modelName": "claude-opus-4-6",
-          "inputTokens": 30307,
-          "outputTokens": 881424,
-          "cacheCreationTokens": 46513373,
-          "cacheReadTokens": 1287767397,
-          "cost": 956.7794147499994
+          "inputTokens": 30317,
+          "outputTokens": 882567,
+          "cacheCreationTokens": 46519003,
+          "cacheReadTokens": 1291297539,
+          "cost": 958.6082982499995
         },
         {
           "modelName": "claude-opus-4-5-20251101",
@@ -245,63 +302,6 @@
         }
       ],
       "projectPath": "-Users-johngavin-docs-gh-proj-data-maps/ed9d4c20-687f-4789-9a49-d394875a3349"
-    },
-    {
-      "sessionId": "-Users-johngavin-docs-gh-proj-finance-data-acd-area-climate-design",
-      "inputTokens": 392,
-      "outputTokens": 100013,
-      "cacheCreationTokens": 544981,
-      "cacheReadTokens": 17364311,
-      "totalTokens": 18009697,
-      "totalCost": 14.590571750000002,
-      "lastActivity": "2026-05-01",
-      "modelsUsed": [
-        "claude-opus-4-7"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-opus-4-7",
-          "inputTokens": 392,
-          "outputTokens": 100013,
-          "cacheCreationTokens": 544981,
-          "cacheReadTokens": 17364311,
-          "cost": 14.590571750000002
-        }
-      ],
-      "projectPath": "Unknown Project"
-    },
-    {
-      "sessionId": "subagents",
-      "inputTokens": 266,
-      "outputTokens": 31006,
-      "cacheCreationTokens": 948529,
-      "cacheReadTokens": 17222630,
-      "totalTokens": 18202431,
-      "totalCost": 8.705107750000002,
-      "lastActivity": "2026-05-01",
-      "modelsUsed": [
-        "claude-haiku-4-5-20251001",
-        "claude-sonnet-4-6"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-sonnet-4-6",
-          "inputTokens": 233,
-          "outputTokens": 29577,
-          "cacheCreationTokens": 779219,
-          "cacheReadTokens": 16988020,
-          "cost": 8.462831249999999
-        },
-        {
-          "modelName": "claude-haiku-4-5-20251001",
-          "inputTokens": 33,
-          "outputTokens": 1429,
-          "cacheCreationTokens": 169310,
-          "cacheReadTokens": 234610,
-          "cost": 0.2422765
-        }
-      ],
-      "projectPath": "-Users-johngavin-docs-gh-proj-finance-data-acd-area-climate-design/bd115621-45da-485c-a919-415b2b753165"
     },
     {
       "sessionId": "-Users-johngavin-docs-gh-proj-data-weather-irish-buoy-network",
@@ -7222,11 +7222,11 @@
     }
   ],
   "totals": {
-    "inputTokens": 1212048,
-    "outputTokens": 5506157,
-    "cacheCreationTokens": 269102371,
-    "cacheReadTokens": 7058737740,
-    "totalCost": 4941.854056450003,
-    "totalTokens": 7334558316
+    "inputTokens": 1213214,
+    "outputTokens": 5725064,
+    "cacheCreationTokens": 271368433,
+    "cacheReadTokens": 7149232490,
+    "totalCost": 4996.198103050003,
+    "totalTokens": 7427539201
   }
 }
