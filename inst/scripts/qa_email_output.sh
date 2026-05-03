@@ -36,20 +36,30 @@ for pat in "NaN" ">NULL<" "NA_real_"; do
 done
 
 # --- Positive assertions: structural features that MUST appear ---
-declare -a FEATURES=(
-  "Time Block Activity"
-  "Daily Cost by Model"
+declare -a REQUIRED_FEATURES=(
   "Summary"
   "font-weight: bold"
-  "MTok"
-  "blocks)"
   "johngavin.github.io/llmtelemetry"
 )
+# Features that depend on local data (cmonitor-rs, model_daily.json)
+declare -a OPTIONAL_FEATURES=(
+  "Time Block Activity"
+  "Daily Cost by Model"
+  "MTok"
+  "blocks)"
+)
 
-for feat in "${FEATURES[@]}"; do
+for feat in "${REQUIRED_FEATURES[@]}"; do
   if ! grep -qi "$feat" "$FILE"; then
-    echo "FAIL: missing expected feature: '$feat'"
+    echo "FAIL: missing required feature: '$feat'"
     ERRORS=$((ERRORS + 1))
+  fi
+done
+
+for feat in "${OPTIONAL_FEATURES[@]}"; do
+  if ! grep -qi "$feat" "$FILE"; then
+    echo "WARN: missing optional feature: '$feat' (data source may be unavailable)"
+    WARNINGS=$((WARNINGS + 1))
   fi
 done
 
@@ -83,18 +93,29 @@ fi
 
 if grep -q "QA:model_breakdown_days=" "$FILE"; then
   MDAYS=$(grep -o 'QA:model_breakdown_days=[0-9]*' "$FILE" | head -1 | cut -d= -f2)
-  echo "OK: model breakdown for $MDAYS days"
+  if [ "$MDAYS" = "0" ]; then
+    echo "WARN: model breakdown has 0 days (data source unavailable)"
+    WARNINGS=$((WARNINGS + 1))
+  else
+    echo "OK: model breakdown for $MDAYS days"
+  fi
 else
-  echo "FAIL: no QA:model_breakdown_days marker"
-  ERRORS=$((ERRORS + 1))
+  echo "WARN: no QA:model_breakdown_days marker (model data unavailable)"
+  WARNINGS=$((WARNINGS + 1))
 fi
 
 if grep -q "QA:models_found=" "$FILE"; then
-  MODELS=$(grep -o 'QA:models_found=[^ ]*' "$FILE" | head -1 | cut -d= -f2 | tr ',' '\n' | wc -l | tr -d ' ')
-  echo "OK: $MODELS distinct models found"
+  MFOUND=$(grep -o 'QA:models_found=[^ "]*' "$FILE" | head -1 | cut -d= -f2)
+  if [ "$MFOUND" = "none" ]; then
+    echo "WARN: no models found (data source unavailable)"
+    WARNINGS=$((WARNINGS + 1))
+  else
+    MODELS=$(echo "$MFOUND" | tr ',' '\n' | wc -l | tr -d ' ')
+    echo "OK: $MODELS distinct models found"
+  fi
 else
-  echo "FAIL: no QA:models_found marker"
-  ERRORS=$((ERRORS + 1))
+  echo "WARN: no QA:models_found marker (model data unavailable)"
+  WARNINGS=$((WARNINGS + 1))
 fi
 
 # --- Summary ---

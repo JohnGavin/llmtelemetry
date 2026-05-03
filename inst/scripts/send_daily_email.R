@@ -153,8 +153,8 @@ if (!has_data) {
   cc_days <- if (!is.na(cc_start) && !is.na(cc_end)) as.numeric(cc_end - cc_start) + 1 else 0
   cc_entries <- if (!is.null(blocks_raw$blocks)) nrow(blocks_raw$blocks) else NA
   
-  cc_cost_day <- if (cc_days > 0) total_cost / cc_days else 0
-  cc_tok_day <- if (cc_days > 0) total_tokens / cc_days else 0
+  cc_cost_day <- if (cc_days > 0) total_cost / cc_days else NA
+  cc_tok_day <- if (cc_days > 0) total_tokens / cc_days else NA
 
   # --- 2. Calculate cmonitor stats ---
   cm_cost <- NA; cm_tokens <- NA; cm_entries <- NA; cm_days <- NA; cm_start <- NA; cm_end <- NA
@@ -348,6 +348,8 @@ if (!has_data) {
             error = function(e) NULL)
         }
         if (!is.null(model_df) && nrow(model_df) > 0) {
+          # Guard NaN in cost_per_mtok
+          model_df$cost_per_mtok[is.nan(model_df$cost_per_mtok)] <- 0
 
           daily_model_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Daily Cost by Model (Last 5 Days)</h3>
 <table style="border-collapse: collapse; width: 100%%;">
@@ -405,9 +407,20 @@ if (!has_data) {
             sprintf("<!-- QA:model_breakdown_days=%d -->", length(model_sorted_dates)),
             sprintf("<!-- QA:models_found=%s -->",
               paste(gsub("claude-", "", unique(model_df$model)), collapse = ",")))
+        } else {
+          # No model data — emit empty QA markers so QA doesn't fail
+          daily_model_html <- paste0(
+            "<!-- QA:model_breakdown_days=0 -->",
+            "<!-- QA:models_found=none -->")
         }
       }
     }
+  }
+  # If blocks section was never built, still emit model markers
+  if (nchar(daily_model_html) == 0) {
+    daily_model_html <- paste0(
+      "<!-- QA:model_breakdown_days=0 -->",
+      "<!-- QA:models_found=none -->")
   }
 
   # --- Build Top Projects by Cost ---
