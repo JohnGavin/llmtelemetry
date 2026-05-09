@@ -68,8 +68,17 @@ ec_empty <- function(msg = "No data available", h = "300px") {
 ec_line <- function(dates, series, h = "300px") {
   ec(list(
     tooltip = list(trigger = "axis"),
-    legend = list(bottom = 0, textStyle = list(color = "#ccc")),
-    grid = list(containLabel = TRUE),
+    legend = list(bottom = 30, textStyle = list(color = "#ccc")),
+    toolbox = list(feature = list(
+      dataZoom = list(yAxisIndex = "none"),
+      restore = list(),
+      saveAsImage = list()
+    )),
+    dataZoom = list(
+      list(type = "inside", start = 0, end = 100),
+      list(type = "slider", start = 0, end = 100, bottom = 5)
+    ),
+    grid = list(containLabel = TRUE, bottom = 80),
     xAxis = list(type = "category", data = I(as.character(dates))),
     yAxis = list(type = "value"),
     series = series
@@ -79,8 +88,17 @@ ec_line <- function(dates, series, h = "300px") {
 ec_bar <- function(cats, series, h = "300px") {
   ec(list(
     tooltip = list(trigger = "axis"),
-    legend = list(bottom = 0, textStyle = list(color = "#ccc")),
-    grid = list(containLabel = TRUE),
+    legend = list(bottom = 30, textStyle = list(color = "#ccc")),
+    toolbox = list(feature = list(
+      dataZoom = list(yAxisIndex = "none"),
+      restore = list(),
+      saveAsImage = list()
+    )),
+    dataZoom = list(
+      list(type = "inside", start = 0, end = 100),
+      list(type = "slider", start = 0, end = 100, bottom = 5)
+    ),
+    grid = list(containLabel = TRUE, bottom = 80),
     xAxis = list(type = "category", data = I(as.character(cats)),
                  axisLabel = list(rotate = 30)),
     yAxis = list(type = "value"),
@@ -160,6 +178,16 @@ shorten_proj <- function(x) {
   x <- sub("^llm-", "", x)
   x <- sub("^proj-", "", x)
   gsub("-", "/", x)
+}
+
+# Clean model name: remove quotes, braces, claude- prefix, simplify
+clean_model <- function(x) {
+  x <- gsub('["\']', '', x)           # Remove quotes
+
+x <- gsub('[()]', '', x)            # Remove parentheses
+  x <- gsub('^claude-', '', x)        # Remove claude- prefix
+  x <- trimws(x)                      # Trim whitespace
+  x
 }
 
 # ccusage_daily may be flat array OR nested {"projects": {...}} (CI fallback)
@@ -263,6 +291,10 @@ if (has_rows(u_sessions)) {
   u_sessions$date <- as.Date(u_sessions$started_at)
 }
 if (has_rows(u_costs)) u_costs$date <- as.Date(u_costs$date)
+if (has_rows(gem_sess)) {
+  gem_sess$start_time <- as.POSIXct(gem_sess$start_time, tz = "UTC")
+  gem_sess$date <- as.Date(gem_sess$start_time)
+}
 
 # Top 5 projects by cost in last 28 days
 all_projects <- character(0)
@@ -583,7 +615,9 @@ server <- function(input, output, session) {
     if (has_rows(u_sessions)) {
       n <- nrow(u_sessions[u_sessions$date >= cutoff(), ])
     }
-    if (has_rows(gem_sess)) n <- n + nrow(gem_sess)
+    if (has_rows(gem_sess)) {
+      n <- n + nrow(gem_sess[gem_sess$date >= cutoff(), ])
+    }
     as.character(n)
   })
 
@@ -597,7 +631,7 @@ server <- function(input, output, session) {
         `$/Day` = sprintf("$%.2f", sum(d$totalCost, na.rm = TRUE) / max(length(unique(d$date)), 1)),
         Tokens = format(sum(d$totalTokens, na.rm = TRUE), big.mark = ","),
         Days = length(unique(d$date)),
-        Sessions = if (has_rows(cc_sessions)) nrow(cc_sessions) else 0L,
+        Sessions = if (has_rows(u_sessions)) nrow(u_sessions[u_sessions$date >= cutoff(), ]) else 0L,
         `Date Range` = paste(min(d$date), "to", max(d$date)),
         check.names = FALSE, stringsAsFactors = FALSE
       )
@@ -610,7 +644,7 @@ server <- function(input, output, session) {
         `$/Day` = sprintf("$%.2f", sum(d$total_cost, na.rm = TRUE) / max(length(unique(d$date)), 1)),
         Tokens = format(sum(d$total_tokens, na.rm = TRUE), big.mark = ","),
         Days = length(unique(d$date)),
-        Sessions = if (has_rows(gem_sess)) nrow(gem_sess) else 0L,
+        Sessions = if (has_rows(gem_sess)) nrow(gem_sess[gem_sess$date >= cutoff(), ]) else 0L,
         `Date Range` = paste(min(d$date), "to", max(d$date)),
         check.names = FALSE, stringsAsFactors = FALSE
       )
@@ -766,7 +800,7 @@ server <- function(input, output, session) {
     models_split <- strsplit(as.character(d$modelsUsed), ",\\s*")
     n_each <- lengths(models_split)
     d_exp <- d[rep(seq_len(nrow(d)), n_each), ]
-    d_exp$model <- sub("claude-", "", unlist(models_split))
+    d_exp$model <- clean_model(unlist(models_split))
     d_exp <- d_exp[d_exp$model != "", ]
     d_exp$week <- floor_date(d_exp$date, "week")
     agg <- aggregate(totalCost ~ week + model, data = d_exp, FUN = sum, na.rm = TRUE)
@@ -967,7 +1001,7 @@ server <- function(input, output, session) {
       `$/hr` = sprintf("$%.2f", d$cost_per_hr),
       Tokens = format(if ("totalTokens" %in% names(d)) d$totalTokens else rep(0, n), big.mark = ","),
       `Tok/hr` = format(if ("tok_per_hr" %in% names(d)) d$tok_per_hr else rep(0, n), big.mark = ","),
-      Models = if ("models" %in% names(d)) d$models else rep("-", n),
+      Models = if ("models" %in% names(d)) clean_model(d$models) else rep("-", n),
       check.names = FALSE, stringsAsFactors = FALSE
     )
     datatable(out,
