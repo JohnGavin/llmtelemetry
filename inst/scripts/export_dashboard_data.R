@@ -483,6 +483,14 @@ if (length(pred_files) > 0) {
     preds_list <- Filter(Negate(is.null), preds_list)
 
     if (length(preds_list) > 0) {
+      # Convert NULL to NA for nullable fields (outcome, outcome_recorded_at, outcome_notes)
+      # This is required because JSON null becomes R NULL which can't be a tibble column
+      preds_list <- lapply(preds_list, function(x) {
+        if (is.null(x$outcome)) x$outcome <- NA
+        if (is.null(x$outcome_recorded_at)) x$outcome_recorded_at <- NA_character_
+        if (is.null(x$outcome_notes)) x$outcome_notes <- NA_character_
+        x
+      })
       preds_df <- bind_rows(lapply(preds_list, as_tibble))
 
       # Deduplicate: keep last record per prediction_id (outcome overwrites predict)
