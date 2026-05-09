@@ -1151,9 +1151,11 @@ server <- function(input, output, session) {
       grid = list(containLabel = TRUE, left = 120),
       xAxis = list(type = "value", name = "Commits"),
       yAxis = list(type = "category", data = I(labels)),
-      series = list(list(type = "bar", data = I(d$commits),
+      series = list(list(type = "scatter", data = I(d$commits),
+        symbol = "circle", symbolSize = 14,
         itemStyle = list(color = pal$claude),
-        label = list(show = TRUE, position = "right", color = "#ccc")))
+        label = list(show = TRUE, position = "right", color = "#ccc",
+                     distance = 8)))
     ))
   }
   output$rh_bus_all <- renderUI(bus_dot(git_bus$all_time))
@@ -1192,14 +1194,17 @@ server <- function(input, output, session) {
   output$rh_churn <- renderUI({
     if (!has_rows(git_churn)) return(ec_empty())
     d <- head(git_churn[order(git_churn$changes, decreasing = TRUE), ], 15)
-    d <- d[nrow(d):1, ]  # reverse for horizontal bar
+    d <- d[nrow(d):1, ]  # reverse for horizontal dotchart
     ec(list(
       tooltip = list(trigger = "axis"),
       grid = list(containLabel = TRUE, left = 150),
       xAxis = list(type = "value"),
       yAxis = list(type = "category", data = I(basename(d$file))),
-      series = list(list(type = "bar", data = I(d$changes),
-        itemStyle = list(color = pal$orange)))
+      series = list(list(type = "scatter", data = I(d$changes),
+        symbol = "circle", symbolSize = 12,
+        itemStyle = list(color = pal$orange),
+        label = list(show = TRUE, position = "right", color = "#ccc",
+                     distance = 6)))
     ))
   })
 
