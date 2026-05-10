@@ -430,6 +430,8 @@ write_json(tag_df, file.path(out_dir, "git_tags.json"), auto_unbox = TRUE)
 cat(sprintf("  -> tags: %d releases\n", nrow(tag_df)))
 
 # --- 7. Export unified.duckdb sessions and costs ------------------------------
+# Local-only data: write to inst/extdata/ (committed) + vignettes/data/ (preview)
+# CI fallback: copy from inst/extdata/ to vignettes/data/
 cat("Exporting unified.duckdb data...\n")
 unified_db <- file.path(Sys.getenv("HOME"), ".claude/logs/unified.duckdb")
 if (file.exists(unified_db)) {
@@ -445,23 +447,31 @@ if (file.exists(unified_db)) {
     ) |>
     select(session_id, project, started_at, ended_at, duration_min) |>
     arrange(desc(started_at))
+  # Write to both locations: inst/extdata (commit) + vignettes/data (preview)
+  write_json(u_sess, file.path(extdata, "unified_sessions.json"), auto_unbox = TRUE)
   write_json(u_sess, file.path(out_dir, "unified_sessions.json"), auto_unbox = TRUE)
-  cat(sprintf("  -> %d sessions\n", nrow(u_sess)))
+  cat(sprintf("  -> %d sessions (written to inst/extdata + vignettes/data)\n", nrow(u_sess)))
 
   u_costs <- dbReadTable(ucon, "costs") |>
     as_tibble() |>
     mutate(date = as.character(date),
            across(where(is.numeric), \(x) round(x, 2)))
+  write_json(u_costs, file.path(extdata, "unified_costs.json"), auto_unbox = TRUE)
   write_json(u_costs, file.path(out_dir, "unified_costs.json"), auto_unbox = TRUE)
-  cat(sprintf("  -> %d cost rows\n", nrow(u_costs)))
+  cat(sprintf("  -> %d cost rows (written to inst/extdata + vignettes/data)\n", nrow(u_costs)))
 } else {
-  # Preserve existing data files if present (may have been committed by local export)
+  # CI fallback: copy from inst/extdata/ to vignettes/data/
   for (f in c("unified_sessions.json", "unified_costs.json")) {
-    if (!file.exists(file.path(out_dir, f))) {
-      write_json(list(), file.path(out_dir, f))
-      cat(sprintf("  -> %s: wrote empty (no source, no existing)\n", f))
+    src <- file.path(extdata, f)
+    dst <- file.path(out_dir, f)
+    if (file.exists(src)) {
+      file.copy(src, dst, overwrite = TRUE)
+      cat(sprintf("  -> %s: copied from inst/extdata\n", f))
+    } else if (!file.exists(dst)) {
+      write_json(list(), dst)
+      cat(sprintf("  -> %s: wrote empty (no source anywhere)\n", f))
     } else {
-      cat(sprintf("  -> %s: preserved existing (no local source)\n", f))
+      cat(sprintf("  -> %s: preserved existing\n", f))
     }
   }
 }
@@ -537,13 +547,14 @@ if (length(pred_files) > 0) {
           mean_brier = numeric(0))
       }
 
-      # Write outputs
-      write_json(resolved |> mutate(across(where(is.numeric), ~round(.x, 4))),
-        file.path(out_dir, "predictions.json"), auto_unbox = TRUE)
-      write_json(cal_buckets, file.path(out_dir, "calibration_buckets.json"),
-        auto_unbox = TRUE)
+      # Write outputs to both locations: inst/extdata (commit) + vignettes/data (preview)
+      preds_out <- resolved |> mutate(across(where(is.numeric), ~round(.x, 4)))
+      write_json(preds_out, file.path(extdata, "predictions.json"), auto_unbox = TRUE)
+      write_json(preds_out, file.path(out_dir, "predictions.json"), auto_unbox = TRUE)
+      write_json(cal_buckets, file.path(extdata, "calibration_buckets.json"), auto_unbox = TRUE)
+      write_json(cal_buckets, file.path(out_dir, "calibration_buckets.json"), auto_unbox = TRUE)
 
-      cat(sprintf("  -> %d resolved, %d pending, %d buckets\n",
+      cat(sprintf("  -> %d resolved, %d pending, %d buckets (written to inst/extdata + vignettes/data)\n",
         nrow(resolved), nrow(pending), nrow(cal_buckets)))
     } else {
       cat("  -> no valid JSONL records\n")
@@ -554,11 +565,18 @@ if (length(pred_files) > 0) {
 } else {
   cat("  -> no prediction files found\n")
 }
-# Preserve existing prediction data if no local source produced new data
+# CI fallback: copy prediction data from inst/extdata/ to vignettes/data/
 for (f in c("predictions.json", "calibration_buckets.json")) {
-  if (!file.exists(file.path(out_dir, f))) {
-    write_json(list(), file.path(out_dir, f))
-    cat(sprintf("  -> %s: wrote empty (no source, no existing)\n", f))
+  src <- file.path(extdata, f)
+  dst <- file.path(out_dir, f)
+  if (!file.exists(dst)) {
+    if (file.exists(src)) {
+      file.copy(src, dst, overwrite = TRUE)
+      cat(sprintf("  -> %s: copied from inst/extdata\n", f))
+    } else {
+      write_json(list(), dst)
+      cat(sprintf("  -> %s: wrote empty (no source anywhere)\n", f))
+    }
   }
 }
 
