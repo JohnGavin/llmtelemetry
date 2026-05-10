@@ -77,6 +77,55 @@ for f in "${OPTIONAL_DATA[@]}"; do
   fi
 done
 
+# --- Stale session data check ---
+echo ""
+echo "=== Checking session data freshness ==="
+SESSIONS_URL="$DATA_URL/unified_sessions.json"
+SESSIONS_CONTENT=$(curl -sL "$SESSIONS_URL" 2>/dev/null || echo "[]")
+
+if [ "$SESSIONS_CONTENT" = "[]" ]; then
+  echo "WARN: No session data to check freshness"
+  WARNINGS=$((WARNINGS + 1))
+else
+  # Extract most recent session date (first element, started_at field)
+  LATEST_DATE=$(echo "$SESSIONS_CONTENT" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+if d and isinstance(d, list) and 'started_at' in d[0]:
+    print(d[0]['started_at'][:10])
+else:
+    print('UNKNOWN')
+" 2>/dev/null || echo "PARSE_ERROR")
+
+  TODAY=$(date -u +%Y-%m-%d)
+
+  if [ "$LATEST_DATE" = "UNKNOWN" ] || [ "$LATEST_DATE" = "PARSE_ERROR" ]; then
+    echo "WARN: Could not parse latest session date"
+    WARNINGS=$((WARNINGS + 1))
+  else
+    echo "Latest session: $LATEST_DATE (today: $TODAY)"
+
+    # Calculate staleness (days since latest session)
+    if command -v python3 &> /dev/null; then
+      DAYS_OLD=$(python3 -c "
+from datetime import datetime, timezone
+latest = datetime.strptime('$LATEST_DATE', '%Y-%m-%d').replace(tzinfo=timezone.utc)
+now = datetime.now(timezone.utc)
+print((now.date() - latest.date()).days)
+" 2>/dev/null || echo "?")
+
+      if [ "$DAYS_OLD" != "?" ]; then
+        if [ "$DAYS_OLD" -gt 2 ]; then
+          echo "WARN: Session data is $DAYS_OLD days old (threshold: 2 days)"
+          WARNINGS=$((WARNINGS + 1))
+        else
+          echo "OK: Session data is fresh ($DAYS_OLD days old)"
+        fi
+      fi
+    fi
+  fi
+fi
+
 # --- Summary ---
 echo ""
 echo "=== Results: $ERRORS errors, $WARNINGS warnings ==="
@@ -87,7 +136,7 @@ if [ "$ERRORS" -gt 0 ]; then
 fi
 
 if [ "$WARNINGS" -gt 0 ]; then
-  echo "WARN: $WARNINGS optional data file(s) empty — some sections may show 'No data'"
+  echo "WARN: $WARNINGS optional data file(s) empty or stale — some sections may show 'No data'"
 fi
 
 echo "PASS: All critical data files have content"
