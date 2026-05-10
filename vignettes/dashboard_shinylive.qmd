@@ -1159,6 +1159,10 @@ server <- function(input, output, session) {
     labels <- paste0(d$author, " (", round(d$commits / total * 100), "%)")
     ec(list(
       tooltip = list(trigger = "axis"),
+      toolbox = list(feature = list(
+        dataZoom = list(), restore = list(), saveAsImage = list()
+      )),
+      dataZoom = list(list(type = "inside", xAxisIndex = 0)),
       grid = list(containLabel = TRUE, left = 120),
       xAxis = list(type = "value", name = "Commits"),
       yAxis = list(type = "category", data = I(labels)),
@@ -1208,8 +1212,12 @@ server <- function(input, output, session) {
     d <- d[nrow(d):1, ]  # reverse for horizontal dotchart
     ec(list(
       tooltip = list(trigger = "axis"),
+      toolbox = list(feature = list(
+        dataZoom = list(), restore = list(), saveAsImage = list()
+      )),
+      dataZoom = list(list(type = "inside", xAxisIndex = 0)),
       grid = list(containLabel = TRUE, left = 150),
-      xAxis = list(type = "value"),
+      xAxis = list(type = "value", name = "Changes"),
       yAxis = list(type = "category", data = I(basename(d$file))),
       series = list(list(type = "scatter", data = I(d$changes),
         symbol = "circle", symbolSize = 12,
@@ -1225,11 +1233,18 @@ server <- function(input, output, session) {
     d <- d[nrow(d):1, ]
     ec(list(
       tooltip = list(trigger = "axis"),
+      toolbox = list(feature = list(
+        dataZoom = list(), restore = list(), saveAsImage = list()
+      )),
+      dataZoom = list(list(type = "inside", xAxisIndex = 0)),
       grid = list(containLabel = TRUE, left = 150),
-      xAxis = list(type = "value"),
+      xAxis = list(type = "value", name = "Fixes"),
       yAxis = list(type = "category", data = I(basename(d$file))),
-      series = list(list(type = "bar", data = I(d$fixes),
-        itemStyle = list(color = pal$gemini)))
+      series = list(list(type = "scatter", data = I(d$fixes),
+        symbol = "circle", symbolSize = 12,
+        itemStyle = list(color = pal$gemini),
+        label = list(show = TRUE, position = "right", color = "#ccc",
+                     distance = 6)))
     ))
   })
 
@@ -1255,6 +1270,13 @@ server <- function(input, output, session) {
     id <- paste0("ec", sample.int(1e7, 1))
     opt <- list(
       tooltip = list(trigger = "item"),
+      toolbox = list(feature = list(
+        dataZoom = list(), restore = list(), saveAsImage = list()
+      )),
+      dataZoom = list(
+        list(type = "inside", xAxisIndex = 0),
+        list(type = "inside", yAxisIndex = 0)
+      ),
       grid = list(containLabel = TRUE),
       xAxis = list(type = "value", name = "Predicted", min = 0, max = 1),
       yAxis = list(type = "value", name = "Actual", min = 0, max = 1),
@@ -1315,10 +1337,15 @@ server <- function(input, output, session) {
     labels <- paste0(types, " (n=", counts, ")")
     ec(list(
       tooltip = list(trigger = "axis"),
+      toolbox = list(feature = list(
+        dataZoom = list(), restore = list(), saveAsImage = list()
+      )),
+      dataZoom = list(list(type = "inside", xAxisIndex = 0)),
       grid = list(containLabel = TRUE, left = 120),
       xAxis = list(type = "value", name = "Accuracy", min = 0, max = 1),
       yAxis = list(type = "category", data = I(labels)),
-      series = list(list(type = "bar", data = I(acc),
+      series = list(list(type = "scatter", data = I(acc),
+        symbol = "circle", symbolSize = 12,
         itemStyle = list(color = pal$accent),
         label = list(show = TRUE, position = "right", color = "#ccc")))
     ))
