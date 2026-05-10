@@ -51,11 +51,17 @@ ec <- function(option, h = "300px") {
   id <- paste0("ec", sample.int(1e7, 1))
   j <- toJSON(option, auto_unbox = TRUE, null = "null")
   tagList(
-    tags$div(id = id, class = "echart-div", style = paste0("width:100%;height:", h)),
+    tags$div(id = id, class = "echart-div", style = paste0("width:100%;height:", h, ";cursor:zoom-in")),
     tags$script(HTML(paste0(
       "(function(){var c=echarts.init(document.getElementById('", id,
       "'),'dark');c.setOption(", j, ");new ResizeObserver(function(){c.resize()})",
-      ".observe(document.getElementById('", id, "'))})();"
+      ".observe(document.getElementById('", id, "'));",
+      # Click-to-fullscreen: export chart as image and show in overlay
+      "document.getElementById('", id, "').addEventListener('click',function(){",
+      "var url=c.getDataURL({type:'png',pixelRatio:2,backgroundColor:'#000'});",
+      "var ov=document.createElement('div');ov.className='fullscreen-overlay';",
+      "var img=document.createElement('img');img.src=url;ov.appendChild(img);",
+      "ov.onclick=function(){ov.remove()};document.body.appendChild(ov)})})();"
     )))
   )
 }
@@ -363,6 +369,16 @@ ui <- page_navbar(
       .card-fullscreen-hint {
         position: fixed; top: 8px; right: 20px; color: #888;
         font-size: 12px; z-index: 100000; pointer-events: none;
+      }
+      /* Click-to-fullscreen overlay for ECharts */
+      .fullscreen-overlay {
+        position: fixed !important; top: 0 !important; left: 0 !important;
+        width: 100vw !important; height: 100vh !important;
+        z-index: 99999 !important; background: #000 !important;
+        padding: 10px !important; overflow: auto !important; cursor: zoom-out !important;
+      }
+      .fullscreen-overlay img {
+        width: 100% !important; height: 100% !important; object-fit: contain !important;
       }
     ")),
     tags$script(HTML("
