@@ -443,7 +443,8 @@ if (file.exists(unified_db)) {
     mutate(
       started_at = as.character(started_at),
       ended_at = as.character(ended_at),
-      duration_min = round(duration_min, 1)
+      # Guard against negative durations (timezone issues)
+      duration_min = pmax(0, round(duration_min, 1), na.rm = TRUE)
     ) |>
     select(session_id, project, started_at, ended_at, duration_min) |>
     arrange(desc(started_at))

@@ -65,7 +65,9 @@ ec_empty <- function(msg = "No data available", h = "300px") {
           grid = list(containLabel = TRUE)), h)
 }
 
-ec_line <- function(dates, series, h = "300px") {
+ec_line <- function(dates, series, h = "300px", y_name = NULL) {
+  y_axis <- list(type = "value")
+  if (!is.null(y_name)) y_axis$name <- y_name
   ec(list(
     tooltip = list(trigger = "axis"),
     legend = list(bottom = 30, textStyle = list(color = "#ccc")),
@@ -80,12 +82,14 @@ ec_line <- function(dates, series, h = "300px") {
     ),
     grid = list(containLabel = TRUE, bottom = 80),
     xAxis = list(type = "category", data = I(as.character(dates))),
-    yAxis = list(type = "value"),
+    yAxis = y_axis,
     series = series
   ), h)
 }
 
-ec_bar <- function(cats, series, h = "300px") {
+ec_bar <- function(cats, series, h = "300px", y_name = NULL) {
+  y_axis <- list(type = "value")
+  if (!is.null(y_name)) y_axis$name <- y_name
   ec(list(
     tooltip = list(trigger = "axis"),
     legend = list(bottom = 30, textStyle = list(color = "#ccc")),
@@ -101,7 +105,7 @@ ec_bar <- function(cats, series, h = "300px") {
     grid = list(containLabel = TRUE, bottom = 80),
     xAxis = list(type = "category", data = I(as.character(cats)),
                  axisLabel = list(rotate = 30)),
-    yAxis = list(type = "value"),
+    yAxis = y_axis,
     series = series
   ), h)
 }
@@ -287,8 +291,10 @@ if (has_rows(cc_blocks)) {
 if (has_rows(gem_daily)) gem_daily$date <- as.Date(gem_daily$date)
 if (has_rows(git_commits)) git_commits$date <- as.Date(git_commits$date)
 if (has_rows(u_sessions)) {
+  # Extract date and time separately (WebR POSIXct loses time portion)
+  u_sessions$date <- as.Date(substr(u_sessions$started_at, 1, 10))
+  u_sessions$time_str <- substr(u_sessions$started_at, 12, 16)  # "HH:MM"
   u_sessions$started_at <- as.POSIXct(u_sessions$started_at, tz = "UTC")
-  u_sessions$date <- as.Date(u_sessions$started_at)
 }
 if (has_rows(u_costs)) u_costs$date <- as.Date(u_costs$date)
 if (has_rows(gem_sess)) {
@@ -691,17 +697,17 @@ server <- function(input, output, session) {
              itemStyle = list(color = pal$claude)),
         list(name = "Gemini", type = "line", data = I(round(d$gemini, 2)),
              itemStyle = list(color = pal$gemini)))
-      ec_line(d$date, series, "350px")
+      ec_line(d$date, series, "350px", y_name = "Cost ($)")
     } else if (has_cc) {
       cc_agg <- cc_agg[order(cc_agg$date), ]
       ec_line(cc_agg$date, list(
         list(name = "Claude", type = "line", data = I(round(cc_agg$claude, 2)),
-             itemStyle = list(color = pal$claude))), "350px")
+             itemStyle = list(color = pal$claude))), "350px", y_name = "Cost ($)")
     } else {
       gem_agg <- gem_agg[order(gem_agg$date), ]
       ec_line(gem_agg$date, list(
         list(name = "Gemini", type = "line", data = I(round(gem_agg$gemini, 2)),
-             itemStyle = list(color = pal$gemini))), "350px")
+             itemStyle = list(color = pal$gemini))), "350px", y_name = "Cost ($)")
     }
   })
 
@@ -752,13 +758,15 @@ server <- function(input, output, session) {
              itemStyle = list(color = pal$claude)),
         list(name = "Gemini", type = "line", data = I(round(d$gemini, 2)),
              itemStyle = list(color = pal$gemini)))
-      ec_line(d$date, series)
+      ec_line(d$date, series, y_name = "Cost ($)")
     } else if (has_cc) {
       ec_line(cc_cum$date, list(list(name = "Claude", type = "line",
-        data = I(round(cc_cum$claude, 2)), itemStyle = list(color = pal$claude))))
+        data = I(round(cc_cum$claude, 2)), itemStyle = list(color = pal$claude))),
+        y_name = "Cost ($)")
     } else {
       ec_line(gem_cum$date, list(list(name = "Gemini", type = "line",
-        data = I(round(gem_cum$gemini, 2)), itemStyle = list(color = pal$gemini))))
+        data = I(round(gem_cum$gemini, 2)), itemStyle = list(color = pal$gemini))),
+        y_name = "Cost ($)")
     }
   })
 
@@ -841,15 +849,17 @@ server <- function(input, output, session) {
              itemStyle = list(color = pal$claude)),
         list(name = "Gemini", type = "line", data = I(d$gemini),
              itemStyle = list(color = pal$gemini)))
-      ec_line(d$date, series, "350px")
+      ec_line(d$date, series, "350px", y_name = "Tokens (M)")
     } else if (has_cc) {
       cc_tok <- cc_tok[order(cc_tok$date), ]
       ec_line(cc_tok$date, list(list(name = "Claude", type = "line",
-        data = I(cc_tok$claude), itemStyle = list(color = pal$claude))), "350px")
+        data = I(cc_tok$claude), itemStyle = list(color = pal$claude))), "350px",
+        y_name = "Tokens (M)")
     } else {
       gem_tok <- gem_tok[order(gem_tok$date), ]
       ec_line(gem_tok$date, list(list(name = "Gemini", type = "line",
-        data = I(gem_tok$gemini), itemStyle = list(color = pal$gemini))), "350px")
+        data = I(gem_tok$gemini), itemStyle = list(color = pal$gemini))), "350px",
+        y_name = "Tokens (M)")
     }
   })
 
@@ -924,9 +934,10 @@ server <- function(input, output, session) {
     d <- head(d, input$top_n)
     out <- data.frame(
       Project = d$project,
-      Started = format(d$started_at, "%Y-%m-%d %H:%M"),
-      Duration = sprintf("%.0f min", d$duration_min),
-      stringsAsFactors = FALSE
+      Started = paste(d$date, d$time_str),  # Use pre-extracted time
+      `Duration (min)` = ifelse(is.na(d$duration_min), "—", sprintf("%.0f", d$duration_min)),
+      stringsAsFactors = FALSE,
+      check.names = FALSE
     )
     datatable(out, options = list(dom = "t", pageLength = 20, scrollX = TRUE), rownames = FALSE)
   })
