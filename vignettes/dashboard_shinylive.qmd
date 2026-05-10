@@ -309,15 +309,17 @@ if (has_rows(gem_sess)) {
   gem_sess$date <- as.Date(gem_sess$start_time)
 }
 
-# Top 5 projects by cost in last 28 days
+# Get unique projects from unified_sessions (has real project names)
 all_projects <- character(0)
-if (has_rows(cc_daily)) {
-  recent <- cc_daily[cc_daily$date >= (max(cc_daily$date) - 28), ]
-  if (nrow(recent) > 0) {
-    proj_cost <- aggregate(totalCost ~ project, data = recent, FUN = sum, na.rm = TRUE)
-    proj_cost <- proj_cost[order(proj_cost$totalCost, decreasing = TRUE), ]
-    all_projects <- head(proj_cost$project, 5)
-  }
+if (has_rows(u_sessions) && "project" %in% names(u_sessions)) {
+  # Count sessions per project, sorted by frequency
+  proj_counts <- table(u_sessions$project)
+  proj_counts <- sort(proj_counts, decreasing = TRUE)
+  all_projects <- names(proj_counts)
+  # Shorten project names for display
+  all_projects <- shorten_proj(all_projects)
+  # Also shorten the column in u_sessions for filtering
+  u_sessions$project_short <- shorten_proj(u_sessions$project)
 }
 
 all_dates <- c(
@@ -433,7 +435,7 @@ ui <- page_navbar(
     sliderInput("horizon", "Time Horizon (days)",
       min = 1, max = 30, value = 30, step = 1),
     conditionalPanel(
-      condition = "input.tabs == 'Cost Trends' || input.tabs == 'Token Analysis'",
+      condition = "input.tabs == 'Cost Trends' || input.tabs == 'Token Analysis' || input.tabs == 'Sessions'",
       selectInput("projects", "Projects", choices = all_projects,
         selected = all_projects, multiple = TRUE)
     ),
@@ -984,10 +986,15 @@ server <- function(input, output, session) {
   output$sess_claude <- renderDT({
     if (!has_rows(u_sessions)) return(datatable(data.frame()))
     d <- u_sessions[u_sessions$date >= cutoff(), ]
+    # Filter by selected projects
+    if (length(input$projects) > 0 && "project_short" %in% names(d)) {
+      d <- d[d$project_short %in% input$projects, ]
+    }
+    if (nrow(d) == 0) return(datatable(data.frame(Message = "No sessions for selected projects")))
     d <- d[order(d$started_at, decreasing = TRUE), ]
     d <- head(d, input$top_n)
     out <- data.frame(
-      Project = d$project,
+      Project = if ("project_short" %in% names(d)) d$project_short else d$project,
       Started = paste(d$date, d$time_str),  # Use pre-extracted time
       `Duration (min)` = ifelse(is.na(d$duration_min), "—", sprintf("%.0f", d$duration_min)),
       stringsAsFactors = FALSE,
@@ -1014,7 +1021,11 @@ server <- function(input, output, session) {
   output$sess_hist <- renderUI({
     if (!has_rows(u_sessions)) return(ec_empty())
     d <- u_sessions[u_sessions$date >= cutoff() & u_sessions$duration_min > 0, ]
-    if (nrow(d) == 0) return(ec_empty())
+    # Filter by selected projects
+    if (length(input$projects) > 0 && "project_short" %in% names(d)) {
+      d <- d[d$project_short %in% input$projects, ]
+    }
+    if (nrow(d) == 0) return(ec_empty("No sessions for selected projects"))
     h <- hist(d$duration_min, breaks = 20, plot = FALSE)
     ec_bar(round(h$mids, 1), list(
       list(name = "Sessions", type = "bar", data = I(h$counts),
@@ -1024,7 +1035,11 @@ server <- function(input, output, session) {
   output$sess_scatter <- renderUI({
     if (!has_rows(u_sessions)) return(ec_empty())
     d <- u_sessions[u_sessions$date >= cutoff() & u_sessions$duration_min > 0, ]
-    if (nrow(d) == 0) return(ec_empty())
+    # Filter by selected projects
+    if (length(input$projects) > 0 && "project_short" %in% names(d)) {
+      d <- d[d$project_short %in% input$projects, ]
+    }
+    if (nrow(d) == 0) return(ec_empty("No sessions for selected projects"))
     daily <- aggregate(
       cbind(n = duration_min, total_min = duration_min) ~ date,
       data = d, FUN = function(x) c(length(x), sum(x))
