@@ -429,7 +429,21 @@ if (length(tag_raw) > 0) {
 write_json(tag_df, file.path(out_dir, "git_tags.json"), auto_unbox = TRUE)
 cat(sprintf("  -> tags: %d releases\n", nrow(tag_df)))
 
-# --- 7. Export unified.duckdb sessions and costs ------------------------------
+# --- 7. Export GitHub issue events (Layer 4 scope change tracking) -----------
+cat("Exporting GitHub issue events...\n")
+gh_events_src <- file.path(extdata, "github_issue_events.json")
+gh_events_dst <- file.path(out_dir, "github_issue_events.json")
+if (file.exists(gh_events_src)) {
+  file.copy(gh_events_src, gh_events_dst, overwrite = TRUE)
+  gh_data <- fromJSON(gh_events_src, simplifyDataFrame = TRUE)
+  cat(sprintf("  -> %d issue events copied from inst/extdata\n", nrow(gh_data)))
+} else {
+  # Write empty placeholder
+  write_json(list(), gh_events_dst)
+  cat("  -> github_issue_events.json: wrote empty (run poll_github_events.R to populate)\n")
+}
+
+# --- 8. Export unified.duckdb sessions and costs ------------------------------
 # Local-only data: write to inst/extdata/ (committed) + vignettes/data/ (preview)
 # CI fallback: copy from inst/extdata/ to vignettes/data/
 cat("Exporting unified.duckdb data...\n")
@@ -477,7 +491,7 @@ if (file.exists(unified_db)) {
   }
 }
 
-# --- Estimated cost by project (session-weighted) -----------------------------
+# --- 9. Estimated cost by project (session-weighted) -------------------------
 cat("Estimating per-project costs using session duration weights...\n")
 if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_rows) > 0) {
   u_sess_df <- u_sess
@@ -617,7 +631,7 @@ for (f in c("predictions.json", "calibration_buckets.json")) {
   }
 }
 
-# --- 8. Generate API index.json -----------------------------------------------
+# --- 11. Generate API index.json ----------------------------------------------
 cat("Generating index.json...\n")
 api_index <- list(
   version  = "1.0.0",
@@ -788,6 +802,21 @@ api_index <- list(
       source      = "git tag -l --sort=-creatordate"
     ),
     list(
+      path        = "/github_issue_events.json",
+      description = "GitHub issue events for scope change tracking (Layer 4)",
+      type        = "array",
+      source      = "inst/scripts/poll_github_events.R (gh api via gh CLI)",
+      schema      = list(
+        event_id     = "number",
+        project      = "string",
+        event_type   = "string",
+        issue_number = "number",
+        issue_title  = "string",
+        created_at   = "string (ISO 8601)",
+        actor        = "string"
+      )
+    ),
+    list(
       path        = "/unified_costs.json",
       description = "Daily costs with model breakdown from unified.duckdb",
       type        = "array",
@@ -820,7 +849,7 @@ api_index <- list(
 write_json(api_index, file.path(out_dir, "index.json"), auto_unbox = TRUE, pretty = TRUE)
 cat("  -> index.json written\n")
 
-# --- 9. QA validation — fail early on empty critical data ---------------------
+# --- 12. QA validation — fail early on empty critical data -------------------
 cat("\n=== Data QA Validation ===\n")
 critical_files <- c("ccusage_daily", "ccusage_blocks", "git_commits",
                      "git_bus_factor", "git_velocity", "git_timing",
