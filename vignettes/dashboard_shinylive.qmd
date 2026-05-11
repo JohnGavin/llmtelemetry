@@ -1523,7 +1523,7 @@ server <- function(input, output, session) {
   })
 
   # --- Repo Health ------------------------------------------------------------
-  bus_dot <- function(d) {
+  bus_dot <- function(d, label = "Bus factor dot chart") {
     if (!has_rows(d)) return(ec_empty())
     d <- head(d[order(d$commits, decreasing = TRUE), ], 10)
     d <- d[nrow(d):1, ]  # reverse for bottom-up display
@@ -1543,10 +1543,10 @@ server <- function(input, output, session) {
         itemStyle = list(color = pal$claude),
         label = list(show = TRUE, position = "right", color = "#ccc",
                      distance = 8)))
-    ))
+    ), aria_label = label)
   }
-  output$rh_bus_all <- renderUI(bus_dot(git_bus$all_time))
-  output$rh_bus_6mo <- renderUI(bus_dot(git_bus$recent_6mo))
+  output$rh_bus_all <- renderUI(bus_dot(git_bus$all_time, "Bus factor all time: contributor commit share"))
+  output$rh_bus_6mo <- renderUI(bus_dot(git_bus$recent_6mo, "Bus factor 6 months: recent contributor concentration"))
 
   output$rh_velocity <- renderUI({
     if (!has_rows(git_vel)) return(ec_empty())
@@ -1577,7 +1577,7 @@ server <- function(input, output, session) {
         textStyle = list(color = "#ccc")),
       series = list(list(type = "heatmap", data = heat_data,
         label = list(show = FALSE)))
-    ))
+    ), aria_label = "Commit timing heatmap: when commits happen by hour and day")
   })
 
   output$rh_file_growth <- renderUI({
@@ -1623,7 +1623,7 @@ server <- function(input, output, session) {
         itemStyle = list(color = pal$orange),
         label = list(show = TRUE, position = "right", color = "#ccc",
                      distance = 6)))
-    ))
+    ), aria_label = "Churn hotspots: most-modified files in last 6 months")
   })
 
   output$rh_bugs <- renderUI({
@@ -1644,7 +1644,7 @@ server <- function(input, output, session) {
         itemStyle = list(color = pal$gemini),
         label = list(show = TRUE, position = "right", color = "#ccc",
                      distance = 6)))
-    ))
+    ), aria_label = "Bug fixes by file: files with most fix commits")
   })
 
   output$rh_todo <- renderDT({
