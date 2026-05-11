@@ -15,6 +15,7 @@ format:
       - data/gemini_sessions.json
       - data/cmonitor_summary.json
       - data/git_commits.json
+      - data/git_commits_by_project.json
       - data/git_bus_factor.json
       - data/git_velocity.json
       - data/git_timing.json
@@ -169,6 +170,7 @@ gem_daily   <- load_json("gemini_daily.json")
 gem_sess    <- load_json("gemini_sessions.json")
 cmon        <- load_json("cmonitor_summary.json")
 git_commits <- load_json("git_commits.json")
+git_commits_proj <- load_json("git_commits_by_project.json")
 u_sessions  <- load_json("unified_sessions.json")
 u_costs     <- load_json("unified_costs.json")
 cost_proj   <- load_json("cost_by_project_estimated.json")
@@ -309,6 +311,7 @@ if (has_rows(cc_blocks)) {
 }
 if (has_rows(gem_daily)) gem_daily$date <- as.Date(gem_daily$date)
 if (has_rows(git_commits)) git_commits$date <- as.Date(git_commits$date)
+if (has_rows(git_commits_proj)) git_commits_proj$date <- as.Date(git_commits_proj$date)
 if (has_rows(u_sessions)) {
   # Extract date and time separately (WebR POSIXct loses time portion)
   u_sessions$date <- as.Date(substr(u_sessions$started_at, 1, 10))
@@ -488,6 +491,12 @@ ui <- page_navbar(
       condition = "input.tabs == 'Time Blocks'",
       sliderInput("block_days", "Block window (days)",
         min = 1, max = 60, value = 14, step = 1)
+    ),
+    conditionalPanel(
+      condition = "input.tabs == 'Commits'",
+      selectInput("commit_project", "Project",
+        choices = c("All projects" = "all"),
+        selected = "all")
     )
   ),
 
@@ -612,14 +621,11 @@ ui <- page_navbar(
   ),
 
   nav_panel("Commits", value = "Commits",
-    tags$div(class = "alert alert-info mb-3", style = "font-size: 0.85em;",
-      tags$strong("Note:"), " This tab shows commits for the llmtelemetry repo only. ",
-      "Multi-project git metrics are in the ", tags$strong("Repo Health"), " tab."),
     layout_columns(
       fill = FALSE, col_widths = c(4, 4, 4),
       tooltip(
         value_box("Total Commits", textOutput("vb_commits"), theme = "primary"),
-        "Git commits in llmtelemetry repo (single project)"
+        "Git commits for selected project (or all tracked projects)"
       ),
       tooltip(
         value_box("Median Lines", textOutput("vb_median_lines"), theme = "info"),
@@ -631,8 +637,13 @@ ui <- page_navbar(
       )
     ),
     layout_columns(col_widths = c(12),
+      card(card_header("Commits by Project"), DTOutput("commits_by_proj"),
+        card_footer(class = "text-muted small",
+          "All tracked projects — commits, lines added/deleted in selected time window. Use Project filter in sidebar to drilldown."))
+    ),
+    layout_columns(col_widths = c(12),
       card(card_header("Lines Changed per Commit"), uiOutput("commit_hist"),
-        card_footer(class = "text-muted small", "Distribution of total lines changed per commit (llmtelemetry repo)"))
+        card_footer(class = "text-muted small", "Distribution of total lines changed per commit (selected project)"))
     ),
     layout_columns(col_widths = c(6, 6),
       card(card_header("Lines Changed Over Time"), uiOutput("commit_scatter_time"),
@@ -1489,9 +1500,48 @@ server <- function(input, output, session) {
   })
 
   # --- Commits -----------------------------------------------------------------
+  # Populate project filter from the multi-project data
+  observe({
+    if (!has_rows(git_commits_proj)) return()
+    projs <- sort(unique(git_commits_proj$project))
+    updateSelectInput(session, "commit_project",
+      choices = c("All projects" = "all", setNames(projs, projs)),
+      selected = "all")
+  })
+
   commits_filt <- reactive({
-    if (!has_rows(git_commits)) return(data.frame())
-    git_commits[git_commits$date >= cutoff(), ]
+    d <- if (has_rows(git_commits_proj)) git_commits_proj else git_commits
+    if (!has_rows(d)) return(data.frame())
+    d <- d[!is.na(d$date) & d$date >= cutoff(), ]
+    proj_sel <- input$commit_project
+    if (!is.null(proj_sel) && proj_sel != "all" && "project" %in% names(d))
+      d <- d[d$project == proj_sel, ]
+    d
+  })
+
+  output$commits_by_proj <- renderDT({
+    d <- if (has_rows(git_commits_proj)) git_commits_proj else git_commits
+    if (!has_rows(d)) return(DT::datatable(data.frame()))
+    d <- d[!is.na(d$date) & d$date >= cutoff(), ]
+    proj_col <- if ("project" %in% names(d)) d$project else rep("llmtelemetry", nrow(d))
+    summary_df <- do.call(rbind, lapply(split(d, proj_col), function(g) {
+      data.frame(
+        Project     = g$project[1],
+        Commits     = nrow(g),
+        Med_Lines   = round(median(g$lines_changed, na.rm = TRUE)),
+        Mean_Lines  = round(mean(g$lines_changed, na.rm = TRUE)),
+        Lines_Added = sum(g$lines_added, na.rm = TRUE),
+        Lines_Del   = sum(g$lines_deleted, na.rm = TRUE),
+        stringsAsFactors = FALSE
+      )
+    }))
+    summary_df <- summary_df[order(summary_df$Commits, decreasing = TRUE), ]
+    DT::datatable(summary_df,
+      rownames = FALSE,
+      caption = "Commit activity by project (selected time window)",
+      options = list(pageLength = 10, dom = "t", order = list(list(1, "desc"))),
+      class = "compact stripe"
+    )
   })
 
   output$vb_commits <- renderText({
