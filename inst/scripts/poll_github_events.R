@@ -25,27 +25,24 @@ poll_issue_events <- function(owner_repo, since_days = 30) {
   owner <- parts[1]
   repo <- parts[2]
 
-  # Fetch issue events via gh api
+  # Fetch issue events via gh api (no pagination to avoid JSON concat issues)
   result <- tryCatch({
     events_json <- system2(
       "gh",
       args = c(
         "api",
-        sprintf("/repos/%s/%s/issues/events", owner, repo),
-        "--paginate",
-        "--jq",
-        ".[0:500]"  # Limit to 500 most recent events
+        sprintf("/repos/%s/%s/issues/events?per_page=100", owner, repo)
       ),
       stdout = TRUE,
       stderr = FALSE
     )
 
-    if (length(events_json) == 0) {
+    if (length(events_json) == 0 || events_json[1] == "") {
       message(sprintf("  No events found for %s", owner_repo))
       return(NULL)
     }
 
-    events <- fromJSON(paste(events_json, collapse = "\n"), simplifyDataFrame = TRUE)
+    events <- fromJSON(paste(events_json, collapse = ""), simplifyDataFrame = TRUE)
 
     if (nrow(events) == 0) {
       message(sprintf("  Empty events for %s", owner_repo))

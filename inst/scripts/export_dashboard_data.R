@@ -913,7 +913,19 @@ if (length(parquet_files) > 0) {
   }
 } else {
   cat("  -> no parquet files found\n")
-  write_json(list(), file.path(out_dir, "git_file_growth.json"))
+  # CI fallback: copy from inst/extdata/ if available
+  extdata_fallback <- file.path(extdata, "git_file_growth.json")
+  if (file.exists(extdata_fallback)) {
+    fg_data <- fromJSON(extdata_fallback, simplifyDataFrame = TRUE)
+    if (is.data.frame(fg_data) && nrow(fg_data) > 0) {
+      file.copy(extdata_fallback, file.path(out_dir, "git_file_growth.json"), overwrite = TRUE)
+      cat(sprintf("  -> CI fallback: copied %d rows from inst/extdata/\n", nrow(fg_data)))
+    } else {
+      write_json(list(), file.path(out_dir, "git_file_growth.json"))
+    }
+  } else {
+    write_json(list(), file.path(out_dir, "git_file_growth.json"))
+  }
 }
 
 # --- 9. QA validation — fail early on empty critical data ---------------------
