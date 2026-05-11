@@ -468,7 +468,7 @@ ui <- page_navbar(
     sliderInput("horizon", "Time Horizon (days)",
       min = 1, max = 30, value = 30, step = 1),
     conditionalPanel(
-      condition = "input.tabs == 'Cost Trends' || input.tabs == 'Token Analysis' || input.tabs == 'Sessions'",
+      condition = "input.tabs == 'Cost Trends' || input.tabs == 'Token Analysis' || input.tabs == 'Sessions' || input.tabs == 'By Project'",
       selectInput("projects", "Projects", choices = all_projects,
         selected = all_projects, multiple = TRUE)
     ),
@@ -553,6 +553,25 @@ ui <- page_navbar(
         card_footer(class = "text-muted small", "Histogram of session durations (minutes)")),
       card(card_header("Sessions Over Time"), uiOutput("sess_scatter"),
         card_footer(class = "text-muted small", "Daily session count, bubble size = total minutes"))
+    )
+  ),
+
+  nav_panel("By Project", value = "By Project",
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Estimated Cost by Project"), uiOutput("proj_cost_total"),
+        card_footer(class = "text-muted small", "Session-weighted cost estimate (⚠ approximate)")),
+      card(card_header("Sessions by Project"), uiOutput("proj_sessions"),
+        card_footer(class = "text-muted small", "Session count per project"))
+    ),
+    layout_columns(col_widths = c(12),
+      card(card_header("Daily Cost Trend by Project"), uiOutput("proj_cost_daily"),
+        card_footer(class = "text-muted small", "Stacked area chart of estimated daily costs"))
+    ),
+    layout_columns(col_widths = c(6, 6),
+      card(card_header("Session Duration by Project"), uiOutput("proj_duration"),
+        card_footer(class = "text-muted small", "Total session minutes per project")),
+      card(card_header("Cost Share by Date"), uiOutput("proj_share_heatmap"),
+        card_footer(class = "text-muted small", "Heatmap: project cost share by date"))
     )
   ),
 
@@ -1134,6 +1153,150 @@ server <- function(input, output, session) {
     pts <- lapply(seq_len(nrow(daily)), function(i)
       list(as.character(daily$date[i]), daily$n[i], round(daily$total_min[i], 1)))
     ec_scatter(pts, pal$claude, x_type = "time", size_col = 3, scale = 2)
+  })
+
+  # --- By Project -------------------------------------------------------------
+  # Session-weighted estimated cost by project
+  proj_filtered <- reactive({
+    if (!has_rows(cost_proj)) return(data.frame())
+    d <- cost_proj
+    d$date <- as.Date(d$date)
+    d <- d[d$date >= cutoff(), ]
+    # Shorten project names for display
+    d$project_short <- shorten_proj(d$project)
+    # Filter by selected projects
+    if (length(input$projects) > 0 && !all(all_projects %in% input$projects)) {
+      d <- d[d$project_short %in% input$projects, ]
+    }
+    d
+  })
+
+  output$proj_cost_total <- renderUI({
+    d <- proj_filtered()
+    if (nrow(d) == 0) return(ec_empty())
+    # Aggregate total cost by project
+    agg <- aggregate(est_cost ~ project_short, data = d, FUN = sum, na.rm = TRUE)
+    agg <- agg[order(agg$est_cost, decreasing = FALSE), ]  # Ascending for dot chart
+    # Cleveland dot chart (horizontal)
+    ec(list(
+      tooltip = list(trigger = "axis", axisPointer = list(type = "shadow")),
+      grid = list(left = 120, containLabel = FALSE),
+      xAxis = list(type = "value", name = "Est. Cost ($)"),
+      yAxis = list(type = "category", data = I(agg$project_short)),
+      series = list(list(
+        type = "scatter",
+        data = I(round(agg$est_cost, 2)),
+        symbolSize = 12,
+        itemStyle = list(color = pal$claude)
+      ))
+    ), h = "300px", aria_label = "Cleveland dot chart: estimated cost by project")
+  })
+
+  output$proj_sessions <- renderUI({
+    if (!has_rows(u_sessions)) return(ec_empty())
+    d <- u_sessions[u_sessions$date >= cutoff(), ]
+    # Filter by selected projects
+    if (length(input$projects) > 0 && !all(all_projects %in% input$projects)) {
+      d <- d[d$project_short %in% input$projects, ]
+    }
+    if (nrow(d) == 0) return(ec_empty())
+    # Count sessions per project
+    agg <- aggregate(session_id ~ project_short, data = d, FUN = length)
+    names(agg)[2] <- "n"
+    agg <- agg[order(agg$n, decreasing = FALSE), ]
+    # Cleveland dot chart
+    ec(list(
+      tooltip = list(trigger = "axis", axisPointer = list(type = "shadow")),
+      grid = list(left = 120, containLabel = FALSE),
+      xAxis = list(type = "value", name = "Sessions"),
+      yAxis = list(type = "category", data = I(agg$project_short)),
+      series = list(list(
+        type = "scatter",
+        data = I(agg$n),
+        symbolSize = 12,
+        itemStyle = list(color = pal$gemini)
+      ))
+    ), h = "300px", aria_label = "Cleveland dot chart: session count by project")
+  })
+
+  output$proj_cost_daily <- renderUI({
+    d <- proj_filtered()
+    if (nrow(d) == 0) return(ec_empty())
+    # Get top N projects by total cost
+    totals <- aggregate(est_cost ~ project_short, data = d, FUN = sum, na.rm = TRUE)
+    top_proj <- head(totals[order(totals$est_cost, decreasing = TRUE), "project_short"], 8)
+    d <- d[d$project_short %in% top_proj, ]
+    # Pivot to wide format for stacked area
+    all_dates <- sort(unique(d$date))
+    series <- lapply(top_proj, function(p) {
+      p_data <- d[d$project_short == p, c("date", "est_cost")]
+      # Merge with all dates to fill gaps
+      merged <- merge(data.frame(date = all_dates), p_data, by = "date", all.x = TRUE)
+      merged$est_cost[is.na(merged$est_cost)] <- 0
+      list(
+        name = p, type = "line", stack = "total", areaStyle = list(),
+        data = I(round(merged$est_cost[order(merged$date)], 2))
+      )
+    })
+    ec_line(all_dates, series, h = "350px", y_name = "Cost ($)",
+            aria_label = "Stacked area chart: daily estimated cost by project")
+  })
+
+  output$proj_duration <- renderUI({
+    if (!has_rows(u_sessions)) return(ec_empty())
+    d <- u_sessions[u_sessions$date >= cutoff(), ]
+    if (length(input$projects) > 0 && !all(all_projects %in% input$projects)) {
+      d <- d[d$project_short %in% input$projects, ]
+    }
+    if (nrow(d) == 0 || !"duration_min" %in% names(d)) return(ec_empty())
+    agg <- aggregate(duration_min ~ project_short, data = d, FUN = sum, na.rm = TRUE)
+    agg <- agg[order(agg$duration_min, decreasing = FALSE), ]
+    ec(list(
+      tooltip = list(trigger = "axis", axisPointer = list(type = "shadow")),
+      grid = list(left = 120, containLabel = FALSE),
+      xAxis = list(type = "value", name = "Minutes"),
+      yAxis = list(type = "category", data = I(agg$project_short)),
+      series = list(list(
+        type = "scatter",
+        data = I(round(agg$duration_min, 1)),
+        symbolSize = 12,
+        itemStyle = list(color = pal$highlight)
+      ))
+    ), h = "300px", aria_label = "Cleveland dot chart: total session duration by project")
+  })
+
+  output$proj_share_heatmap <- renderUI({
+    d <- proj_filtered()
+    if (nrow(d) == 0) return(ec_empty())
+    # Get top 10 projects by total cost
+    totals <- aggregate(est_cost ~ project_short, data = d, FUN = sum, na.rm = TRUE)
+    top_proj <- head(totals[order(totals$est_cost, decreasing = TRUE), "project_short"], 10)
+    d <- d[d$project_short %in% top_proj, ]
+    # Convert to heatmap data: [x_index, y_index, value]
+    dates <- sort(unique(d$date))
+    projs <- top_proj
+    heat_data <- list()
+    for (i in seq_along(dates)) {
+      for (j in seq_along(projs)) {
+        val <- d[d$date == dates[i] & d$project_short == projs[j], "share"]
+        val <- if (length(val) == 0) 0 else round(val[1] * 100, 1)
+        heat_data[[length(heat_data) + 1]] <- list(i - 1, j - 1, val)
+      }
+    }
+    ec(list(
+      tooltip = list(position = "top",
+        formatter = DT::JS("function(p){return p.value[2]+'% share'}")),
+      grid = list(left = 100, bottom = 60, containLabel = FALSE),
+      xAxis = list(type = "category", data = I(as.character(dates)), splitArea = list(show = TRUE)),
+      yAxis = list(type = "category", data = I(projs), splitArea = list(show = TRUE)),
+      visualMap = list(min = 0, max = 100, calculable = TRUE,
+                       orient = "horizontal", left = "center", bottom = 5,
+                       inRange = list(color = c("#0d1117", "#238636", "#40c463"))),
+      series = list(list(
+        name = "Share", type = "heatmap", data = heat_data,
+        emphasis = list(itemStyle = list(shadowBlur = 10, shadowColor = "rgba(0,0,0,0.5)"))
+      ))
+    ), h = "300px", aria_label = "Heatmap: project cost share percentage by date")
   })
 
   # --- Time Blocks ------------------------------------------------------------
