@@ -612,11 +612,14 @@ ui <- page_navbar(
   ),
 
   nav_panel("Commits", value = "Commits",
+    tags$div(class = "alert alert-info mb-3", style = "font-size: 0.85em;",
+      tags$strong("Note:"), " This tab shows commits for the llmtelemetry repo only. ",
+      "Multi-project git metrics are in the ", tags$strong("Repo Health"), " tab."),
     layout_columns(
       fill = FALSE, col_widths = c(4, 4, 4),
       tooltip(
         value_box("Total Commits", textOutput("vb_commits"), theme = "primary"),
-        "Number of git commits in this repository"
+        "Git commits in llmtelemetry repo (single project)"
       ),
       tooltip(
         value_box("Median Lines", textOutput("vb_median_lines"), theme = "info"),
@@ -629,7 +632,7 @@ ui <- page_navbar(
     ),
     layout_columns(col_widths = c(12),
       card(card_header("Lines Changed per Commit"), uiOutput("commit_hist"),
-        card_footer(class = "text-muted small", "Distribution of total lines changed per commit"))
+        card_footer(class = "text-muted small", "Distribution of total lines changed per commit (llmtelemetry repo)"))
     ),
     layout_columns(col_widths = c(6, 6),
       card(card_header("Lines Changed Over Time"), uiOutput("commit_scatter_time"),
