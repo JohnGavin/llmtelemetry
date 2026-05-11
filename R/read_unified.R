@@ -1,5 +1,5 @@
 # Read from unified.duckdb — the primary telemetry database
-# All access via dplyr::tbl(), never raw SQL (duckdplyr-not-sql rule)
+# Uses DBI::dbReadTable() — full-table reads without raw SQL or dbplyr dependency
 
 #' Read sessions from unified.duckdb
 #'
@@ -11,8 +11,8 @@ read_unified_sessions <- function(db_path = file.path(Sys.getenv("HOME"), ".clau
   con <- DBI::dbConnect(duckdb::duckdb(), db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
 
-  dplyr::tbl(con, "sessions") |>
-    dplyr::collect() |>
+  DBI::dbReadTable(con, "sessions") |>
+    tibble::as_tibble() |>
     dplyr::mutate(
       started_at = as.POSIXct(started_at),
       ended_at = as.POSIXct(ended_at),
@@ -31,8 +31,7 @@ read_unified_costs <- function(db_path = file.path(Sys.getenv("HOME"), ".claude"
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
 
   if (!"costs" %in% DBI::dbListTables(con)) return(tibble::tibble())
-  dplyr::tbl(con, "costs") |>
-    dplyr::collect()
+  DBI::dbReadTable(con, "costs") |> tibble::as_tibble()
 }
 
 #' Read agent runs from unified.duckdb
@@ -46,8 +45,7 @@ read_unified_agent_runs <- function(db_path = file.path(Sys.getenv("HOME"), ".cl
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
 
   if (!"agent_runs" %in% DBI::dbListTables(con)) return(tibble::tibble())
-  dplyr::tbl(con, "agent_runs") |>
-    dplyr::collect()
+  DBI::dbReadTable(con, "agent_runs") |> tibble::as_tibble()
 }
 
 #' Summary of unified.duckdb contents
@@ -62,10 +60,7 @@ unified_summary <- function(db_path = file.path(Sys.getenv("HOME"), ".claude", "
 
   tables <- DBI::dbListTables(con)
   purrr::map_dfr(tables, function(tbl_name) {
-    n <- dplyr::tbl(con, tbl_name) |>
-      dplyr::summarise(n = dplyr::n()) |>
-      dplyr::collect() |>
-      dplyr::pull(n)
-    tibble::tibble(table = tbl_name, rows = n)
+    n <- nrow(DBI::dbReadTable(con, tbl_name))
+    tibble::tibble(table = tbl_name, rows = as.integer(n))
   })
 }
