@@ -627,6 +627,10 @@ ui <- page_navbar(
     layout_columns(col_widths = c(6, 6),
       card(card_header("Accuracy by Task Type"), uiOutput("cal_by_type"),
         card_footer(class = "text-muted small", "Success rate per task category")),
+      card(card_header("Accuracy by Project"), uiOutput("cal_by_project"),
+        card_footer(class = "text-muted small", "Success rate per project (estimated cost allocation)"))
+    ),
+    layout_columns(col_widths = c(12),
       card(card_header("Prediction Log"), DTOutput("cal_log"),
         card_footer(class = "text-muted small", "All predictions with stated confidence, outcome, and notes"))
     )
@@ -1476,6 +1480,41 @@ server <- function(input, output, session) {
         itemStyle = list(color = pal$accent),
         label = list(show = TRUE, position = "right", color = "#ccc")))
     ))
+  })
+
+  output$cal_by_project <- renderUI({
+    if (!has_rows(preds_raw) || !"project_name" %in% names(preds_raw)) return(ec_empty("No project data"))
+    d <- preds_raw[!is.na(preds_raw$outcome), ]
+    if (nrow(d) == 0) return(ec_empty("No resolved predictions"))
+
+    # Convert outcome to numeric
+    d$outcome_num <- ifelse(d$outcome == TRUE | d$outcome == "true", 1,
+                            ifelse(d$outcome == "partial", 0.5, 0))
+
+    # Aggregate by project
+    agg <- aggregate(cbind(accuracy = outcome_num, n = outcome_num) ~ project_name,
+                     data = d, FUN = function(x) c(mean(x), length(x)))
+    # Flatten the matrix columns
+    agg_df <- data.frame(
+      project = agg$project_name,
+      accuracy = agg$accuracy[,1],
+      n = agg$n[,2]
+    )
+    agg_df <- agg_df[order(agg_df$accuracy, decreasing = TRUE), ]
+
+    # Cleveland dot plot
+    pts <- lapply(seq_len(nrow(agg_df)), function(i) {
+      list(value = c(round(agg_df$accuracy[i] * 100, 1), agg_df$project[i]),
+           symbolSize = max(8, sqrt(agg_df$n[i]) * 5))
+    })
+    ec(list(
+      tooltip = list(trigger = "item", formatter = "{b}: {c}%"),
+      grid = list(containLabel = TRUE, left = 120),
+      xAxis = list(type = "value", min = 0, max = 100, name = "Accuracy %"),
+      yAxis = list(type = "category", data = I(rev(agg_df$project))),
+      series = list(list(type = "scatter", data = I(rev(pts)),
+                         itemStyle = list(color = "#4daf4a")))
+    ), aria_label = "Accuracy by project dotchart")
   })
 
   output$cal_log <- renderDT({
