@@ -477,6 +477,42 @@ if (file.exists(unified_db)) {
   }
 }
 
+# --- Estimated cost by project (session-weighted) -----------------------------
+cat("Estimating per-project costs using session duration weights...\n")
+if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_rows) > 0) {
+  u_sess_df <- u_sess
+  u_sess_df$date <- as.Date(u_sess_df$started_at)
+  sess_daily <- aggregate(duration_min ~ date + project, data = u_sess_df, FUN = sum)
+  total_daily <- aggregate(duration_min ~ date, data = sess_daily, FUN = sum)
+  names(total_daily)[2] <- "total_min"
+
+  cost_proj <- merge(sess_daily, total_daily, by = "date")
+  cost_proj <- merge(cost_proj, daily_rows[, c("date", "totalCost")], by = "date")
+  # Filter out rows where totalCost is NA or total_min is 0 (would produce NaN share)
+  cost_proj <- cost_proj[!is.na(cost_proj$totalCost) & cost_proj$total_min > 0, ]
+  cost_proj$share <- cost_proj$duration_min / cost_proj$total_min
+  cost_proj$est_cost <- round(cost_proj$totalCost * cost_proj$share, 4)
+
+  out_data <- cost_proj[, c("date", "project", "est_cost", "duration_min", "share")]
+  write_json(out_data, file.path(out_dir, "cost_by_project_estimated.json"), auto_unbox = TRUE)
+  write_json(out_data, file.path(extdata, "cost_by_project_estimated.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d project-day cost estimates (written to inst/extdata + vignettes/data)\n", nrow(out_data)))
+} else {
+  # CI fallback: copy from inst/extdata/ or write empty
+  f <- "cost_by_project_estimated.json"
+  src <- file.path(extdata, f)
+  dst <- file.path(out_dir, f)
+  if (file.exists(src)) {
+    file.copy(src, dst, overwrite = TRUE)
+    cat(sprintf("  -> %s: copied from inst/extdata\n", f))
+  } else if (!file.exists(dst)) {
+    write_json(list(), dst)
+    cat(sprintf("  -> %s: wrote empty (no source anywhere)\n", f))
+  } else {
+    cat(sprintf("  -> %s: preserved existing\n", f))
+  }
+}
+
 # --- 10. Export prediction calibration data -----------------------------------
 cat("Exporting prediction calibration data...\n")
 pred_dir <- file.path(Sys.getenv("HOME"), ".claude/predictions")

@@ -25,6 +25,7 @@ format:
       - data/git_tags.json
       - data/unified_sessions.json
       - data/unified_costs.json
+      - data/cost_by_project_estimated.json
       - data/predictions.json
       - data/calibration_buckets.json
 filters:
@@ -168,6 +169,7 @@ cmon        <- load_json("cmonitor_summary.json")
 git_commits <- load_json("git_commits.json")
 u_sessions  <- load_json("unified_sessions.json")
 u_costs     <- load_json("unified_costs.json")
+cost_proj   <- load_json("cost_by_project_estimated.json")
 preds_raw   <- load_json("predictions.json")
 cal_buckets <- load_json("calibration_buckets.json")
 git_bus     <- load_json("git_bus_factor.json")
@@ -506,8 +508,8 @@ ui <- page_navbar(
 
   nav_panel("Cost Trends", value = "Cost Trends",
     layout_columns(col_widths = c(6, 6),
-      card(card_header("Daily Cost by Project"), uiOutput("cost_by_project"),
-        card_footer(class = "text-muted small", "Daily Claude cost by project")),
+      card(card_header("Daily Cost by Project (Estimated)"), uiOutput("cost_by_project"),
+        card_footer(class = "text-muted small", "Estimated daily cost by project using session duration as allocation key")),
       card(card_header("Cumulative Cost"), uiOutput("cost_cumulative"),
         card_footer(class = "text-muted small", "Running total of cost over time by source"))
     ),
@@ -814,18 +816,27 @@ server <- function(input, output, session) {
 
   # --- Cost Trends ------------------------------------------------------------
   output$cost_by_project <- renderUI({
-    d <- cc_d_proj()
-    if (nrow(d) == 0) return(ec_empty())
-    agg <- aggregate(totalCost ~ date + project, data = d, FUN = sum, na.rm = TRUE)
-    all_d <- sort(unique(agg$date))
-    projects <- unique(agg$project)
+    d <- cost_proj
+    if (!is.data.frame(d) || nrow(d) == 0) return(ec_empty("No project cost estimates available"))
+    # Apply date and project filters
+    if (!is.null(input$date_range) && length(input$date_range) == 2) {
+      d <- d[d$date >= input$date_range[1] & d$date <= input$date_range[2], ]
+    }
+    if (length(input$projects) > 0) {
+      d <- d[d$project %in% input$projects, ]
+    }
+    if (nrow(d) == 0) return(ec_empty("No data for selected filters"))
+
+    all_d <- sort(unique(d$date))
+    projects <- unique(d$project)
     series <- lapply(projects, function(p) {
-      pd <- agg[agg$project == p, ]
+      pd <- d[d$project == p, ]
       vals <- rep(0, length(all_d))
-      vals[match(pd$date, all_d)] <- pd$totalCost
+      vals[match(pd$date, all_d)] <- pd$est_cost
       list(name = p, type = "line", data = I(round(vals, 2)))
     })
-    ec_line(all_d, series)
+    ec_line(all_d, series, y_name = "Estimated Cost ($)",
+            aria_label = "Estimated daily cost by project (session-weighted)")
   })
 
   output$cost_cumulative <- renderUI({
