@@ -550,17 +550,32 @@ ui <- page_navbar(
   ),
 
   nav_panel("Sessions", value = "Sessions",
+    layout_columns(
+      fill = FALSE, col_widths = c(4, 4, 4),
+      tooltip(
+        value_box("API Conversations", textOutput("vb_sess_count"), theme = "primary"),
+        "Count of Claude Code conversations (each restart = new session)"
+      ),
+      tooltip(
+        value_box("Total Duration", textOutput("vb_sess_duration"), theme = "info"),
+        "Sum of all conversation durations (minutes)"
+      ),
+      tooltip(
+        value_box("Avg Duration", textOutput("vb_sess_avg"), theme = "success"),
+        "Average conversation length (minutes)"
+      )
+    ),
     layout_columns(col_widths = c(6, 6),
-      card(card_header("Claude Sessions"), DTOutput("sess_claude"),
-        card_footer(class = "text-muted small", "Claude Code sessions from unified.duckdb telemetry")),
+      card(card_header("Recent API Conversations"), DTOutput("sess_claude"),
+        card_footer(class = "text-muted small", "⚠ These are API conversations, not work sessions. Each Claude Code restart = new conversation. Short durations are normal.")),
       card(card_header("Top Gemini Sessions"), DTOutput("sess_gemini"),
         card_footer(class = "text-muted small", "Most expensive Gemini sessions by total cost"))
     ),
     layout_columns(col_widths = c(6, 6),
-      card(card_header("Session Duration Distribution"), uiOutput("sess_hist"),
-        card_footer(class = "text-muted small", "Histogram of session durations (minutes)")),
-      card(card_header("Sessions Over Time"), uiOutput("sess_scatter"),
-        card_footer(class = "text-muted small", "Daily session count, bubble size = total minutes"))
+      card(card_header("Conversation Duration Distribution"), uiOutput("sess_hist"),
+        card_footer(class = "text-muted small", "Histogram of API conversation durations (minutes)")),
+      card(card_header("Conversations Over Time"), uiOutput("sess_scatter"),
+        card_footer(class = "text-muted small", "Daily conversation count, bubble size = total minutes"))
     )
   ),
 
@@ -1098,6 +1113,35 @@ server <- function(input, output, session) {
   })
 
   # --- Sessions ---------------------------------------------------------------
+  # Summary value boxes
+  output$vb_sess_count <- renderText({
+    if (!has_rows(u_sessions)) return("0")
+    d <- u_sessions[u_sessions$date >= cutoff(), ]
+    if (length(input$projects) > 0 && !all(all_projects %in% input$projects)) {
+      d <- d[d$project_short %in% input$projects, ]
+    }
+    as.character(nrow(d))
+  })
+  output$vb_sess_duration <- renderText({
+    if (!has_rows(u_sessions)) return("0 min")
+    d <- u_sessions[u_sessions$date >= cutoff(), ]
+    if (length(input$projects) > 0 && !all(all_projects %in% input$projects)) {
+      d <- d[d$project_short %in% input$projects, ]
+    }
+    total <- sum(d$duration_min, na.rm = TRUE)
+    if (total >= 60) sprintf("%.1f hr", total / 60) else sprintf("%.0f min", total)
+  })
+  output$vb_sess_avg <- renderText({
+    if (!has_rows(u_sessions)) return("0 min")
+    d <- u_sessions[u_sessions$date >= cutoff(), ]
+    if (length(input$projects) > 0 && !all(all_projects %in% input$projects)) {
+      d <- d[d$project_short %in% input$projects, ]
+    }
+    if (nrow(d) == 0) return("0 min")
+    avg <- mean(d$duration_min, na.rm = TRUE)
+    sprintf("%.1f min", avg)
+  })
+
   output$sess_claude <- renderDT({
     if (!has_rows(u_sessions)) return(datatable(data.frame()))
     d <- u_sessions[u_sessions$date >= cutoff(), ]
