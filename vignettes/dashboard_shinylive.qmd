@@ -700,7 +700,8 @@ ui <- page_navbar(
         tags$dl(
           tags$dt("Total Cost ($)"), tags$dd("Sum of API charges for input, output, and cache tokens."),
           tags$dt("Cost per MTok"), tags$dd("Cost per million tokens — efficiency metric."),
-          tags$dt("Cumulative Cost"), tags$dd("Running total of spend over time.")
+          tags$dt("Cumulative Cost"), tags$dd("Running total of spend over time."),
+          tags$dt("Est. Cost by Project"), tags$dd("⚠ Approximate: daily cost × (project session time / total session time). No per-project billing from API.")
         ),
         tags$h5("Token Metrics"),
         tags$dl(
@@ -711,22 +712,31 @@ ui <- page_navbar(
         ),
         tags$h5("Session Metrics"),
         tags$dl(
-          tags$dt("Duration (min)"), tags$dd("Time from session start to end in minutes."),
-          tags$dt("Block"), tags$dd("Contiguous coding period; gaps create new blocks.")
+          tags$dt("API Conversation"), tags$dd("Single Claude Code conversation. Short durations (0-5 min) are normal — each context compaction or restart creates a new conversation."),
+          tags$dt("Duration (min)"), tags$dd("Time from conversation start to end. NOT user work time."),
+          tags$dt("Block"), tags$dd("Contiguous coding period from ccusage; gaps >30 min create new blocks. More meaningful than API conversations.")
         ),
-        tags$h5("Git Metrics"),
+        tags$h5("Repo Health Metrics"),
         tags$dl(
-          tags$dt("Bus Factor"), tags$dd("Risk indicator: if top contributor leaves, project risk. 1 person at 60%+ = high risk."),
-          tags$dt("Churn"), tags$dd("Number of times a file has been modified — high churn = hotspot."),
-          tags$dt("Bug Hotspot"), tags$dd("Files frequently touched by fix/bug commits.")
+          tags$dt("Bus Factor"), tags$dd("Risk metric: if 1 person has >60% of commits, project is at risk if they leave. Low bus factor = knowledge concentration."),
+          tags$dt("Velocity Trend"), tags$dd("Commits per month — indicates project momentum. Declining velocity may signal reduced activity or scope completion."),
+          tags$dt("Commit Timing"), tags$dd("Heatmap of when commits happen by hour and day. Shows work patterns and potential burnout signals."),
+          tags$dt("File Growth"), tags$dd("6-month rolling aggregate of files added vs deleted. Net positive = codebase growing."),
+          tags$dt("Churn Hotspots"), tags$dd("Files modified most often. High churn = refactoring candidates or unstable design."),
+          tags$dt("Bug Hotspots"), tags$dd("Files frequently touched by fix/bug commits. May indicate code quality issues."),
+          tags$dt("TODO/FIXME Debt"), tags$dd("Count of TODO, FIXME, HACK markers. Technical debt that should be tracked."),
+          tags$dt("Crisis Commits"), tags$dd("Reverts, hotfixes, emergency commits. High count = unstable releases.")
         ),
         tags$h5("Calibration Metrics"),
         tags$dl(
-          tags$dt("Brier Score"), tags$dd("Mean squared error of predictions. 0 = perfect, 0.25 = uninformative."),
-          tags$dt("Reliability Diagram"), tags$dd("Predicted confidence vs actual success rate. Diagonal = perfect calibration.")
+          tags$dt("Calibration"), tags$dd("How well predicted confidence matches actual outcomes. 80% confident predictions should succeed ~80% of the time."),
+          tags$dt("Brier Score"), tags$dd("Mean squared error of predictions. 0 = perfect, 0.25 = no better than guessing. Lower is better."),
+          tags$dt("Reliability Diagram"), tags$dd("Plot of predicted confidence vs actual success rate. Points on diagonal = perfectly calibrated."),
+          tags$dt("Overconfidence"), tags$dd("Predictions above diagonal — stated confidence exceeds actual accuracy."),
+          tags$dt("Underconfidence"), tags$dd("Predictions below diagonal — actual accuracy exceeds stated confidence.")
         )
       ),
-      card_footer(class = "text-muted small", "Hover over charts for tooltips; click to fullscreen")
+      card_footer(class = "text-muted small", "Hover over charts for tooltips; click chart to fullscreen; click card to expand")
     )
   ),
 
