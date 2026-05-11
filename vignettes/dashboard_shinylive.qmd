@@ -383,6 +383,9 @@ ui <- page_navbar(
       .fullscreen-overlay img {
         width: 100% !important; height: 100% !important; object-fit: contain !important;
       }
+      /* Clickable value boxes */
+      .bslib-value-box { cursor: pointer !important; transition: transform 0.15s, box-shadow 0.15s; }
+      .bslib-value-box:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(55, 126, 184, 0.3); }
     ")),
     tags$script(HTML("
       var fsCard = null;
@@ -427,6 +430,27 @@ ui <- page_navbar(
       });
       document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') exitFullscreen();
+      });
+      // Clickable value boxes — navigate to relevant tab
+      document.addEventListener('click', function(e) {
+        var vbox = e.target.closest('.bslib-value-box');
+        if (!vbox) return;
+        var title = vbox.querySelector('.value-box-title');
+        if (!title) return;
+        var txt = title.textContent.toLowerCase();
+        var targetTab = null;
+        if (txt.includes('cost')) targetTab = 'Cost Trends';
+        else if (txt.includes('token')) targetTab = 'Token Analysis';
+        else if (txt.includes('session')) targetTab = 'Sessions';
+        else if (txt.includes('day')) targetTab = 'Cost Trends';
+        else if (txt.includes('commit') || txt.includes('lines')) targetTab = 'Commits';
+        if (targetTab) {
+          // Find and click the nav link for the target tab
+          var navLinks = document.querySelectorAll('.navbar-nav .nav-link, .nav-pills .nav-link');
+          navLinks.forEach(function(link) {
+            if (link.textContent.trim() === targetTab) link.click();
+          });
+        }
       });
     "))
   ),
