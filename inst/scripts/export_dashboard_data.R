@@ -820,6 +820,73 @@ api_index <- list(
 write_json(api_index, file.path(out_dir, "index.json"), auto_unbox = TRUE, pretty = TRUE)
 cat("  -> index.json written\n")
 
+# --- 8b. Export git file growth from git pulse parquet -----------------------
+cat("Exporting git file growth data...\n")
+git_pulse_dir <- file.path(Sys.getenv("HOME"), ".claude/logs/git")
+parquet_files <- list.files(git_pulse_dir, pattern = "\\.parquet$", full.names = TRUE)
+
+if (length(parquet_files) > 0) {
+  library(arrow)
+  # Read all parquet files and combine
+  all_pulse <- lapply(parquet_files, function(f) {
+    tryCatch(read_parquet(f), error = function(e) NULL)
+  })
+  all_pulse <- do.call(rbind, Filter(Negate(is.null), all_pulse))
+
+  if (!is.null(all_pulse) && nrow(all_pulse) > 0) {
+    # Filter for 6-month file growth metrics (these are aggregates, not daily)
+    file_metrics <- all_pulse[
+      all_pulse$metric %in% c("files_added", "files_deleted", "files_net_growth") &
+      all_pulse$period == "6mo",
+    ]
+
+    if (nrow(file_metrics) > 0) {
+      # Convert value to numeric
+      file_metrics$value <- as.numeric(file_metrics$value)
+
+      # Use snapshot_date as the time axis, period_label indicates metric type
+      # Pivot: one row per snapshot_date-project with columns for each metric type
+      dates_projects <- unique(file_metrics[, c("snapshot_date", "project")])
+      file_growth <- dates_projects
+      names(file_growth)[1] <- "date"
+
+      # Map period_label to metric type (growth=files_added, cleanup=files_deleted, net=files_net_growth)
+      file_metrics$metric_type <- ifelse(file_metrics$period_label == "growth", "files_added",
+                                  ifelse(file_metrics$period_label == "cleanup", "files_deleted",
+                                  "files_net_growth"))
+
+      # Add columns for each metric
+      for (m in c("files_added", "files_deleted", "files_net_growth")) {
+        metric_data <- file_metrics[file_metrics$metric_type == m, ]
+        key <- paste(metric_data$snapshot_date, metric_data$project, sep = "___")
+        vals <- setNames(metric_data$value, key)
+        file_growth[[m]] <- vals[paste(file_growth$date, file_growth$project, sep = "___")]
+        file_growth[[m]][is.na(file_growth[[m]])] <- 0
+      }
+
+      # Ensure numeric types
+      file_growth$files_added <- as.integer(file_growth$files_added)
+      file_growth$files_deleted <- as.integer(file_growth$files_deleted)
+      file_growth$files_net_growth <- as.integer(file_growth$files_net_growth)
+
+      # Sort by date
+      file_growth <- file_growth[order(file_growth$date), ]
+
+      write_json(file_growth, file.path(out_dir, "git_file_growth.json"), auto_unbox = TRUE)
+      cat(sprintf("  -> %d date-project rows\n", nrow(file_growth)))
+    } else {
+      cat("  -> no file growth metrics found in parquet files\n")
+      write_json(list(), file.path(out_dir, "git_file_growth.json"))
+    }
+  } else {
+    cat("  -> could not read parquet files\n")
+    write_json(list(), file.path(out_dir, "git_file_growth.json"))
+  }
+} else {
+  cat("  -> no parquet files found\n")
+  write_json(list(), file.path(out_dir, "git_file_growth.json"))
+}
+
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
 critical_files <- c("ccusage_daily", "ccusage_blocks", "git_commits",

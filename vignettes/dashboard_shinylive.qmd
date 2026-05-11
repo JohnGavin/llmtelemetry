@@ -23,6 +23,7 @@ format:
       - data/git_bugs.json
       - data/git_todo.json
       - data/git_tags.json
+      - data/git_file_growth.json
       - data/unified_sessions.json
       - data/unified_costs.json
       - data/cost_by_project_estimated.json
@@ -180,6 +181,7 @@ git_churn   <- load_json("git_churn.json")
 git_bugs    <- load_json("git_bugs.json")
 git_todo    <- load_json("git_todo.json")
 git_tags    <- load_json("git_tags.json")
+git_file_growth <- load_json("git_file_growth.json")
 
 # Normalize data: fromJSON("[]") returns list(), nested objects need extraction
 as_df <- function(x) if (is.data.frame(x)) x else NULL
@@ -261,6 +263,7 @@ git_churn   <- as_df(git_churn)
 git_bugs    <- as_df(git_bugs)
 git_todo    <- as_df(git_todo)
 git_tags    <- as_df(git_tags)
+git_file_growth <- as_df(git_file_growth)
 # git_bus is a list with $all_time and $recent_6mo data frames
 if (is.list(git_bus) && !is.data.frame(git_bus)) {
   git_bus$all_time <- as_df(git_bus$all_time)
@@ -602,6 +605,10 @@ ui <- page_navbar(
         card_footer(class = "text-muted small", "Commits per month")),
       card(card_header("Commit Timing Heatmap"), uiOutput("rh_timing"),
         card_footer(class = "text-muted small", "When commits happen — hour vs day of week"))
+    ),
+    layout_columns(col_widths = c(12),
+      card(card_header("File Growth (6-Month Rolling)"), uiOutput("rh_file_growth"),
+        card_footer(class = "text-muted small", "6-month rolling aggregate of files added vs deleted — green = additions, red = deletions"))
     ),
     layout_columns(col_widths = c(6, 6),
       card(card_header("Churn Hotspots"), uiOutput("rh_churn"),
@@ -1335,6 +1342,31 @@ server <- function(input, output, session) {
       series = list(list(type = "heatmap", data = heat_data,
         label = list(show = FALSE)))
     ))
+  })
+
+  output$rh_file_growth <- renderUI({
+    if (!has_rows(git_file_growth)) return(ec_empty("No file growth data available"))
+    d <- git_file_growth
+    # Parse date
+    d$date <- as.Date(d$date)
+    # These are 6-month rolling aggregates, show all snapshots
+    # Aggregate by date (sum across projects if multiple)
+    agg <- aggregate(cbind(files_added, files_deleted) ~ date, data = d, FUN = sum, na.rm = TRUE)
+    agg <- agg[order(agg$date), ]
+
+    if (nrow(agg) == 0) return(ec_empty("No data available"))
+
+    # Create line chart with two series
+    series <- list(
+      list(name = "Added (6mo)", type = "line", data = I(agg$files_added),
+           itemStyle = list(color = pal$accent),
+           areaStyle = list(opacity = 0.3)),
+      list(name = "Deleted (6mo)", type = "line", data = I(agg$files_deleted),
+           itemStyle = list(color = pal$gemini),
+           areaStyle = list(opacity = 0.3))
+    )
+    ec_line(agg$date, series, y_name = "Files (6-month rolling)",
+            aria_label = "6-month rolling file growth: added vs deleted")
   })
 
   output$rh_churn <- renderUI({
