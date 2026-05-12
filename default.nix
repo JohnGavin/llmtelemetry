@@ -80,11 +80,19 @@ let
     };
     # curl and zlib: both out (lib) and dev (headers) needed for cmake MODULE-mode FindCURL/FindZLIB
     nativeBuildInputs = [ pkgs.which pkgs.cmake pkgs.protobuf_21 pkgs.pkg-config pkgs.curl pkgs.curl.dev pkgs.zlib pkgs.zlib.dev ];
-    # Set CMAKE directly (avoids `which cmake` in configure) and explicit CMAKE_PREFIX_PATH
-    # so cmake MODULE-mode FindCURL/FindZLIB resolve to Nix store paths in the derivation sandbox.
+    # CMAKE pre-set so configure skips `which cmake` (not in Nix sandbox PATH).
+    # CMAKE_PREFIX_PATH intentionally NOT set: cmake finds CURL/ZLIB via macOS system paths
+    # accessible in the Nix Darwin sandbox. Semicolons in CMAKE_PREFIX_PATH are bash statement
+    # separators — embedding them in Makevars recipes causes the remaining path segments to be
+    # executed as shell commands ("Is a directory" errors).
     preBuild = ''
       export CMAKE="${pkgs.cmake}/bin/cmake"
-      export CMAKE_PREFIX_PATH="${pkgs.curl.dev};${pkgs.curl};${pkgs.zlib.dev};${pkgs.zlib};''${CMAKE_PREFIX_PATH:-}"
+    '';
+    # googletest FetchContent_MakeAvailable (CMakeLists.txt:556) requires network to git-clone
+    # googletest — blocked in Nix derivation sandbox. otelsdk tests are not needed for the
+    # R package install, so comment out the include to allow cmake configure to complete.
+    postPatch = ''
+      sed -i 's|include(cmake/googletest.cmake)|# include(cmake/googletest.cmake) -- disabled for Nix (network blocked)|' CMakeLists.txt
     '';
     propagatedBuildInputs = builtins.attrValues {
       inherit (pkgs.rPackages) otel;
