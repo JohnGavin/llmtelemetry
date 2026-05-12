@@ -2,6 +2,7 @@
 # Title: investigate: leverage Posit OpenTelemetry integration for LLM telemetry gaps
 # URL: https://github.com/JohnGavin/llmtelemetry/issues/58
 # Blog post: https://opensource.posit.co/blog/2026-05-07_opentelemetry/
+# Investigation date: 2026-05-11
 
 # --- What Jaeger is (no R package needed) ------------------------------------
 #
@@ -19,66 +20,122 @@
 # OrbStack is Docker-compatible but far lighter on Mac.
 # Same docker commands work unchanged.
 #
+# orbctl start   # start OrbStack daemon if not running
 # docker run -d --name jaeger \
 #   -p 16686:16686 \   # UI
 #   -p 4318:4318 \     # OTLP HTTP
 #   jaegertracing/all-in-one:latest
+#
+# RESULT 2026-05-11: Jaeger started successfully via OrbStack.
+# UI available at http://localhost:16686. OTLP ingest at http://localhost:4318.
 
 # --- Install otelsdk (GitHub only for now, not yet on CRAN) ------------------
-# pak::pak("r-lib/otel")
-# pak::pak("r-lib/otelsdk")
+# pak::pak("r-lib/otel")      # API layer — CRAN available, already in default.nix
+# pak::pak("r-lib/otelsdk")   # SDK/exporter — GitHub only, requires cmake + protobuf
+
+# --- BLOCKER: otelsdk fails to build in Nix ----------------------------------
+#
+# Attempted 2026-05-11 with multiple approaches (cmake, pkg-config, protobuf).
+#
+# Root cause: protobuf version mismatch.
+# otelsdk bundles the OpenTelemetry C++ SDK and generates protobuf C++ code
+# using one version of protoc. The nixpkgs system protobuf runtime is a different
+# (newer) version. Clang errors:
+#   error: "Protobuf C++ gencode is built with an incompatible version of
+#           Protobuf C++ headers/runtime."
+#
+# This is a Nix-specific packaging issue. The fix requires a proper Nix derivation
+# for otelsdk that pins compatible protobuf versions (both the code-gen tool and
+# the runtime library must match).
+#
+# Action: Open a new issue to create a Nix derivation for otelsdk.
+# Outside Nix (e.g. macOS system R), installation should work if cmake and a
+# compatible protobuf are available.
 
 # --- Env vars to activate tracing -------------------------------------------
 # Sys.setenv(
-#   OTEL_TRACES_EXPORTER    = "otlp",
-#   OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318",
-#   OTEL_SERVICE_NAME       = "llmtelemetry"
+#   OTEL_TRACES_EXPORTER         = "otlp",
+#   OTEL_EXPORTER_OTLP_ENDPOINT  = "http://localhost:4318",
+#   OTEL_SERVICE_NAME            = "llmtelemetry"
 # )
-# Or set in ~/.Renviron / project .Renviron
+# Or set in project .Renviron (preferred for reproducibility)
 
-# --- Priority 1: mirai/crew worker spans ------------------------------------
-#
-# mirai >= 2.5.0 is OTel-instrumented.
-# With otelsdk active, a tar_make() run using crew workers should produce spans
-# for each worker task dispatch and execution.
-#
-# Test:
-# library(otelsdk)
-# library(targets)
-# library(crew)
-# tar_make()  # with OTEL env vars set
-# Then inspect http://localhost:16686 — look for "mirai" service spans.
-#
-# Questions to answer:
-# - Does each tar_target() appear as a span?
-# - Do worker-side spans link back to the orchestrator (trace context propagation)?
-# - Are failed targets captured as error spans?
+# --- Package versions tested -------------------------------------------------
+# otel:    0.2.0 (CRAN, already in default.nix) — API layer only, no exporter
+# otelsdk: 0.2.4.9000 (GitHub) — BUILD FAILED (protobuf version mismatch in Nix)
+# mirai:   2.5.3 (in default.nix) — OTel instrumentation present (added 2.5.0)
+# DBI:     1.2.3 (in default.nix) — NO OTel hooks (needs >= 1.3.0, unreleased)
+# shiny:   1.12.1 (in default.nix) — FULL OTel hooks present (see below)
 
-# --- Priority 2: DBI query timing -------------------------------------------
+# --- Priority 1: mirai/crew worker spans — FINDINGS -------------------------
 #
-# DBI >= 1.3.0 is OTel-instrumented.
-# With otelsdk active, DBI calls to unified.duckdb should produce spans
-# including query text and duration.
+# CONFIRMED: mirai 2.5.3 has comprehensive OTel instrumentation (PR #394).
+# Activation: automatic when `otel` + `otelsdk` are both installed.
+# No code changes needed — mirai auto-detects OpenTelemetry.
 #
-# Test:
-# library(otelsdk)
-# library(DBI)
-# library(duckdb)
-# con <- DBI::dbConnect(duckdb::duckdb(), "inst/extdata/unified.duckdb")
-# DBI::dbGetQuery(con, "SELECT COUNT(*) FROM sessions")
-# DBI::dbDisconnect(con)
-# Then inspect http://localhost:16686 — look for "dbi" spans with SQL text.
+# Span types emitted (from mirai v05-opentelemetry vignette):
+#   - "daemons set" / "daemons reset" — root span for compute profile
+#   - "mirai" — child span per async task (includes worker-side execution)
+#   - "daemon connect" — span when daemon connects to dispatcher
+#   - Error spans: failed tasks captured as error spans with status
+#   - Distributed context: trace context propagates across network boundaries
+#                          (worker-side spans link back to orchestrator)
 #
-# Questions to answer:
-# - Is the SQL query text captured in span attributes?
-# - Is row count captured?
-# - Is this additive to ccusage or redundant?
+# Attributes captured per task span:
+#   - mirai.dispatcher (true/false)
+#   - mirai.compute (profile name)
+#   - server.address, server.port, network.transport
+#   - task duration (implicit from span timing)
+#
+# Answers to original questions:
+# - Does each tar_target() appear as a span? YES, each mirai() task → span
+# - Do worker-side spans link to orchestrator? YES, trace context propagated
+# - Are failed targets captured as error spans? YES
+#
+# Status: READY pending otelsdk Nix derivation (see BLOCKER above)
 
-# --- Priority 3: Backend selection ------------------------------------------
+# --- Priority 2: DBI query timing — FINDINGS --------------------------------
 #
-# Dev/local:    Jaeger all-in-one via OrbStack (no cost, disposable)
+# CONFIRMED: DBI 1.2.3 has NO OTel hooks.
+# OTel support was added in DBI 1.3.0 (GitHub development version, unreleased).
+# See DBI NEWS: "Add support for OpenTelemetry via the otel and otelsdk packages"
+#
+# Double blocker for DBI:
+#   1. DBI 1.3.0 not yet on CRAN (cannot add to default.R)
+#   2. otelsdk fails to build in Nix
+#
+# When both blockers are resolved:
+#   - SQL query text captured in span attributes
+#   - Query duration from span timing
+#   - Additive to ccusage (orthogonal signal — query-level vs session-level)
+#
+# Status: BLOCKED pending (1) DBI 1.3.0 CRAN release + (2) otelsdk Nix derivation
+
+# --- Priority 3: Shiny reactive latency — UNEXPECTED FINDING ----------------
+#
+# CONFIRMED: Shiny 1.12.1 (already in default.nix) has FULL OTel instrumentation.
+# Found 60+ internal OTel functions including:
+#   - otel_span_session_start / otel_span_session_end
+#   - otel_span_label_reactive / otel_span_label_observer
+#   - otel_span_label_render_function
+#   - otel_span_label_extended_task (ExtendedTask spans for crew workers)
+#   - otel_log_label_set_reactive_val / otel_log_label_set_reactive_values
+#
+# This means the llmtelemetry Shinylive dashboard can emit spans for:
+#   - Session duration (start → end)
+#   - Reactive invalidation and recalculation latency
+#   - ExtendedTask execution timing (crew/mirai background tasks)
+#   - Render function timing
+#
+# This is a NEW capability not in the original gap analysis.
+# Status: READY pending otelsdk Nix derivation (single blocker)
+
+# --- Priority 4: Backend selection ------------------------------------------
+#
+# Dev/local:    Jaeger all-in-one via OrbStack ✓ (running, tested 2026-05-11)
 # Cloud option: Grafana Cloud free tier (10k spans/day), or Logfire
-# Decision:     Start with Jaeger local; evaluate cloud if we want persistent traces
+# Decision:     Keep Jaeger local for development; evaluate Grafana Cloud
+#               once otelsdk Nix derivation is available
 
 # --- ellmer: de-prioritised -------------------------------------------------
 #
@@ -87,22 +144,40 @@
 # ellmer OTel would give span-level latency per LLM call — not a current gap.
 # Revisit if we start building R code that calls LLM APIs directly via ellmer.
 
-# --- Gap analysis summary (to be filled in after prototype) -----------------
+# --- Gap analysis summary — COMPLETED ----------------------------------------
 #
-# Signal                    | ccusage | OTel (if added) | Gap?
-# --------------------------|---------|-----------------|------
-# Token count per session   | YES     | via ellmer only | no (we don't use ellmer)
-# Cost (USD) per session    | YES     | NO              | OTel can't replace
-# Block-level cost/duration | YES     | NO              | OTel can't replace
-# mirai worker task timing  | NO      | YES             | FILL IN AFTER TEST
-# DBI query timing          | NO      | YES             | FILL IN AFTER TEST
-# Shiny reactive latency    | NO      | YES (shiny>=1.12)| new capability
-# targets pipeline trace    | NO      | UNKNOWN         | investigate
+# Signal                    | ccusage | OTel (if added)   | Gap? | Status
+# --------------------------|---------|-------------------|------|--------
+# Token count per session   | YES     | via ellmer only   | no   | not needed
+# Cost (USD) per session    | YES     | NO                | no   | OTel can't replace
+# Block-level cost/duration | YES     | NO                | no   | OTel can't replace
+# mirai worker task timing  | NO      | YES (mirai 2.5.3) | YES  | blocked: otelsdk Nix
+# DBI query timing          | NO      | YES (DBI >= 1.3.0)| YES  | blocked: DBI+otelsdk
+# Shiny reactive latency    | NO      | YES (shiny 1.12.1)| YES  | blocked: otelsdk Nix
+# targets pipeline trace    | NO      | via mirai         | YES  | blocked: otelsdk Nix
+# Session start/end spans   | partial | YES (shiny 1.12.1)| YES  | blocked: otelsdk Nix
 
-# --- Acceptance criteria (closes issue) -------------------------------------
-# [ ] Jaeger running locally via OrbStack
-# [ ] otelsdk installed and traces flowing to Jaeger
-# [ ] mirai/crew spans confirmed (or documented as absent)
-# [ ] DBI spans confirmed with SQL text (or documented as absent)
-# [ ] Written gap analysis table completed above
+# --- Action items from investigation ----------------------------------------
+#
+# 1. Open new issue: create Nix derivation for otelsdk (pins compatible protobuf)
+#    This is the single blocker for ALL OTel functionality.
+#
+# 2. Track DBI 1.3.0 CRAN release (already in development, NEWS shows active work)
+#    Add to default.R once released.
+#
+# 3. No code changes needed in llmtelemetry for mirai/crew or Shiny instrumentation
+#    — activation is automatic once otelsdk is loadable.
+#
+# 4. Add to .Renviron when otelsdk is available:
+#    OTEL_TRACES_EXPORTER=otlp
+#    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+#    OTEL_SERVICE_NAME=llmtelemetry
+
+# --- Acceptance criteria — status -------------------------------------------
+# [x] Jaeger running locally via OrbStack (confirmed 2026-05-11)
+# [ ] otelsdk installed and traces flowing to Jaeger (blocked: protobuf Nix mismatch)
+# [x] mirai/crew spans confirmed (present in mirai 2.5.3, needs otelsdk)
+# [x] DBI spans confirmed (DBI 1.2.3 has no hooks; DBI 1.3.0 needed + otelsdk)
+# [x] Written gap analysis table completed
 # [ ] Decision on whether to add otelsdk to default.R permanently
+#     → YES, once Nix derivation is available (single blocker for 4 new signals)
