@@ -14,6 +14,48 @@ full refresh history.
 
 ---
 
+## 2026-05-12 (session: fix-issue-59-nix-otelsdk)
+
+### Completed
+- Built `otelsdk` (OpenTelemetry C++ SDK wrapper, GitHub-only) as a manual Nix
+  derivation in `default.nix` (issue #59, PR #60). `library(otelsdk)` now loads
+  cleanly from `nix-shell default.nix`.
+- Added `default.post.sh`: idempotent script that re-applies the `otelsdk` derivation
+  block after any future `rix::rix()` regeneration of `default.nix`.
+- Created `CHANGELOG.md` (this file) with full history back to 2026-02-21.
+- Created `NIX.md`: Nix environment reference — adding packages, updating the `otelsdk`
+  rev, reverting `default.nix`, known issues and workarounds.
+
+### Failed Approaches
+- `postPatch` on `src/CMakeLists.txt` — file does not exist in the package root;
+  it lives inside `src/vendor/opentelemetry-cpp.tgz` (extracted at build time, not
+  at patch time). The patch hook runs before the tarball is unpacked.
+- `postPatch` on `CMakeLists.txt` (no path prefix) — same result, wrong location.
+- Setting `CMAKE_PREFIX_PATH` with semicolons in `preBuild` — semicolons are bash
+  statement separators inside Makefile recipes; the remaining path segments after the
+  first semicolon were executed as shell commands, producing "Is a directory" errors.
+- `postPatch` with `sed` to comment out `include(cmake/googletest.cmake)` in
+  `src/CMakeLists.txt` — same "no such file" problem as above.
+
+### Root cause
+`-DBUILD_TESTING=OFF` is already present in `src/Makevars.in`'s cmake invocation,
+and `CMakeLists.txt` does guard the googletest include inside `if(BUILD_TESTING)`.
+However cmake 4.1.2 evaluates `FetchContent_MakeAvailable` at configure time before
+the `BUILD_TESTING` guard fully suppresses it. Adding
+`-DFETCHCONTENT_FULLY_DISCONNECTED=ON` to the cmake invocation (via a `sed` patch on
+`src/Makevars.in`) prevents all FetchContent network downloads unconditionally.
+
+### Accuracy / Metrics
+- `library(otelsdk)` loads from `nix-shell default.nix --run "Rscript -e '...'"`: ✓
+- Build time: ~45 seconds (cmake + C++ compile)
+
+### Known Limitations
+- `RECOVERY.md` backup destinations are still TODO (backup infra not yet configured).
+- 37 pre-existing roborev verdicts unaddressed (pre-date this session).
+- `DESCRIPTION` still at `0.0.0.9000` — needs bump before first public deploy.
+
+---
+
 ## 2026-05-12
 
 ### Added
