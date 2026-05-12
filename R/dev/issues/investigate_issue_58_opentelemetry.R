@@ -163,24 +163,41 @@
 # default.R so otelsdk can build within the project nix shell.
 #
 # Why protobuf_21 (3.21.12) specifically:
+#   - OTel C++ SDK v1.22.0 (bundled in otelsdk 0.2.4.9000)
 #   - otelsdk cmake uses -DWITH_ABSEIL=OFF
 #   - protobuf >= 22 (old 3.22+) REQUIRES Abseil at link time — incompatible
 #   - protobuf_21 (3.21.12) does NOT require Abseil; no @rpath conflicts
 #   - Both protoc (code generation) and libprotobuf (compilation/linking) come
 #     from the SAME Nix derivation → version check guaranteed to pass
+#   - cmake CONFIG mode finds: protobuf::protoc = protoc-3.21.12.0
+#     protobuf::libprotobuf = libprotobuf.3.21.12.0.dylib (no Abseil in link deps)
 #
-# Configure step test (2026-05-12):
-#   Added to worktree default.R:
-#     system_pkgs = c("cmake", "protobuf_21", "pkg-config")
-#     r_pkgs += "otel"
-#   Result: configure PASSED. Generated Makevars contains:
+# Configure step result (2026-05-12): PASSED
+#   system_pkgs = c("cmake", "protobuf_21", "pkg-config")
+#   Generated Makevars:
 #     CMAKE="/nix/store/.../cmake-4.1.2/bin/cmake"
 #     PKG_LIBS = -L/nix/store/.../protobuf-21.12/lib -lprotobuf
-#   Status: cmake build in progress (long, ~15 min)
+#
+# cmake build result (2026-05-12): BLOCKED by nested-shell NIX_CFLAGS_COMPILE
+#   contamination (same mechanism as R_LIBS_SITE — nix-nested-shell-isolation rule)
+#   - Outer global dev shell has pkgs.protobuf (34.1) → contaminates
+#     NIX_CFLAGS_COMPILE with protobuf-32.1 and abseil-cpp-20250814.1-dev paths
+#   - These appear BEFORE protobuf-21.12 in NIX_CFLAGS_COMPILE
+#   - Clang wrapper passes all paths to both compiler AND linker
+#   - Linker fails: "can't map file abseil-cpp-20250814.1-dev/include" (EINVAL)
+#   NOTE: This is a TESTING ARTIFACT (running from within nested shells).
+#   A user entering the project nix shell DIRECTLY (not nested) would have a
+#   clean NIX_CFLAGS_COMPILE and the cmake build should succeed.
+#
+# Recommended implementation for issue #59:
+#   Use rix git_pkgs to build otelsdk in a clean Nix derivation environment
+#   (avoids nested-shell contamination — builds in fresh derivation, no outer
+#   shell leakage). This combines Options C and A.
 #
 # Changes needed to default.R (main checkout, issue #59):
 #   system_pkgs = c("cmake", "protobuf_21", "pkg-config")
-#   r_pkgs += "otel"
+#   r_pkgs: add "otel"
+#   git_pkgs: add otelsdk from r-lib/otelsdk at confirmed commit
 
 # --- Action items from investigation ----------------------------------------
 #
@@ -208,6 +225,8 @@
 # [x] DBI spans confirmed (DBI 1.2.3 has no hooks; DBI 1.3.0 needed + otelsdk)
 # [x] Written gap analysis table completed
 # [x] Option C configure: PASSED (protobuf_21 + cmake + pkg-config)
-# [ ] Option C cmake build: in progress
+# [~] Option C cmake build: BLOCKED by nested-shell NIX_CFLAGS_COMPILE
+#     contamination (testing artifact). Expected to work in fresh project shell.
 # [ ] Decision on whether to add otelsdk to default.R permanently
-#     → YES, once Option C cmake build confirms success (issue #59)
+#     → YES, via rix git_pkgs (Options C+A combined, clean derivation build)
+#     → Tracked in issue #59
