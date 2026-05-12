@@ -348,8 +348,7 @@ if (!has_data) {
             error = function(e) NULL)
         }
         if (!is.null(model_df) && nrow(model_df) > 0) {
-          # Guard NaN and NA in cost_per_mtok (is.na catches both NA and NaN)
-          model_df$cost_per_mtok[is.na(model_df$cost_per_mtok)] <- 0
+          model_df$cost_per_mtok[is.nan(model_df$cost_per_mtok)] <- 0
 
           daily_model_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Daily Cost by Model (Last 5 Days)</h3>
 <table style="border-collapse: collapse; width: 100%%;">
