@@ -78,7 +78,14 @@ let
       rev = "0cf2ad93631944d28142e941ae9ac5cab107f478";
       sha256 = "sha256-xYKmrniWGBx9TaoMOxqGpgd2FEG4fU8DP279APmk2sU=";
     };
-    nativeBuildInputs = [ pkgs.which pkgs.cmake pkgs.protobuf_21 pkgs.pkg-config ];
+    # curl and zlib: both out (lib) and dev (headers) needed for cmake MODULE-mode FindCURL/FindZLIB
+    nativeBuildInputs = [ pkgs.which pkgs.cmake pkgs.protobuf_21 pkgs.pkg-config pkgs.curl pkgs.curl.dev pkgs.zlib pkgs.zlib.dev ];
+    # Set CMAKE directly (avoids `which cmake` in configure) and explicit CMAKE_PREFIX_PATH
+    # so cmake MODULE-mode FindCURL/FindZLIB resolve to Nix store paths in the derivation sandbox.
+    preBuild = ''
+      export CMAKE="${pkgs.cmake}/bin/cmake"
+      export CMAKE_PREFIX_PATH="${pkgs.curl.dev};${pkgs.curl};${pkgs.zlib.dev};${pkgs.zlib};''${CMAKE_PREFIX_PATH:-}"
+    '';
     propagatedBuildInputs = builtins.attrValues {
       inherit (pkgs.rPackages) otel;
     };
