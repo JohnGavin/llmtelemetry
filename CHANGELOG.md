@@ -14,6 +14,53 @@ full refresh history.
 
 ---
 
+## 2026-05-12 (session: roborev-triage-and-maintenance)
+
+### Completed
+- **Backup infrastructure** (PR #61): created private `JohnGavin/llmtelemetry-data` repo as
+  second-copy backup target; `scripts/backup_extdata.sh` syncs `inst/extdata/` and
+  `vignettes/data/` there idempotently; filled all `<TODO>` placeholders in `RECOVERY.md`
+  with actual paths, failure-domain note, and restore steps.
+- **Version bump** (PR #61): `DESCRIPTION` `0.0.0.9000` → `0.1.0` (project is live/prod).
+- **Roborev triage**: sampled all 40 failing verdicts; closed 2 false positives (jobs 1056,
+  1052 — reviewer didn't see prior-commit otelsdk work); categorised remaining 38.
+- **QA script bugs** (PR #62): `curl -sL` without `--fail` allowed HTTP 404 to pass silently
+  as "OK" (HIGH, job #905); `$TODAY` used before initialization under `set -u` caused unbound-
+  variable abort when sessions data was empty (MEDIUM, job #996).
+- **Project filter + email NaN** (PR #63): "None" button showed all projects instead of none —
+  `length > 0` guard on 9 filter sites bypassed empty selection (jobs #982, #989); replaced
+  `is.na(cost_per_mtok) <- 0` with `is.nan()` so genuine missing rows render "-" not "$0.00"
+  (job #897).
+- **ARIA + fullscreen sweep** (PR #64): `ec()` `role="img"` → `role="button"` + `tabindex="0"`
+  + keyboard handler (Enter/Space); `ec_scatter()` and bespoke `block_timeline` chart were
+  entirely missing ARIA and fullscreen — both now have same pattern (jobs #946, #940).
+- **Timestamp normalization** (PR #65): `ended_at < started_at` in exported sessions (ccusage
+  UTC/local timezone mismatch); `pmax(ended_at, started_at)` before `as.character()` conversion
+  keeps fields monotonic (job #1055).
+
+### Failed Approaches
+- `rsync` via `command -v rsync` in backup script: `openrsync` wrapper resolves but can't exec
+  the underlying `rsync` binary in the Nix shell context — exit 14. Switched to `cp -R` with
+  pre-deletion of destination dirs.
+- `/usr/bin/rsync` directly: same openrsync wrapper issue. `cp -R` with clear-then-copy is the
+  reliable macOS/Nix workaround.
+
+### Accuracy / Metrics
+- Roborev: 51 total, 8 passed, 43 failed, **2 addressed** (up from 0) this session.
+  5 PRs in review address jobs #905, #996, #982, #989, #897, #946, #940, #1055 (8 more verdicts).
+  Projected pass rate after merges: ~16/51 ≈ 31% (up from 13%).
+
+### Known Limitations
+- 5 PRs (#61–#65) open but not yet merged; session work lands on merge.
+- Remaining ~9 open roborev verdicts: JS formatter serialized as JSON string in `ec()` tooltip
+  (job #982), missing regression tests (#905, #897), `investigate_58.R` overstatement (#1033),
+  and investigation-branch items.
+- Backup repo in same GitHub account — not protected against account-level loss (noted in
+  `RECOVERY.md`; higher-assurance option is rclone to Backblaze B2).
+- `scripts/backup_extdata.sh` not yet on a daily schedule (manual run only).
+
+---
+
 ## 2026-05-12 (session: fix-issue-59-nix-otelsdk)
 
 ### Completed
