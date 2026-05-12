@@ -92,7 +92,7 @@ let
     # googletest — blocked in Nix derivation sandbox. otelsdk tests are not needed for the
     # R package install, so comment out the include to allow cmake configure to complete.
     postPatch = ''
-      sed -i 's|include(cmake/googletest.cmake)|# include(cmake/googletest.cmake) -- disabled for Nix (network blocked)|' CMakeLists.txt
+      sed -i 's|include(cmake/googletest.cmake)|# include(cmake/googletest.cmake) -- disabled for Nix (network blocked)|' src/CMakeLists.txt
     '';
     propagatedBuildInputs = builtins.attrValues {
       inherit (pkgs.rPackages) otel;
