@@ -518,9 +518,11 @@ if (file.exists(unified_db)) {
   u_sess <- dbReadTable(ucon, "sessions") |>
     as_tibble() |>
     mutate(
+      # Normalize ended_at: ccusage occasionally exports ended_at < started_at
+      # (UTC vs local timezone mismatch). Clamp to started_at before converting
+      # to character so both fields stay monotonic.
+      ended_at = as.character(pmax(ended_at, started_at)),
       started_at = as.character(started_at),
-      ended_at = as.character(ended_at),
-      # Guard against negative durations (timezone issues)
       duration_min = pmax(0, round(duration_min, 1), na.rm = TRUE)
     ) |>
     select(session_id, project, started_at, ended_at, duration_min) |>
