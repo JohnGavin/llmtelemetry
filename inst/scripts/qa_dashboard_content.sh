@@ -9,6 +9,7 @@ set -euo pipefail
 URL="${1:-https://johngavin.github.io/llmtelemetry/}"
 ERRORS=0
 WARNINGS=0
+TODAY=$(date -u +%Y-%m-%d)
 
 echo "=== Dashboard Content QA: $URL ==="
 
@@ -36,7 +37,7 @@ declare -a CRITICAL_DATA=(
 
 for f in "${CRITICAL_DATA[@]}"; do
   JSON_URL="$DATA_URL/$f"
-  CONTENT=$(curl -sL "$JSON_URL" 2>/dev/null || echo "FETCH_ERROR")
+  CONTENT=$(curl -sL --fail "$JSON_URL" 2>/dev/null || echo "FETCH_ERROR")
 
   if [ "$CONTENT" = "FETCH_ERROR" ]; then
     echo "FAIL: Could not fetch $f"
@@ -67,7 +68,7 @@ declare -a OPTIONAL_DATA=(
 
 for f in "${OPTIONAL_DATA[@]}"; do
   JSON_URL="$DATA_URL/$f"
-  CONTENT=$(curl -sL "$JSON_URL" 2>/dev/null || echo "FETCH_ERROR")
+  CONTENT=$(curl -sL --fail "$JSON_URL" 2>/dev/null || echo "FETCH_ERROR")
 
   if [ "$CONTENT" = "FETCH_ERROR" ]; then
     echo "WARN: Could not fetch $f (optional)"
@@ -84,7 +85,7 @@ done
 echo ""
 echo "=== Checking session data freshness ==="
 SESSIONS_URL="$DATA_URL/unified_sessions.json"
-SESSIONS_CONTENT=$(curl -sL "$SESSIONS_URL" 2>/dev/null || echo "[]")
+SESSIONS_CONTENT=$(curl -sL --fail "$SESSIONS_URL" 2>/dev/null || echo "[]")
 
 if [ "$SESSIONS_CONTENT" = "[]" ]; then
   echo "WARN: No session data to check freshness"
@@ -99,8 +100,6 @@ if d and isinstance(d, list) and 'started_at' in d[0]:
 else:
     print('UNKNOWN')
 " 2>/dev/null || echo "PARSE_ERROR")
-
-  TODAY=$(date -u +%Y-%m-%d)
 
   if [ "$LATEST_DATE" = "UNKNOWN" ] || [ "$LATEST_DATE" = "PARSE_ERROR" ]; then
     echo "WARN: Could not parse latest session date"
@@ -133,7 +132,7 @@ fi
 echo ""
 echo "=== Checking cost data freshness ==="
 DAILY_URL="$DATA_URL/ccusage_daily.json"
-DAILY_CONTENT=$(curl -sL "$DAILY_URL" 2>/dev/null || echo "[]")
+DAILY_CONTENT=$(curl -sL --fail "$DAILY_URL" 2>/dev/null || echo "[]")
 
 if [ "$DAILY_CONTENT" = "[]" ]; then
   echo "WARN: No cost data to check freshness"
