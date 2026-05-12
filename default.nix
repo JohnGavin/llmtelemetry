@@ -88,11 +88,12 @@ let
     preBuild = ''
       export CMAKE="${pkgs.cmake}/bin/cmake"
     '';
-    # googletest FetchContent_MakeAvailable (CMakeLists.txt:556) requires network to git-clone
-    # googletest — blocked in Nix derivation sandbox. otelsdk tests are not needed for the
-    # R package install, so comment out the include to allow cmake configure to complete.
+    # src/CMakeLists.txt lives inside src/vendor/opentelemetry-cpp.tgz (extracted at build time,
+    # not at patch time). Patch src/Makevars.in instead — it controls the cmake flags passed to
+    # the configure step. Adding FETCHCONTENT_FULLY_DISCONNECTED=ON prevents ALL FetchContent
+    # network downloads (including googletest git-clone) regardless of BUILD_TESTING value.
     postPatch = ''
-      sed -i 's|include(cmake/googletest.cmake)|# include(cmake/googletest.cmake) -- disabled for Nix (network blocked)|' src/CMakeLists.txt
+      sed -i 's|-DWITH_ETW=OFF)|-DWITH_ETW=OFF -DFETCHCONTENT_FULLY_DISCONNECTED=ON)|' src/Makevars.in
     '';
     propagatedBuildInputs = builtins.attrValues {
       inherit (pkgs.rPackages) otel;
