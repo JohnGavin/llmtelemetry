@@ -15,6 +15,7 @@ format:
       - data/gemini_sessions.json
       - data/cmonitor_summary.json
       - data/git_commits.json
+      - data/git_commits_by_project.json
       - data/git_bus_factor.json
       - data/git_velocity.json
       - data/git_timing.json
@@ -169,6 +170,7 @@ gem_daily   <- load_json("gemini_daily.json")
 gem_sess    <- load_json("gemini_sessions.json")
 cmon        <- load_json("cmonitor_summary.json")
 git_commits <- load_json("git_commits.json")
+git_commits_proj <- load_json("git_commits_by_project.json")
 u_sessions  <- load_json("unified_sessions.json")
 u_costs     <- load_json("unified_costs.json")
 cost_proj   <- load_json("cost_by_project_estimated.json")
@@ -195,11 +197,28 @@ has_rows <- function(x) is.data.frame(x) && nrow(x) > 0
 # Also strip worktree suffixes to aggregate to project level
 shorten_proj <- function(x) {
   x <- sub("^-Users-johngavin-docs[-_]gh-", "", x)
+  x <- sub("^-private-tmp-", "", x)  # git worktrees under /private/tmp/
+  x <- sub("^-tmp-", "", x)
   x <- sub("^llm-", "", x)
   x <- sub("^proj-", "", x)
-  # Strip worktree suffixes (e.g., "roborev-worktree-1234567890" -> "roborev")
   x <- sub("-worktree-[0-9]+$", "", x)
   gsub("-", "/", x)
+}
+
+# Aggregate worktrees into parent project.
+# After shorten_proj, "llmtelemetry/sonnet" -> "llmtelemetry" when "llmtelemetry" exists.
+canonical_proj <- function(x, base_projects) {
+  base <- sub("/.*$", "", x)
+  ifelse(base %in% base_projects & base != x, base, x)
+}
+
+# Human-readable token count: 118555583 -> "118.6M", 3000000000 -> "3B"
+fmt_tokens <- function(x) {
+  ifelse(is.na(x) | x == 0, "0",
+    ifelse(abs(x) >= 1e9, paste0(round(x / 1e9, 1), "B"),
+    ifelse(abs(x) >= 1e6, paste0(round(x / 1e6, 1), "M"),
+    ifelse(abs(x) >= 1e3, paste0(round(x / 1e3, 0), "k"),
+    as.character(round(x))))))
 }
 
 # Clean model name: remove quotes, braces, claude- prefix, simplify
@@ -309,6 +328,7 @@ if (has_rows(cc_blocks)) {
 }
 if (has_rows(gem_daily)) gem_daily$date <- as.Date(gem_daily$date)
 if (has_rows(git_commits)) git_commits$date <- as.Date(git_commits$date)
+if (has_rows(git_commits_proj)) git_commits_proj$date <- as.Date(git_commits_proj$date)
 if (has_rows(u_sessions)) {
   # Extract date and time separately (WebR POSIXct loses time portion)
   u_sessions$date <- as.Date(substr(u_sessions$started_at, 1, 10))
@@ -322,16 +342,21 @@ if (has_rows(gem_sess)) {
 }
 
 # Get unique projects from unified_sessions (has real project names)
+# Aggregate git worktrees (e.g. llmtelemetry/sonnet) into parent (llmtelemetry)
 all_projects <- character(0)
+base_projs <- character(0)
 if (has_rows(u_sessions) && "project" %in% names(u_sessions)) {
-  # Count sessions per project, sorted by frequency
-  proj_counts <- table(u_sessions$project)
-  proj_counts <- sort(proj_counts, decreasing = TRUE)
-  all_projects <- names(proj_counts)
-  # Shorten project names for display
-  all_projects <- shorten_proj(all_projects)
-  # Also shorten the column in u_sessions for filtering
-  u_sessions$project_short <- shorten_proj(u_sessions$project)
+  all_proj_short <- sort(unique(shorten_proj(u_sessions$project)))
+  base_projs <- all_proj_short[!grepl("/", all_proj_short)]
+  all_projects <- sort(unique(canonical_proj(all_proj_short, base_projs)))
+  u_sessions$project_short <- canonical_proj(shorten_proj(u_sessions$project), base_projs)
+}
+# Propagate canonical names to derived datasets
+if (has_rows(cost_proj) && "project" %in% names(cost_proj)) {
+  cost_proj$project <- canonical_proj(shorten_proj(cost_proj$project), base_projs)
+}
+if (has_rows(cc_daily) && "project" %in% names(cc_daily)) {
+  cc_daily$project <- canonical_proj(cc_daily$project, base_projs)
 }
 
 all_dates <- c(
@@ -455,7 +480,7 @@ ui <- page_navbar(
         else if (txt.includes('token')) targetTab = 'Token Analysis';
         else if (txt.includes('session')) targetTab = 'Sessions';
         else if (txt.includes('day')) targetTab = 'Cost Trends';
-        else if (txt.includes('commit') || txt.includes('lines')) targetTab = 'Commits';
+        else if (txt.includes('commit') || txt.includes('lines')) targetTab = 'Git';
         if (targetTab) {
           // Find and click the nav link for the target tab
           var navLinks = document.querySelectorAll('.navbar-nav .nav-link, .nav-pills .nav-link');
@@ -488,6 +513,12 @@ ui <- page_navbar(
       condition = "input.tabs == 'Time Blocks'",
       sliderInput("block_days", "Block window (days)",
         min = 1, max = 60, value = 14, step = 1)
+    ),
+    conditionalPanel(
+      condition = "input.tabs == 'Git'",
+      selectInput("commit_project", "Repo",
+        choices = c("All repos" = "all"),
+        selected = "all")
     )
   ),
 
@@ -611,15 +642,12 @@ ui <- page_navbar(
     )
   ),
 
-  nav_panel("Commits", value = "Commits",
-    tags$div(class = "alert alert-info mb-3", style = "font-size: 0.85em;",
-      tags$strong("Note:"), " This tab shows commits for the llmtelemetry repo only. ",
-      "Multi-project git metrics are in the ", tags$strong("Repo Health"), " tab."),
+  nav_panel("Git", value = "Git",
     layout_columns(
       fill = FALSE, col_widths = c(4, 4, 4),
       tooltip(
         value_box("Total Commits", textOutput("vb_commits"), theme = "primary"),
-        "Git commits in llmtelemetry repo (single project)"
+        "Git commits for selected repo (or all tracked repos)"
       ),
       tooltip(
         value_box("Median Lines", textOutput("vb_median_lines"), theme = "info"),
@@ -631,18 +659,20 @@ ui <- page_navbar(
       )
     ),
     layout_columns(col_widths = c(12),
+      card(card_header("Commits by Repo"), DTOutput("commits_by_proj"),
+        card_footer(class = "text-muted small",
+          "All tracked repos — commits, lines added/deleted. Use Repo filter in sidebar to drill down."))
+    ),
+    layout_columns(col_widths = c(12),
       card(card_header("Lines Changed per Commit"), uiOutput("commit_hist"),
-        card_footer(class = "text-muted small", "Distribution of total lines changed per commit (llmtelemetry repo)"))
+        card_footer(class = "text-muted small", "Distribution of total lines changed per commit (selected repo)"))
     ),
     layout_columns(col_widths = c(6, 6),
       card(card_header("Lines Changed Over Time"), uiOutput("commit_scatter_time"),
         card_footer(class = "text-muted small", "Lines changed per commit over time, sized by files changed")),
       card(card_header("Additions vs Deletions"), uiOutput("commit_scatter_add_del"),
         card_footer(class = "text-muted small", "Lines added vs deleted per commit"))
-    )
-  ),
-
-  nav_panel("Repo Health", value = "Repo Health",
+    ),
     layout_columns(col_widths = c(6, 6),
       card(card_header("Bus Factor (All Time)"), uiOutput("rh_bus_all"),
         card_footer(class = "text-muted small", "Contributor commit share — 1 person at 60%+ = risk")),
@@ -673,7 +703,7 @@ ui <- page_navbar(
     ),
     layout_columns(col_widths = c(12),
       card(card_header("GitHub Issue Activity (Last 30 Days)"), uiOutput("gh_events_chart"),
-        card_footer(class = "text-muted small", "Issue open/close/label events across tracked projects"))
+        card_footer(class = "text-muted small", "Issue open/close/label events across tracked repos"))
     )
   ),
 
@@ -772,16 +802,33 @@ server <- function(input, output, session) {
     d
   })
 
+  # Projects available in the current time window (dynamic sidebar list)
+  avail_projects <- reactive({
+    if (!has_rows(u_sessions)) return(all_projects)
+    d <- u_sessions[u_sessions$date >= cutoff(), ]
+    if (nrow(d) == 0) return(all_projects)
+    sort(unique(d$project_short))
+  })
+
+  # Update sidebar choices when time horizon changes
+  observe({
+    new_projs <- avail_projects()
+    current_sel <- isolate(input$projects)
+    new_sel <- if (length(current_sel) > 0) intersect(current_sel, new_projs) else new_projs
+    if (length(new_sel) == 0) new_sel <- new_projs
+    updateSelectInput(session, "projects", choices = new_projs, selected = new_sel)
+  })
+
   # --- Project filter buttons -------------------------------------------------
   observeEvent(input$sel_all, {
-    updateSelectInput(session, "projects", selected = all_projects)
+    updateSelectInput(session, "projects", selected = avail_projects())
   })
   observeEvent(input$sel_none, {
     updateSelectInput(session, "projects", selected = character(0))
   })
   observeEvent(input$sel_invert, {
     current <- input$projects
-    inverted <- setdiff(all_projects, current)
+    inverted <- setdiff(avail_projects(), current)
     updateSelectInput(session, "projects", selected = inverted)
   })
 
@@ -994,7 +1041,8 @@ server <- function(input, output, session) {
       sd <- d[d$source == s, ]
       vals <- rep(0, length(all_weeks))
       vals[match(sd$week, all_weeks)] <- sd$totalCost
-      list(name = s, type = "bar", data = I(round(vals, 2)),
+      list(name = s, type = "scatter", symbol = "circle", symbolSize = 10,
+           data = I(round(vals, 2)),
            itemStyle = list(color = if (s == "Claude") pal$claude else pal$gemini))
     })
     ec_bar(all_weeks, series)
@@ -1119,7 +1167,8 @@ server <- function(input, output, session) {
       sd <- d[d$source == s, ]
       vals <- rep(0, length(all_weeks))
       vals[match(sd$week, all_weeks)] <- sd$totalTokens
-      list(name = s, type = "bar", data = I(vals),
+      list(name = s, type = "scatter", symbol = "circle", symbolSize = 10,
+           data = I(vals),
            itemStyle = list(color = if (s == "Claude") pal$claude else pal$gemini))
     })
     ec_bar(all_weeks, series)
@@ -1395,8 +1444,8 @@ server <- function(input, output, session) {
       Duration = sprintf("%.1fh", d$duration_hrs),
       Cost = sprintf("$%.2f", d$costUSD),
       `$/hr` = sprintf("$%.2f", d$cost_per_hr),
-      Tokens = format(if ("totalTokens" %in% names(d)) d$totalTokens else rep(0, n), big.mark = ","),
-      `Tok/hr` = format(if ("tok_per_hr" %in% names(d)) d$tok_per_hr else rep(0, n), big.mark = ","),
+      Tokens = fmt_tokens(if ("totalTokens" %in% names(d)) d$totalTokens else rep(0, n)),
+      `Tok/hr` = fmt_tokens(if ("tok_per_hr" %in% names(d)) d$tok_per_hr else rep(0, n)),
       Models = if ("models" %in% names(d)) clean_model(d$models) else rep("-", n),
       check.names = FALSE, stringsAsFactors = FALSE
     )
@@ -1408,17 +1457,19 @@ server <- function(input, output, session) {
           dataSrc = 0,
           startRender = DT::JS("function(rows, group) {
             var dur=0, cost=0, tok=0;
+            function pTok(s){s=s.trim();if(s.endsWith('B'))return parseFloat(s)*1e9;if(s.endsWith('M'))return parseFloat(s)*1e6;if(s.endsWith('k'))return parseFloat(s)*1e3;return parseInt(s.replace(/,/g,''))||0;}
+            function fTok(n){if(n>=1e9)return(n/1e9).toFixed(1)+'B';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return Math.round(n/1e3)+'k';return n.toString();}
             rows.every(function() {
               var d=this.data();
               dur += parseFloat(d[3]) || 0;
               cost += parseFloat(d[4].replace('$','')) || 0;
-              tok += parseInt(d[6].replace(/,/g,'')) || 0;
+              tok += pTok(d[6]);
             });
             return $('<tr style=\"font-weight:bold;background:#2a2a2a\"/>')
               .append('<td colspan=\"2\">' + group + '</td>')
               .append('<td>' + dur.toFixed(1) + 'h</td>')
               .append('<td>$' + cost.toFixed(2) + '</td>')
-              .append('<td colspan=\"2\">' + tok.toLocaleString() + ' tok</td>')
+              .append('<td colspan=\"2\">' + fTok(tok) + ' tok</td>')
               .append('<td colspan=\"2\">' + rows.count() + ' blocks</td>');
           }")
         ),
@@ -1489,9 +1540,48 @@ server <- function(input, output, session) {
   })
 
   # --- Commits -----------------------------------------------------------------
+  # Populate project filter from the multi-project data
+  observe({
+    if (!has_rows(git_commits_proj)) return()
+    projs <- sort(unique(git_commits_proj$project))
+    updateSelectInput(session, "commit_project",
+      choices = c("All repos" = "all", setNames(projs, projs)),
+      selected = "all")
+  })
+
   commits_filt <- reactive({
-    if (!has_rows(git_commits)) return(data.frame())
-    git_commits[git_commits$date >= cutoff(), ]
+    d <- if (has_rows(git_commits_proj)) git_commits_proj else git_commits
+    if (!has_rows(d)) return(data.frame())
+    d <- d[!is.na(d$date) & d$date >= cutoff(), ]
+    proj_sel <- input$commit_project
+    if (!is.null(proj_sel) && proj_sel != "all" && "project" %in% names(d))
+      d <- d[d$project == proj_sel, ]
+    d
+  })
+
+  output$commits_by_proj <- renderDT({
+    d <- if (has_rows(git_commits_proj)) git_commits_proj else git_commits
+    if (!has_rows(d)) return(DT::datatable(data.frame()))
+    d <- d[!is.na(d$date) & d$date >= cutoff(), ]
+    proj_col <- if ("project" %in% names(d)) d$project else rep("llmtelemetry", nrow(d))
+    summary_df <- do.call(rbind, lapply(split(d, proj_col), function(g) {
+      data.frame(
+        Project     = g$project[1],
+        Commits     = nrow(g),
+        Med_Lines   = round(median(g$lines_changed, na.rm = TRUE)),
+        Mean_Lines  = round(mean(g$lines_changed, na.rm = TRUE)),
+        Lines_Added = sum(g$lines_added, na.rm = TRUE),
+        Lines_Del   = sum(g$lines_deleted, na.rm = TRUE),
+        stringsAsFactors = FALSE
+      )
+    }))
+    summary_df <- summary_df[order(summary_df$Commits, decreasing = TRUE), ]
+    DT::datatable(summary_df,
+      rownames = FALSE,
+      caption = "Commit activity by project (selected time window)",
+      options = list(pageLength = 10, dom = "t", order = list(list(1, "desc"))),
+      class = "compact stripe"
+    )
   })
 
   output$vb_commits <- renderText({
@@ -1729,9 +1819,11 @@ server <- function(input, output, session) {
       )),
       dataZoom = list(
         list(type = "inside", xAxisIndex = 0),
-        list(type = "inside", yAxisIndex = 0)
+        list(type = "inside", yAxisIndex = 0),
+        list(type = "slider", xAxisIndex = 0, bottom = 5),
+        list(type = "slider", yAxisIndex = 0, right = 5)
       ),
-      grid = list(containLabel = TRUE),
+      grid = list(containLabel = TRUE, bottom = 50, right = 50),
       xAxis = list(type = "value", name = "Predicted", min = 0, max = 1),
       yAxis = list(type = "value", name = "Actual", min = 0, max = 1),
       series = list(
@@ -1744,7 +1836,7 @@ server <- function(input, output, session) {
     )
     j <- toJSON(opt, auto_unbox = TRUE, null = "null")
     tagList(
-      tags$div(id = id, class = "echart-div", style = "width:100%;height:300px"),
+      tags$div(id = id, class = "echart-div", style = "width:100%;height:340px"),
       tags$script(HTML(paste0(
         "(function(){var c=echarts.init(document.getElementById('", id, "'),'dark');",
         "var o=", j, ";",
@@ -1789,20 +1881,25 @@ server <- function(input, output, session) {
       counts <- as.integer(agg$n)
     }
     labels <- paste0(types, " (n=", counts, ")")
+    h_px <- max(280, length(labels) * 45)
     ec(list(
       tooltip = list(trigger = "axis"),
       toolbox = list(feature = list(
         dataZoom = list(), restore = list(), saveAsImage = list()
       )),
-      dataZoom = list(list(type = "inside", xAxisIndex = 0)),
-      grid = list(containLabel = TRUE, left = 120),
+      dataZoom = list(
+        list(type = "inside", xAxisIndex = 0),
+        list(type = "inside", yAxisIndex = 0),
+        list(type = "slider", yAxisIndex = 0, right = 5)
+      ),
+      grid = list(containLabel = TRUE, left = 150, right = 60, top = 20, bottom = 20),
       xAxis = list(type = "value", name = "Accuracy", min = 0, max = 1),
       yAxis = list(type = "category", data = I(labels)),
       series = list(list(type = "scatter", data = I(acc),
-        symbol = "circle", symbolSize = 12,
+        symbol = "circle", symbolSize = 14,
         itemStyle = list(color = pal$accent),
         label = list(show = TRUE, position = "right", color = "#ccc")))
-    ))
+    ), h = paste0(h_px, "px"))
   })
 
   output$cal_by_project <- renderUI({
@@ -1826,18 +1923,31 @@ server <- function(input, output, session) {
     agg_df <- agg_df[order(agg_df$accuracy, decreasing = TRUE), ]
 
     # Cleveland dot plot
-    pts <- lapply(seq_len(nrow(agg_df)), function(i) {
-      list(value = c(round(agg_df$accuracy[i] * 100, 1), agg_df$project[i]),
-           symbolSize = max(8, sqrt(agg_df$n[i]) * 5))
-    })
+    acc_vals <- round(agg_df$accuracy * 100, 1)
+    proj_labels <- agg_df$project
+    h_px <- max(280, nrow(agg_df) * 45)
     ec(list(
-      tooltip = list(trigger = "item", formatter = "{b}: {c}%"),
-      grid = list(containLabel = TRUE, left = 120),
+      tooltip = list(trigger = "axis",
+        formatter = "function(p){return p[0].name+': '+p[0].value+'%'}"),
+      toolbox = list(feature = list(
+        dataZoom = list(), restore = list(), saveAsImage = list()
+      )),
+      dataZoom = list(
+        list(type = "inside", xAxisIndex = 0),
+        list(type = "inside", yAxisIndex = 0),
+        list(type = "slider", yAxisIndex = 0, right = 5)
+      ),
+      grid = list(containLabel = TRUE, left = 150, right = 60, top = 20, bottom = 20),
       xAxis = list(type = "value", min = 0, max = 100, name = "Accuracy %"),
-      yAxis = list(type = "category", data = I(rev(agg_df$project))),
-      series = list(list(type = "scatter", data = I(rev(pts)),
-                         itemStyle = list(color = "#4daf4a")))
-    ), aria_label = "Accuracy by project dotchart")
+      yAxis = list(type = "category", data = I(rev(proj_labels))),
+      series = list(list(
+        type = "scatter", data = I(rev(acc_vals)),
+        symbol = "circle", symbolSize = 14,
+        itemStyle = list(color = "#4daf4a"),
+        label = list(show = TRUE, position = "right", color = "#ccc",
+                     formatter = "function(p){return p.value+'%'}")
+      ))
+    ), h = paste0(h_px, "px"), aria_label = "Accuracy by project dotchart")
   })
 
   output$cal_log <- renderDT({

@@ -284,6 +284,69 @@ if (length(commit_rows) > 0) {
   write_json(list(), file.path(out_dir, "git_commits.json"))
 }
 
+# --- 6c. Multi-project commits (cross-repo, last 1 year) ----------------------
+cat("Exporting multi-project commits...\n")
+tracked_repos <- list(
+  llm          = path.expand("~/docs_gh/llm"),
+  llmtelemetry = path.expand("~/docs_gh/llmtelemetry"),
+  irishbuoys   = path.expand("~/docs_gh/irishbuoys"),
+  mycare       = path.expand("~/docs_gh/mycare"),
+  footbet      = path.expand("~/docs_gh/footbet")
+)
+
+parse_git_log <- function(repo_path, project_name) {
+  if (!dir.exists(file.path(repo_path, ".git"))) return(NULL)
+  raw <- tryCatch(
+    system(
+      sprintf("git -C '%s' log '--format=%%H|%%ai|%%s' --numstat --since='1 year ago'",
+              repo_path),
+      intern = TRUE
+    ),
+    error = function(e) character(0)
+  )
+  if (length(raw) == 0) return(NULL)
+  rows <- list(); cur <- NULL
+  for (line in raw) {
+    if (grepl("^[0-9a-f]{40}\\|", line)) {
+      if (!is.null(cur)) rows[[length(rows) + 1]] <- cur
+      parts <- strsplit(line, "\\|", fixed = FALSE)[[1]]
+      cur <- list(project = project_name, hash = substr(parts[1], 1, 7),
+                  date = as.character(as.Date(parts[2])),
+                  message = paste(parts[-(1:2)], collapse = "|"),
+                  lines_added = 0L, lines_deleted = 0L, files_changed = 0L)
+    } else if (nzchar(trimws(line)) && !is.null(cur)) {
+      fields <- strsplit(line, "\t")[[1]]
+      if (length(fields) >= 3) {
+        a <- suppressWarnings(as.integer(fields[1]))
+        d <- suppressWarnings(as.integer(fields[2]))
+        if (!is.na(a)) cur$lines_added   <- cur$lines_added   + a
+        if (!is.na(d)) cur$lines_deleted <- cur$lines_deleted + d
+        cur$files_changed <- cur$files_changed + 1L
+      }
+    }
+  }
+  if (!is.null(cur)) rows[[length(rows) + 1]] <- cur
+  if (length(rows) == 0) return(NULL)
+  bind_rows(lapply(rows, as_tibble)) |>
+    mutate(lines_changed = lines_added + lines_deleted)
+}
+
+proj_commits_list <- lapply(names(tracked_repos), function(proj)
+  parse_git_log(tracked_repos[[proj]], proj))
+proj_commits_list <- Filter(Negate(is.null), proj_commits_list)
+
+if (length(proj_commits_list) > 0) {
+  proj_commits_df <- bind_rows(proj_commits_list) |> arrange(date)
+  write_json(proj_commits_df, file.path(out_dir, "git_commits_by_project.json"), auto_unbox = TRUE)
+  write_json(proj_commits_df, file.path(extdata, "git_commits_by_project.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d commits across %d projects\n",
+              nrow(proj_commits_df), length(unique(proj_commits_df$project))))
+} else {
+  cat("  -> no repos found, writing empty array\n")
+  write_json(list(), file.path(out_dir, "git_commits_by_project.json"))
+  write_json(list(), file.path(extdata, "git_commits_by_project.json"))
+}
+
 # --- 6b. git-recon metrics (bus factor, velocity, timing, crisis, churn, bugs)
 # Based on https://piechowski.io/post/git-commands-before-reading-code/
 # and https://gist.github.com/gadenbuie/463ff1e9f3b0f48cddc44db2224d286b
@@ -731,6 +794,23 @@ api_index <- list(
       source      = "git log --numstat",
       source_url  = "https://git-scm.com/docs/git-log",
       schema      = list(
+        hash          = "string",
+        date          = "string",
+        message       = "string",
+        lines_added   = "integer",
+        lines_deleted = "integer",
+        lines_changed = "integer",
+        files_changed = "integer"
+      )
+    ),
+    list(
+      path        = "/git_commits_by_project.json",
+      description = "Per-commit data across all tracked projects (last 1 year)",
+      type        = "array",
+      source      = "git log --numstat per tracked repo",
+      source_url  = "https://git-scm.com/docs/git-log",
+      schema      = list(
+        project       = "string",
         hash          = "string",
         date          = "string",
         message       = "string",
