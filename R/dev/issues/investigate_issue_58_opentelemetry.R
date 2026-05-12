@@ -3,54 +3,106 @@
 # URL: https://github.com/JohnGavin/llmtelemetry/issues/58
 # Blog post: https://opensource.posit.co/blog/2026-05-07_opentelemetry/
 
-# Session setup
-library(devtools)
-
-# --- Step 1: Read ellmer OTel integration ---
-# Does it capture tokens per call or just spans?
-# browseURL("https://github.com/r-lib/otel")
-# browseURL("https://github.com/r-lib/otelsdk")
-
-# --- Step 2: Evaluate backend options ---
-# Logfire (Pydantic), Grafana Cloud, Jaeger (self-hosted)
-# For a single-developer OSS project, Jaeger local is lowest friction to start.
-# docker run -d --name jaeger -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
-
-# --- Step 3: Prototype instrumentation ---
-# Add otelsdk to default.R:
-# r_pkgs = c(...existing..., "otelsdk")
+# --- What Jaeger is (no R package needed) ------------------------------------
 #
-# Env vars needed:
-# OTEL_TRACES_EXPORTER=otlp
-# OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-# OTEL_SERVICE_NAME=llmtelemetry
+# Jaeger = distributed tracing BACKEND + UI.
+# It receives spans over OTLP (OpenTelemetry Protocol) and visualises the full
+# call tree: which functions ran, in what order, how long, where errors occurred.
 #
-# Then run the Shinylive render pipeline and inspect spans at http://localhost:16686
+# There is NO separate R package for Jaeger.
+# otelsdk (R) speaks OTLP natively → point at Jaeger's OTLP endpoint → done.
+# Jaeger web UI: http://localhost:16686
+# OTLP HTTP ingest: http://localhost:4318
 
-# --- Step 4: Gap analysis questions ---
-# Q1: Does ellmer OTel report prompt/completion token counts?
-#     ccusage reports these from ~/.claude/... — OTel may duplicate or extend this.
-# Q2: Does OTel capture cost (USD) or only latency/token counts?
-#     Hypothesis: OTel = latency + structure; ccusage = cost + billing accuracy.
-# Q3: What spans appear for a tar_make() run using crew/mirai workers?
-#     Expected: task dispatch spans from mirai ≥2.5.0 instrumentation.
-# Q4: What DBI spans appear for unified.duckdb reads?
-#     Expected: query text, duration, row count.
+# --- Run Jaeger all-in-one via OrbStack (not Docker Desktop) -----------------
+#
+# OrbStack is Docker-compatible but far lighter on Mac.
+# Same docker commands work unchanged.
+#
+# docker run -d --name jaeger \
+#   -p 16686:16686 \   # UI
+#   -p 4318:4318 \     # OTLP HTTP
+#   jaegertracing/all-in-one:latest
 
-# --- Commands to run during investigation ---
+# --- Install otelsdk (GitHub only for now, not yet on CRAN) ------------------
+# pak::pak("r-lib/otel")
+# pak::pak("r-lib/otelsdk")
 
-# Check if otelsdk is available
-# nix-shell ~/docs_gh/llmtelemetry/default.nix --run "Rscript -e 'packageVersion(\"otelsdk\")'"
+# --- Env vars to activate tracing -------------------------------------------
+# Sys.setenv(
+#   OTEL_TRACES_EXPORTER    = "otlp",
+#   OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318",
+#   OTEL_SERVICE_NAME       = "llmtelemetry"
+# )
+# Or set in ~/.Renviron / project .Renviron
 
-# Run a traced Rscript to inspect what otel captures for httr2
-# Sys.setenv(OTEL_TRACES_EXPORTER = "console")  # dump to stdout for quick check
+# --- Priority 1: mirai/crew worker spans ------------------------------------
+#
+# mirai >= 2.5.0 is OTel-instrumented.
+# With otelsdk active, a tar_make() run using crew workers should produce spans
+# for each worker task dispatch and execution.
+#
+# Test:
 # library(otelsdk)
-# library(httr2)
-# httr2::request("https://example.com") |> httr2::req_perform()
+# library(targets)
+# library(crew)
+# tar_make()  # with OTEL env vars set
+# Then inspect http://localhost:16686 — look for "mirai" service spans.
+#
+# Questions to answer:
+# - Does each tar_target() appear as a span?
+# - Do worker-side spans link back to the orchestrator (trace context propagation)?
+# - Are failed targets captured as error spans?
 
-# --- Outcome tracking ---
-# [ ] ellmer token capture: confirmed / not available / partial
-# [ ] Backend selected: ___
-# [ ] Prototype spans collected: yes / no
-# [ ] Gap analysis written: yes / no
-# [ ] Decision: OTel alongside ccusage / replace subset / defer
+# --- Priority 2: DBI query timing -------------------------------------------
+#
+# DBI >= 1.3.0 is OTel-instrumented.
+# With otelsdk active, DBI calls to unified.duckdb should produce spans
+# including query text and duration.
+#
+# Test:
+# library(otelsdk)
+# library(DBI)
+# library(duckdb)
+# con <- DBI::dbConnect(duckdb::duckdb(), "inst/extdata/unified.duckdb")
+# DBI::dbGetQuery(con, "SELECT COUNT(*) FROM sessions")
+# DBI::dbDisconnect(con)
+# Then inspect http://localhost:16686 — look for "dbi" spans with SQL text.
+#
+# Questions to answer:
+# - Is the SQL query text captured in span attributes?
+# - Is row count captured?
+# - Is this additive to ccusage or redundant?
+
+# --- Priority 3: Backend selection ------------------------------------------
+#
+# Dev/local:    Jaeger all-in-one via OrbStack (no cost, disposable)
+# Cloud option: Grafana Cloud free tier (10k spans/day), or Logfire
+# Decision:     Start with Jaeger local; evaluate cloud if we want persistent traces
+
+# --- ellmer: de-prioritised -------------------------------------------------
+#
+# We don't use ellmer meaningfully. ccusage already captures Claude Code
+# token/cost data at the session level with billing accuracy.
+# ellmer OTel would give span-level latency per LLM call — not a current gap.
+# Revisit if we start building R code that calls LLM APIs directly via ellmer.
+
+# --- Gap analysis summary (to be filled in after prototype) -----------------
+#
+# Signal                    | ccusage | OTel (if added) | Gap?
+# --------------------------|---------|-----------------|------
+# Token count per session   | YES     | via ellmer only | no (we don't use ellmer)
+# Cost (USD) per session    | YES     | NO              | OTel can't replace
+# Block-level cost/duration | YES     | NO              | OTel can't replace
+# mirai worker task timing  | NO      | YES             | FILL IN AFTER TEST
+# DBI query timing          | NO      | YES             | FILL IN AFTER TEST
+# Shiny reactive latency    | NO      | YES (shiny>=1.12)| new capability
+# targets pipeline trace    | NO      | UNKNOWN         | investigate
+
+# --- Acceptance criteria (closes issue) -------------------------------------
+# [ ] Jaeger running locally via OrbStack
+# [ ] otelsdk installed and traces flowing to Jaeger
+# [ ] mirai/crew spans confirmed (or documented as absent)
+# [ ] DBI spans confirmed with SQL text (or documented as absent)
+# [ ] Written gap analysis table completed above
+# [ ] Decision on whether to add otelsdk to default.R permanently
