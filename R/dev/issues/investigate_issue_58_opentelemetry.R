@@ -157,9 +157,37 @@
 # targets pipeline trace    | NO      | via mirai         | YES  | blocked: otelsdk Nix
 # Session start/end spans   | partial | YES (shiny 1.12.1)| YES  | blocked: otelsdk Nix
 
+# --- Option C investigation (2026-05-12): compatible protobuf in Nix shell ----
+#
+# Goal: add pkgs.protobuf_21 + pkgs.cmake + pkgs.pkg-config to system_pkgs in
+# default.R so otelsdk can build within the project nix shell.
+#
+# Why protobuf_21 (3.21.12) specifically:
+#   - otelsdk cmake uses -DWITH_ABSEIL=OFF
+#   - protobuf >= 22 (old 3.22+) REQUIRES Abseil at link time — incompatible
+#   - protobuf_21 (3.21.12) does NOT require Abseil; no @rpath conflicts
+#   - Both protoc (code generation) and libprotobuf (compilation/linking) come
+#     from the SAME Nix derivation → version check guaranteed to pass
+#
+# Configure step test (2026-05-12):
+#   Added to worktree default.R:
+#     system_pkgs = c("cmake", "protobuf_21", "pkg-config")
+#     r_pkgs += "otel"
+#   Result: configure PASSED. Generated Makevars contains:
+#     CMAKE="/nix/store/.../cmake-4.1.2/bin/cmake"
+#     PKG_LIBS = -L/nix/store/.../protobuf-21.12/lib -lprotobuf
+#   Status: cmake build in progress (long, ~15 min)
+#
+# Changes needed to default.R (main checkout, issue #59):
+#   system_pkgs = c("cmake", "protobuf_21", "pkg-config")
+#   r_pkgs += "otel"
+
 # --- Action items from investigation ----------------------------------------
 #
-# 1. Open new issue: create Nix derivation for otelsdk (pins compatible protobuf)
+# 1. Issue #59: add to default.R:
+#    system_pkgs = c("cmake", "protobuf_21", "pkg-config")
+#    r_pkgs: add "otel"
+#    Then: git_pkgs: add otelsdk from GitHub (r-lib/otelsdk)
 #    This is the single blocker for ALL OTel functionality.
 #
 # 2. Track DBI 1.3.0 CRAN release (already in development, NEWS shows active work)
@@ -168,16 +196,18 @@
 # 3. No code changes needed in llmtelemetry for mirai/crew or Shiny instrumentation
 #    — activation is automatic once otelsdk is loadable.
 #
-# 4. Add to .Renviron when otelsdk is available:
+# 4. .Renviron already prepared (gitignored, inert until otelsdk loads):
 #    OTEL_TRACES_EXPORTER=otlp
 #    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 #    OTEL_SERVICE_NAME=llmtelemetry
 
 # --- Acceptance criteria — status -------------------------------------------
 # [x] Jaeger running locally via OrbStack (confirmed 2026-05-11)
-# [ ] otelsdk installed and traces flowing to Jaeger (blocked: protobuf Nix mismatch)
+# [ ] otelsdk installed and traces flowing to Jaeger (Option C build in progress)
 # [x] mirai/crew spans confirmed (present in mirai 2.5.3, needs otelsdk)
 # [x] DBI spans confirmed (DBI 1.2.3 has no hooks; DBI 1.3.0 needed + otelsdk)
 # [x] Written gap analysis table completed
+# [x] Option C configure: PASSED (protobuf_21 + cmake + pkg-config)
+# [ ] Option C cmake build: in progress
 # [ ] Decision on whether to add otelsdk to default.R permanently
-#     → YES, once Nix derivation is available (single blocker for 4 new signals)
+#     → YES, once Option C cmake build confirms success (issue #59)
