@@ -78,7 +78,7 @@ let
       rev = "0cf2ad93631944d28142e941ae9ac5cab107f478";
       sha256 = "sha256-xYKmrniWGBx9TaoMOxqGpgd2FEG4fU8DP279APmk2sU=";
     };
-    nativeBuildInputs = [ pkgs.cmake pkgs.protobuf_21 pkgs.pkg-config ];
+    nativeBuildInputs = [ pkgs.which pkgs.cmake pkgs.protobuf_21 pkgs.pkg-config ];
     propagatedBuildInputs = builtins.attrValues {
       inherit (pkgs.rPackages) otel;
     };

@@ -28,7 +28,7 @@ awk -v marker="$MARKER" '
     print "      rev = \"0cf2ad93631944d28142e941ae9ac5cab107f478\";"
     print "      sha256 = \"sha256-xYKmrniWGBx9TaoMOxqGpgd2FEG4fU8DP279APmk2sU=\";"
     print "    };"
-    print "    nativeBuildInputs = [ pkgs.cmake pkgs.protobuf_21 pkgs.pkg-config ];"
+    print "    nativeBuildInputs = [ pkgs.which pkgs.cmake pkgs.protobuf_21 pkgs.pkg-config ];"
     print "    propagatedBuildInputs = builtins.attrValues {"
     print "      inherit (pkgs.rPackages) otel;"
     print "    };"
