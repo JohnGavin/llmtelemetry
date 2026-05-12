@@ -5,8 +5,10 @@ rix(
     "ggplot2", "jsonlite", "blastula", "here",
     "scales", "tibble", "lubridate",
     "checkmate", "cli", "DBI", "purrr",
-    "pkgload", "devtools", "testthat"
+    "pkgload", "devtools", "testthat",
+    "otel"
   ),
+  system_pkgs = c("cmake", "protobuf_21", "pkg-config"),
   ide = "none",
   date = "2026-01-05",
   project_path = "/Users/johngavin/docs_gh/llmtelemetry",
