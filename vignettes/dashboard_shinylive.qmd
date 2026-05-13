@@ -640,6 +640,9 @@ ui <- page_navbar(
   ),
   sidebar = sidebar(
     width = 220,
+    selectInput("granularity", "Time granularity:",
+      choices = c("Daily" = "daily", "Weekly" = "weekly", "Monthly" = "monthly"),
+      selected = "weekly"),
     sliderInput("horizon", "Time Horizon (days)",
       min = 1, max = 30, value = 30, step = 1),
     conditionalPanel(
@@ -718,6 +721,10 @@ ui <- page_navbar(
         card_footer(class = "text-muted small", "Weekly cost grouped by Claude vs Gemini")),
       card(card_header("Weekly Cost by Model"), uiOutput("cost_by_model"),
         card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
+    ),
+    layout_columns(col_widths = c(12),
+      card(card_header("Cost per Commit Trend"), uiOutput("cost_per_commit_chart"),
+        card_footer(class = "text-muted small", "Estimated cost per commit (USD) over time by project. Lower = more efficient sessions per code change. Granularity toggle applies."))
     )
   ),
 
@@ -787,6 +794,10 @@ ui <- page_navbar(
         card_footer(class = "text-muted small", "Total session minutes per project")),
       card(card_header("Cost Share by Date"), uiOutput("proj_share_heatmap"),
         card_footer(class = "text-muted small", "Heatmap: project cost share by date"))
+    ),
+    layout_columns(col_widths = c(12),
+      card(card_header("Weekly Commit Heatmap"), uiOutput("proj_weekly_heatmap"),
+        card_footer(class = "text-muted small", "Weekly commit counts across tracked repos. X = ISO week, Y = project, colour = commit count. Default view: last 13 weeks."))
     )
   ),
 
@@ -872,6 +883,14 @@ ui <- page_navbar(
     layout_columns(col_widths = c(12),
       card(card_header("GitHub Issue Activity (Last 30 Days)"), uiOutput("gh_events_chart"),
         card_footer(class = "text-muted small", "Issue open/close/label events across tracked repos"))
+    ),
+    layout_columns(col_widths = c(12),
+      card(card_header("File Churn Hotspots (Phase 2)"), DTOutput("file_churn_table"),
+        card_footer(class = "text-muted small", "Top files by lines changed over the last year, by project. Hotspots = high-risk surface area."))
+    ),
+    layout_columns(col_widths = c(12),
+      card(card_header("Change Coupling Graph (Phase 2)"), uiOutput("change_coupling_graph"),
+        card_footer(class = "text-muted small", "Files that frequently change together. Hover an edge to see co-change count. Highly-coupled clusters suggest hidden module boundaries. Filter by Repo in sidebar."))
     )
   ),
 
@@ -1590,6 +1609,143 @@ server <- function(input, output, session) {
         emphasis = list(itemStyle = list(shadowBlur = 10, shadowColor = "rgba(0,0,0,0.5)"))
       ))
     ), h = "300px", aria_label = "Heatmap: project cost share percentage by date")
+  })
+
+  # --- Phase 2: Weekly Commit Heatmap (By Project tab) -----------------------
+  output$proj_weekly_heatmap <- renderUI({
+    if (!has_rows(weekly_commits)) return(ec_empty("No weekly commit data available"))
+    d <- weekly_commits
+    # Filter to selected repos if sidebar has a selection
+    if (!is.null(input$commit_project) && input$commit_project != "all" &&
+        "project" %in% names(d)) {
+      d <- d[d$project == input$commit_project, ]
+    }
+    if (nrow(d) == 0) return(ec_empty("No data for selected repo"))
+    ec_heatmap(d, x = "iso_week", y = "project", value = "n_commits",
+               h = "350px",
+               aria_label = "Weekly commit heatmap: commit counts by week and project")
+  })
+
+  # --- Phase 2: Cost-per-Commit Trend (Cost Trends tab) ----------------------
+  output$cost_per_commit_chart <- renderUI({
+    # TODO(#27 Phase 4): wire granularity to existing time-series charts
+    if (!has_rows(cost_per_commit_data)) return(ec_empty("No cost-per-commit data available"))
+    d <- cost_per_commit_data
+    gran <- input$granularity
+    if (is.null(gran)) gran <- "weekly"
+
+    if (gran == "monthly") {
+      # Aggregate: sum cost and commits per project-month, then recompute ratio
+      d$month <- format(d$date, "%Y-%m")
+      agg_c <- aggregate(daily_cost_usd ~ project + month, data = d, FUN = sum, na.rm = TRUE)
+      agg_n <- aggregate(n_commits ~ project + month, data = d, FUN = sum, na.rm = TRUE)
+      d2 <- merge(agg_c, agg_n, by = c("project", "month"))
+      d2$cost_per_commit_usd <- ifelse(d2$n_commits > 0,
+        d2$daily_cost_usd / d2$n_commits, NA_real_)
+      d2 <- d2[!is.na(d2$cost_per_commit_usd), ]
+      x_col <- "month"
+      d2 <- d2[order(d2[[x_col]]), ]
+      xs <- sort(unique(d2[[x_col]]))
+      projects <- sort(unique(d2$project))
+      series <- lapply(projects, function(p) {
+        pd <- d2[d2$project == p, ]
+        vals <- rep(NA_real_, length(xs))
+        vals[match(pd[[x_col]], xs)] <- round(pd$cost_per_commit_usd, 2)
+        list(name = p, type = "line", data = I(vals),
+             connectNulls = TRUE)
+      })
+      ec_line(xs, series, h = "350px", y_name = "Cost per Commit ($)",
+              aria_label = "Cost per commit monthly trend by project",
+              default_window_days = 0)  # monthly labels, skip date calc
+    } else {
+      # daily or weekly: use data as-is (it is already daily)
+      d <- d[order(d$date), ]
+      d <- d[!is.na(d$cost_per_commit_usd) & is.finite(d$cost_per_commit_usd), ]
+      xs <- sort(unique(d$date))
+      projects <- sort(unique(d$project))
+      series <- lapply(projects, function(p) {
+        pd <- d[d$project == p, ]
+        vals <- rep(NA_real_, length(xs))
+        vals[match(pd$date, xs)] <- round(pd$cost_per_commit_usd, 2)
+        list(name = p, type = "line", data = I(vals),
+             connectNulls = FALSE)
+      })
+      ec_line(xs, series, h = "350px", y_name = "Cost per Commit ($)",
+              aria_label = "Cost per commit daily trend by project")
+    }
+  })
+
+  # --- Phase 2: File Churn DataTable (Git tab) --------------------------------
+  output$file_churn_table <- renderDT({
+    if (!has_rows(file_churn_data)) return(datatable(data.frame(Message = "No file churn data")))
+    d <- file_churn_data
+    # Filter to selected repo if applicable
+    if (!is.null(input$commit_project) && input$commit_project != "all" &&
+        "project" %in% names(d)) {
+      d <- d[d$project == input$commit_project, ]
+    }
+    if (nrow(d) == 0) return(datatable(data.frame(Message = "No data for selected repo")))
+    # Select display columns
+    cols <- intersect(c("project", "file", "n_commits", "total_lines_changed", "last_changed_date"),
+                      names(d))
+    out <- d[order(d$total_lines_changed, decreasing = TRUE), cols, drop = FALSE]
+    # Shorten file path for display
+    out$file <- basename(out$file)
+    datatable(out,
+      caption = "File churn by lines changed (top files per project)",
+      options = list(
+        pageLength = 15, dom = "ftip", scrollX = TRUE,
+        order = list(list(which(cols == "total_lines_changed") - 1L, "desc"))
+      ),
+      rownames = FALSE
+    )
+  })
+
+  # --- Phase 2: Change Coupling Force Graph (Git tab) -------------------------
+  output$change_coupling_graph <- renderUI({
+    if (!has_rows(change_coupling_data)) return(ec_empty("No coupling data available"))
+    d <- change_coupling_data
+    # Filter to selected repo if applicable
+    if (!is.null(input$commit_project) && input$commit_project != "all" &&
+        "project" %in% names(d)) {
+      d <- d[d$project == input$commit_project, ]
+    }
+    if (nrow(d) == 0) return(ec_empty("No coupling data for selected repo"))
+    # Cap to top 60 pairs to keep graph readable
+    d <- head(d[order(d$weight_normalised, decreasing = TRUE), ], 60)
+
+    # Build unique nodes
+    all_files <- unique(c(d$file_a, d$file_b))
+    proj_lookup <- character(length(all_files))
+    names(proj_lookup) <- all_files
+    for (f in all_files) {
+      rows_a <- d[d$file_a == f, "project"]
+      rows_b <- d[d$file_b == f, "project"]
+      proj_lookup[f] <- c(rows_a, rows_b)[1]
+    }
+    cat_map <- c("llm" = 0L, "llmtelemetry" = 1L)
+    nodes <- lapply(all_files, function(f) {
+      cat_idx <- if (!is.na(proj_lookup[f]) && proj_lookup[f] %in% names(cat_map)) {
+        cat_map[[proj_lookup[f]]]
+      } else {
+        2L
+      }
+      list(name = basename(f), value = 1,
+           symbolSize = 10,
+           category = cat_idx)
+    })
+
+    edges <- lapply(seq_len(nrow(d)), function(i) {
+      w <- d$weight_normalised[i]
+      list(source = basename(d$file_a[i]),
+           target = basename(d$file_b[i]),
+           n_cochanges = d$n_cochanges[i],
+           lineStyle = list(width = max(1, round(w * 5)),
+                            opacity = max(0.3, w)))
+    })
+
+    ec_force_graph(nodes, edges, h = "450px",
+      aria_label = "Force-directed graph: files that change together. Node = file, edge = co-change count.")
   })
 
   # --- Time Blocks ------------------------------------------------------------
