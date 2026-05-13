@@ -318,8 +318,8 @@ parse_git_log <- function(repo_path, project_name) {
     } else if (nzchar(trimws(line)) && !is.null(cur)) {
       fields <- strsplit(line, "\t")[[1]]
       if (length(fields) >= 3) {
-        a <- suppressWarnings(as.integer(fields[1]))
-        d <- suppressWarnings(as.integer(fields[2]))
+        a <- as.integer(fields[1])
+        d <- as.integer(fields[2])
         if (!is.na(a)) cur$lines_added   <- cur$lines_added   + a
         if (!is.na(d)) cur$lines_deleted <- cur$lines_deleted + d
         cur$files_changed <- cur$files_changed + 1L
@@ -488,8 +488,8 @@ parse_git_numstat_files <- function(repo_path, project_name, since = "1 year ago
     } else if (nzchar(trimws(line))) {
       fields <- strsplit(line, "\t")[[1]]
       if (length(fields) >= 3) {
-        added   <- suppressWarnings(as.integer(fields[1]))
-        deleted <- suppressWarnings(as.integer(fields[2]))
+        added   <- as.integer(fields[1])
+        deleted <- as.integer(fields[2])
         fname   <- fields[3]
         if (!is.na(added) && !is.na(deleted) && nzchar(fname)) {
           key <- fname
@@ -592,7 +592,7 @@ parse_git_coupling <- function(repo_path, project_name, since = "1 year ago") {
   for (files in commits_files) {
     files <- unique(files)
     if (length(files) < 2L) next
-    # Use method = "radix" for byte-order sort matching JSON string comparison
+    # Use byte-order (radix) sort — consistent with C-locale < used in tests
     files <- sort(files, method = "radix")
     # Generate all pairs — limit files per commit to 20 to avoid O(n^2) blowup
     if (length(files) > 20L) files <- files[seq_len(20L)]
@@ -609,8 +609,8 @@ parse_git_coupling <- function(repo_path, project_name, since = "1 year ago") {
   pairs_df <- bind_rows(lapply(names(pair_counts), function(k) {
     parts <- strsplit(k, "|||", fixed = TRUE)[[1]]
     fa <- parts[1]; fb <- parts[2]
-    # Enforce file_a < file_b invariant using bytewise ordering
-    if (xtfrm(fa) > xtfrm(fb)) { tmp <- fa; fa <- fb; fb <- tmp }
+    # Enforce file_a < file_b using byte-order comparison (consistent with C-locale tests)
+    if (sort(c(fa, fb), method = "radix")[1L] != fa) { tmp <- fa; fa <- fb; fb <- tmp }
     tibble(
       project     = project_name,
       file_a      = fa,
