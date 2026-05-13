@@ -8,7 +8,8 @@ library(dplyr, warn.conflicts = FALSE)
 library(DBI)
 library(duckdb)
 
-pkg_root <- here::here()
+# Allow override via env var so worktree runs don't resolve to main checkout
+pkg_root <- if (nzchar(Sys.getenv("PKG_ROOT"))) Sys.getenv("PKG_ROOT") else here::here()
 extdata  <- file.path(pkg_root, "inst", "extdata")
 out_dir  <- file.path(pkg_root, "vignettes", "data")
 if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
@@ -345,6 +346,309 @@ if (length(proj_commits_list) > 0) {
   cat("  -> no repos found, writing empty array\n")
   write_json(list(), file.path(out_dir, "git_commits_by_project.json"))
   write_json(list(), file.path(extdata, "git_commits_by_project.json"))
+}
+
+# --- 6d. Weekly commits by project -------------------------------------------
+cat("Exporting weekly commits by project...\n")
+# Re-aggregate from proj_commits_df (already in memory from 6c above)
+# proj_commits_df has: project, date, lines_changed columns
+# CI fallback: read from committed inst/extdata/ if not available in memory
+
+if (exists("proj_commits_df") && nrow(proj_commits_df) > 0) {
+  weekly_commits <- proj_commits_df |>
+    mutate(
+      date_parsed   = as.Date(date),
+      iso_week      = format(date_parsed, "%G-%V"),
+      week_start_date = as.character(date_parsed - as.integer(format(date_parsed, "%u")) + 1L)
+    ) |>
+    group_by(project, iso_week, week_start_date) |>
+    summarise(
+      n_commits           = n(),
+      total_lines_changed = sum(lines_changed, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    arrange(project, iso_week)
+  write_json(weekly_commits, file.path(out_dir, "weekly_commits_by_project.json"), auto_unbox = TRUE)
+  write_json(weekly_commits, file.path(extdata, "weekly_commits_by_project.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d project-week rows across %d projects\n",
+              nrow(weekly_commits), length(unique(weekly_commits$project))))
+} else {
+  # CI fallback: read committed JSON from inst/extdata/ and re-export
+  fbsrc <- file.path(extdata, "git_commits_by_project.json")
+  if (file.exists(fbsrc)) {
+    fb_df <- fromJSON(fbsrc, simplifyDataFrame = TRUE)
+    if (is.data.frame(fb_df) && nrow(fb_df) > 0) {
+      weekly_commits <- fb_df |>
+        mutate(
+          date_parsed     = as.Date(date),
+          iso_week        = format(date_parsed, "%G-%V"),
+          week_start_date = as.character(date_parsed - as.integer(format(date_parsed, "%u")) + 1L)
+        ) |>
+        group_by(project, iso_week, week_start_date) |>
+        summarise(
+          n_commits           = n(),
+          total_lines_changed = sum(lines_changed, na.rm = TRUE),
+          .groups = "drop"
+        ) |>
+        arrange(project, iso_week)
+      write_json(weekly_commits, file.path(out_dir, "weekly_commits_by_project.json"), auto_unbox = TRUE)
+      write_json(weekly_commits, file.path(extdata, "weekly_commits_by_project.json"), auto_unbox = TRUE)
+      cat(sprintf("  -> %d project-week rows (CI fallback)\n", nrow(weekly_commits)))
+    } else {
+      write_json(list(), file.path(out_dir, "weekly_commits_by_project.json"))
+      write_json(list(), file.path(extdata, "weekly_commits_by_project.json"))
+      cat("  -> no commit data found, writing empty\n")
+    }
+  } else {
+    write_json(list(), file.path(out_dir, "weekly_commits_by_project.json"))
+    write_json(list(), file.path(extdata, "weekly_commits_by_project.json"))
+    cat("  -> no commit source found, writing empty\n")
+  }
+}
+
+# --- 6e. Cost per commit by project-day --------------------------------------
+cat("Exporting cost per commit...\n")
+# Source: cost_by_project_estimated.json (daily project cost)
+#         git_commits_by_project.json (daily project commits)
+# Join on (project, date). Omit days with zero commits (no divide-by-zero).
+
+cost_src <- file.path(extdata, "cost_by_project_estimated.json")
+commits_src <- file.path(extdata, "git_commits_by_project.json")
+
+if (file.exists(cost_src) && file.exists(commits_src)) {
+  cost_df <- fromJSON(cost_src, simplifyDataFrame = TRUE) |>
+    as_tibble() |>
+    select(project, date, est_cost)
+
+  # Daily commit counts per project from raw commits
+  commits_raw_df <- fromJSON(commits_src, simplifyDataFrame = TRUE) |>
+    as_tibble()
+
+  if (nrow(cost_df) > 0 && nrow(commits_raw_df) > 0) {
+    daily_n_commits <- commits_raw_df |>
+      group_by(project, date) |>
+      summarise(n_commits = n(), .groups = "drop")
+
+    cost_per_commit <- cost_df |>
+      inner_join(daily_n_commits, by = c("project", "date")) |>
+      filter(n_commits > 0, !is.na(est_cost)) |>
+      mutate(
+        daily_cost_usd      = round(est_cost, 4),
+        cost_per_commit_usd = round(est_cost / n_commits, 4)
+      ) |>
+      select(project, date, daily_cost_usd, n_commits, cost_per_commit_usd) |>
+      arrange(project, date)
+
+    write_json(cost_per_commit, file.path(out_dir, "cost_per_commit.json"), auto_unbox = TRUE)
+    write_json(cost_per_commit, file.path(extdata, "cost_per_commit.json"), auto_unbox = TRUE)
+    cat(sprintf("  -> %d project-day rows\n", nrow(cost_per_commit)))
+  } else {
+    write_json(list(), file.path(out_dir, "cost_per_commit.json"))
+    write_json(list(), file.path(extdata, "cost_per_commit.json"))
+    cat("  -> insufficient data (empty cost or commits), writing empty\n")
+  }
+} else {
+  write_json(list(), file.path(out_dir, "cost_per_commit.json"))
+  write_json(list(), file.path(extdata, "cost_per_commit.json"))
+  cat("  -> source files missing, writing empty\n")
+}
+
+# --- 6f. File churn per project (top 50 files by lines changed, 1 year) -----
+cat("Exporting file churn per project...\n")
+# For each tracked repo: git log --numstat --since='1 year ago', aggregate per file.
+
+parse_git_numstat_files <- function(repo_path, project_name, since = "1 year ago") {
+  if (!dir.exists(file.path(repo_path, ".git"))) {
+    warning(sprintf("Skipping %s: .git dir not found at %s", project_name, repo_path))
+    return(NULL)
+  }
+  raw <- tryCatch(
+    system(
+      sprintf(
+        "git -C '%s' log --numstat --since='%s' '--pretty=format:%%H|%%ad' --date=short",
+        repo_path, since
+      ),
+      intern = TRUE
+    ),
+    error = function(e) {
+      warning(sprintf("git log failed for %s: %s", project_name, conditionMessage(e)))
+      character(0)
+    }
+  )
+  if (length(raw) == 0) return(NULL)
+
+  # Parse: commit header lines look like "abc123|2026-01-01", numstat lines are "N\tM\tfile"
+  file_stats <- list()
+  current_date <- NA_character_
+
+  for (line in raw) {
+    if (grepl("^[0-9a-f]{40}\\|", line)) {
+      parts <- strsplit(line, "\\|")[[1]]
+      current_date <- if (length(parts) >= 2) parts[2] else NA_character_
+    } else if (nzchar(trimws(line))) {
+      fields <- strsplit(line, "\t")[[1]]
+      if (length(fields) >= 3) {
+        added   <- suppressWarnings(as.integer(fields[1]))
+        deleted <- suppressWarnings(as.integer(fields[2]))
+        fname   <- fields[3]
+        if (!is.na(added) && !is.na(deleted) && nzchar(fname)) {
+          key <- fname
+          if (is.null(file_stats[[key]])) {
+            file_stats[[key]] <- list(
+              n_commits = 0L, total_lines_added = 0L,
+              total_lines_deleted = 0L, last_changed_date = current_date
+            )
+          }
+          file_stats[[key]]$n_commits          <- file_stats[[key]]$n_commits + 1L
+          file_stats[[key]]$total_lines_added  <- file_stats[[key]]$total_lines_added + added
+          file_stats[[key]]$total_lines_deleted <- file_stats[[key]]$total_lines_deleted + deleted
+          if (!is.na(current_date) &&
+              (is.na(file_stats[[key]]$last_changed_date) ||
+               current_date > file_stats[[key]]$last_changed_date)) {
+            file_stats[[key]]$last_changed_date <- current_date
+          }
+        }
+      }
+    }
+  }
+
+  if (length(file_stats) == 0) return(NULL)
+
+  result <- bind_rows(lapply(names(file_stats), function(f) {
+    s <- file_stats[[f]]
+    tibble(
+      project             = project_name,
+      file                = f,
+      n_commits           = s$n_commits,
+      total_lines_added   = s$total_lines_added,
+      total_lines_deleted = s$total_lines_deleted,
+      total_lines_changed = s$total_lines_added + s$total_lines_deleted,
+      last_changed_date   = s$last_changed_date
+    )
+  }))
+
+  # Top 50 files by total_lines_changed
+  result |> arrange(desc(total_lines_changed)) |> slice_head(n = 50L)
+}
+
+churn_list <- lapply(names(tracked_repos), function(proj)
+  parse_git_numstat_files(tracked_repos[[proj]], proj))
+churn_list <- Filter(Negate(is.null), churn_list)
+
+if (length(churn_list) > 0) {
+  file_churn_df <- bind_rows(churn_list) |> arrange(project, desc(total_lines_changed))
+  write_json(file_churn_df, file.path(out_dir, "file_churn.json"), auto_unbox = TRUE)
+  write_json(file_churn_df, file.path(extdata, "file_churn.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d files across %d projects\n",
+              nrow(file_churn_df), length(unique(file_churn_df$project))))
+} else {
+  write_json(list(), file.path(out_dir, "file_churn.json"))
+  write_json(list(), file.path(extdata, "file_churn.json"))
+  cat("  -> no repos available, writing empty\n")
+}
+
+# --- 6g. Change coupling (co-changed file pairs per project, 1 year) ---------
+cat("Exporting change coupling...\n")
+# For each tracked repo: collect commits where >= 2 files changed,
+# generate all file pairs (file_a < file_b), count co-changes.
+# Keep top 100 pairs per project with n_cochanges >= 3.
+
+parse_git_coupling <- function(repo_path, project_name, since = "1 year ago") {
+  if (!dir.exists(file.path(repo_path, ".git"))) {
+    warning(sprintf("Skipping %s: .git dir not found at %s", project_name, repo_path))
+    return(NULL)
+  }
+  raw <- tryCatch(
+    system(
+      sprintf(
+        "git -C '%s' log --name-only --since='%s' '--pretty=format:%%H' --diff-filter=AMR",
+        repo_path, since
+      ),
+      intern = TRUE
+    ),
+    error = function(e) {
+      warning(sprintf("git log failed for %s: %s", project_name, conditionMessage(e)))
+      character(0)
+    }
+  )
+  if (length(raw) == 0) return(NULL)
+
+  # Group lines by commit hash: a hash line starts a new commit, file names follow
+  commits_files <- list()
+  current_hash  <- NULL
+
+  for (line in raw) {
+    if (grepl("^[0-9a-f]{40}$", line)) {
+      current_hash <- line
+      commits_files[[current_hash]] <- character(0)
+    } else if (!is.null(current_hash) && nzchar(trimws(line))) {
+      commits_files[[current_hash]] <- c(commits_files[[current_hash]], trimws(line))
+    }
+  }
+
+  # Build pair counts
+  pair_counts <- list()
+
+  for (files in commits_files) {
+    files <- unique(files)
+    if (length(files) < 2L) next
+    # Use method = "radix" for byte-order sort matching JSON string comparison
+    files <- sort(files, method = "radix")
+    # Generate all pairs — limit files per commit to 20 to avoid O(n^2) blowup
+    if (length(files) > 20L) files <- files[seq_len(20L)]
+    for (i in seq_len(length(files) - 1L)) {
+      for (j in seq(i + 1L, length(files))) {
+        pair_key <- paste(files[i], files[j], sep = "|||")
+        pair_counts[[pair_key]] <- (pair_counts[[pair_key]] %||% 0L) + 1L
+      }
+    }
+  }
+
+  if (length(pair_counts) == 0L) return(NULL)
+
+  pairs_df <- bind_rows(lapply(names(pair_counts), function(k) {
+    parts <- strsplit(k, "|||", fixed = TRUE)[[1]]
+    fa <- parts[1]; fb <- parts[2]
+    # Enforce file_a < file_b invariant using bytewise ordering
+    if (xtfrm(fa) > xtfrm(fb)) { tmp <- fa; fa <- fb; fb <- tmp }
+    tibble(
+      project     = project_name,
+      file_a      = fa,
+      file_b      = fb,
+      n_cochanges = pair_counts[[k]]
+    )
+  })) |>
+    # Re-aggregate in case sort order changed causes duplicate pairs
+    group_by(project, file_a, file_b) |>
+    summarise(n_cochanges = sum(n_cochanges), .groups = "drop") |>
+    filter(n_cochanges >= 3L) |>
+    arrange(desc(n_cochanges)) |>
+    slice_head(n = 100L) |>
+    mutate(
+      weight_normalised = if (max(n_cochanges) > 0)
+        round(n_cochanges / max(n_cochanges), 4)
+      else 0
+    )
+
+  if (nrow(pairs_df) == 0L) return(NULL)
+  pairs_df
+}
+
+coupling_list <- lapply(names(tracked_repos), function(proj)
+  parse_git_coupling(tracked_repos[[proj]], proj))
+coupling_list <- Filter(Negate(is.null), coupling_list)
+
+if (length(coupling_list) > 0) {
+  coupling_df <- bind_rows(coupling_list) |>
+    arrange(project, desc(n_cochanges))
+  write_json(coupling_df, file.path(out_dir, "change_coupling.json"), auto_unbox = TRUE)
+  write_json(coupling_df, file.path(extdata, "change_coupling.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d file pairs across %d projects\n",
+              nrow(coupling_df), length(unique(coupling_df$project))))
+} else {
+  write_json(list(), file.path(out_dir, "change_coupling.json"))
+  write_json(list(), file.path(extdata, "change_coupling.json"))
+  cat("  -> no repos available, writing empty\n")
 }
 
 # --- 6b. git-recon metrics (bus factor, velocity, timing, crisis, churn, bugs)
@@ -925,6 +1229,60 @@ api_index <- list(
       description = "Calibration by confidence bucket (predicted vs actual accuracy)",
       type        = "array",
       source      = "Computed from predictions.json"
+    ),
+    list(
+      path        = "/weekly_commits_by_project.json",
+      description = "Weekly commit counts and lines changed per project (last 1 year)",
+      type        = "array",
+      source      = "Re-aggregated from git_commits_by_project.json",
+      schema      = list(
+        project             = "string",
+        iso_week            = "string (YYYY-WW)",
+        week_start_date     = "string",
+        n_commits           = "integer",
+        total_lines_changed = "integer"
+      )
+    ),
+    list(
+      path        = "/cost_per_commit.json",
+      description = "Daily estimated cost and commit count per project with cost-per-commit",
+      type        = "array",
+      source      = "Join of cost_by_project_estimated.json x git_commits_by_project.json",
+      schema      = list(
+        project             = "string",
+        date                = "string",
+        daily_cost_usd      = "number",
+        n_commits           = "integer",
+        cost_per_commit_usd = "number"
+      )
+    ),
+    list(
+      path        = "/file_churn.json",
+      description = "Top 50 files per project by lines changed (last 1 year)",
+      type        = "array",
+      source      = "git log --numstat --since='1 year ago' per tracked repo",
+      schema      = list(
+        project             = "string",
+        file                = "string",
+        n_commits           = "integer",
+        total_lines_added   = "integer",
+        total_lines_deleted = "integer",
+        total_lines_changed = "integer",
+        last_changed_date   = "string"
+      )
+    ),
+    list(
+      path        = "/change_coupling.json",
+      description = "Co-changed file pairs per project (top 100 pairs, n_cochanges >= 3)",
+      type        = "array",
+      source      = "git log --name-only --diff-filter=AMR per tracked repo",
+      schema      = list(
+        project           = "string",
+        file_a            = "string",
+        file_b            = "string",
+        n_cochanges       = "integer",
+        weight_normalised = "number"
+      )
     )
   )
 )
