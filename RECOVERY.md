@@ -18,10 +18,12 @@ Restore plan for non-reproducible state. Update this file whenever backup infras
 
 | Asset class | Backup location | Failure domain | Retention |
 |---|---|---|---|
-| `inst/extdata/` (DBs + JSON) | `<TODO: configure>` | <TODO: confirm not same volume / cloud / machine> | <TODO> |
-| `vignettes/data/` (dashboard JSON) | `<TODO: configure>` | <TODO> | <TODO> |
+| `inst/extdata/` (DBs + JSON) | `~/.llmtelemetry-data-backup/extdata/` (local) + `https://github.com/JohnGavin/llmtelemetry-data` (remote) | Separate GitHub repo (same account — see note) | Unlimited (git history) |
+| `vignettes/data/` (dashboard JSON) | `~/.llmtelemetry-data-backup/vignettes_data/` (local) + same remote | Same as above | Unlimited |
 
-**Failure domain check (mandatory):** confirm the backup target is NOT on the same volume, same cloud account, or same physical machine as the primary. A snapshot in the same blast radius is not a backup.
+**Failure domain note:** the backup repo is in the same GitHub account as the primary. This protects against local disk failure but NOT against GitHub account loss or compromise. For higher assurance, clone `JohnGavin/llmtelemetry-data` to a second machine or rclone to Backblaze B2.
+
+**Backup script:** `scripts/backup_extdata.sh` — idempotent, exits 0 with no-op when nothing changed. Run after any significant data update or add to a daily launchd job.
 
 ## RPO / RTO
 
@@ -35,12 +37,19 @@ Restore plan for non-reproducible state. Update this file whenever backup infras
 ## Restore steps
 
 ```bash
-# <TODO: populate once backup destination is configured>
-# 1. Confirm backup is intact and recent (date-stamp matches expected)
-# 2. Restore inst/extdata/ from backup, preserving file mtimes
-# 3. Restore vignettes/data/ from backup
-# 4. Run verification (next section)
-# 5. Re-run targets pipeline if rebuild from primaries is desired
+# 1. Clone the data backup repo (if local copy missing):
+git clone https://github.com/JohnGavin/llmtelemetry-data.git ~/.llmtelemetry-data-backup
+
+# 2. Confirm backup is recent:
+git -C ~/.llmtelemetry-data-backup log --oneline -5
+
+# 3. Restore inst/extdata/:
+cp -R ~/.llmtelemetry-data-backup/extdata/. /Users/johngavin/docs_gh/llmtelemetry/inst/extdata/
+
+# 4. Restore vignettes/data/:
+cp -R ~/.llmtelemetry-data-backup/vignettes_data/. /Users/johngavin/docs_gh/llmtelemetry/vignettes/data/
+
+# 5. Verify (see Verification section below).
 ```
 
 ## Verification
