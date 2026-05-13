@@ -670,23 +670,30 @@ ui <- page_navbar(
   ),
 
   nav_panel("Overview", value = "Overview",
-    layout_columns(
-      fill = FALSE, col_widths = c(3, 3, 3, 3),
-      tooltip(
-        value_box("Total Cost", textOutput("vb_cost"), theme = "primary"),
-        "Sum of API charges for input, output, and cache tokens (Claude + Gemini)"
-      ),
-      tooltip(
-        value_box("Total Tokens", textOutput("vb_tokens"), theme = "info"),
-        "Sum of input + output + cache tokens across all providers"
-      ),
-      tooltip(
-        value_box("Active Days", textOutput("vb_days"), theme = "success"),
-        "Days with at least one API call in the selected time horizon"
-      ),
-      tooltip(
-        value_box("Sessions", textOutput("vb_sessions"), theme = "warning"),
-        "Claude Code sessions from unified.duckdb telemetry"
+    layout_columns(col_widths = c(4),
+      card(
+        card_header("Overview Summary"),
+        tags$table(class = "table table-sm table-dark mb-0",
+          tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
+          tags$tbody(
+            tooltip(
+              tags$tr(tags$td("Total Cost"), tags$td(textOutput("vb_cost", inline = TRUE))),
+              "Sum of API charges for input, output, and cache tokens (Claude + Gemini)"
+            ),
+            tooltip(
+              tags$tr(tags$td("Total Tokens"), tags$td(textOutput("vb_tokens", inline = TRUE))),
+              "Sum of input + output + cache tokens across all providers"
+            ),
+            tooltip(
+              tags$tr(tags$td("Active Days"), tags$td(textOutput("vb_days", inline = TRUE))),
+              "Days with at least one API call in the selected time horizon"
+            ),
+            tooltip(
+              tags$tr(tags$td("Sessions"), tags$td(textOutput("vb_sessions", inline = TRUE))),
+              "Claude Code sessions from unified.duckdb telemetry"
+            )
+          )
+        )
       )
     ),
     layout_columns(col_widths = c(12),
@@ -728,19 +735,26 @@ ui <- page_navbar(
   ),
 
   nav_panel("Sessions", value = "Sessions",
-    layout_columns(
-      fill = FALSE, col_widths = c(4, 4, 4),
-      tooltip(
-        value_box("API Conversations", textOutput("vb_sess_count"), theme = "primary"),
-        "Count of Claude Code conversations (each restart = new session)"
-      ),
-      tooltip(
-        value_box("Total Duration", textOutput("vb_sess_duration"), theme = "info"),
-        "Sum of all conversation durations (minutes)"
-      ),
-      tooltip(
-        value_box("Avg Duration", textOutput("vb_sess_avg"), theme = "success"),
-        "Average conversation length (minutes)"
+    layout_columns(col_widths = c(4),
+      card(
+        card_header("Sessions Summary"),
+        tags$table(class = "table table-sm table-dark mb-0",
+          tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
+          tags$tbody(
+            tooltip(
+              tags$tr(tags$td("API Conversations"), tags$td(textOutput("vb_sess_count", inline = TRUE))),
+              "Count of Claude Code conversations (each restart = new session)"
+            ),
+            tooltip(
+              tags$tr(tags$td("Total Duration"), tags$td(textOutput("vb_sess_duration", inline = TRUE))),
+              "Sum of all conversation durations (minutes)"
+            ),
+            tooltip(
+              tags$tr(tags$td("Avg Duration"), tags$td(textOutput("vb_sess_avg", inline = TRUE))),
+              "Average conversation length (minutes)"
+            )
+          )
+        )
       )
     ),
     layout_columns(col_widths = c(6, 6),
@@ -790,19 +804,26 @@ ui <- page_navbar(
   ),
 
   nav_panel("Git", value = "Git",
-    layout_columns(
-      fill = FALSE, col_widths = c(4, 4, 4),
-      tooltip(
-        value_box("Total Commits", textOutput("vb_commits"), theme = "primary"),
-        "Git commits for selected repo (or all tracked repos)"
-      ),
-      tooltip(
-        value_box("Median Lines", textOutput("vb_median_lines"), theme = "info"),
-        "Median lines changed per commit (additions + deletions)"
-      ),
-      tooltip(
-        value_box("Mean Lines", textOutput("vb_mean_lines"), theme = "success"),
-        "Mean lines changed per commit (additions + deletions)"
+    layout_columns(col_widths = c(4),
+      card(
+        card_header("Git Summary"),
+        tags$table(class = "table table-sm table-dark mb-0",
+          tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
+          tags$tbody(
+            tooltip(
+              tags$tr(tags$td("Total Commits"), tags$td(textOutput("vb_commits", inline = TRUE))),
+              "Git commits for selected repo (or all tracked repos)"
+            ),
+            tooltip(
+              tags$tr(tags$td("Median Lines"), tags$td(textOutput("vb_median_lines", inline = TRUE))),
+              "Median lines changed per commit (additions + deletions)"
+            ),
+            tooltip(
+              tags$tr(tags$td("Mean Lines"), tags$td(textOutput("vb_mean_lines", inline = TRUE))),
+              "Mean lines changed per commit (additions + deletions)"
+            )
+          )
+        )
       )
     ),
     layout_columns(col_widths = c(12),
