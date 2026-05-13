@@ -24,6 +24,24 @@ fi
 
 echo "Fetched $(wc -c < "$TMP" | tr -d ' ') bytes"
 
+# --- Check rendered HTML for known error patterns (issue #69) ---
+echo ""
+echo "=== Checking rendered HTML for error patterns ==="
+ERROR_PATTERNS=(
+  "no method"
+  "S3 class:"
+  "could not find function"
+  "object .* not found"
+)
+for pat in "${ERROR_PATTERNS[@]}"; do
+  if grep -iqE "$pat" "$TMP"; then
+    MATCH=$(grep -inE "$pat" "$TMP" | head -1)
+    echo "FAIL: rendered HTML contains error pattern '$pat'"
+    echo "  Match: $MATCH"
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
 # --- Check data JSON files directly ---
 DATA_URL="${URL%/}/data"
 declare -a CRITICAL_DATA=(
