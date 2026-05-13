@@ -84,7 +84,7 @@ ec_empty <- function(msg = "No data available", h = "300px") {
 
 ec_line <- function(dates, series, h = "300px", y_name = NULL, aria_label = "Line chart",
                     default_window_days = 90) {
-  y_axis <- list(type = "value")
+  y_axis <- list(type = "value", scale = TRUE)
   if (!is.null(y_name)) y_axis$name <- y_name
   # Compute dynamic dataZoom start to default to last ~3 months
   dz_start <- 0
@@ -106,8 +106,8 @@ ec_line <- function(dates, series, h = "300px", y_name = NULL, aria_label = "Lin
       saveAsImage = list()
     )),
     dataZoom = list(
-      list(type = "inside", start = dz_start, end = 100),
-      list(type = "slider", start = dz_start, end = 100, bottom = 5)
+      list(type = "inside", start = dz_start, end = 100, filterMode = "filter"),
+      list(type = "slider", start = dz_start, end = 100, bottom = 5, filterMode = "filter")
     ),
     grid = list(containLabel = TRUE, bottom = 80),
     xAxis = list(type = "category", data = I(as.character(dates))),
@@ -816,7 +816,7 @@ ui <- page_navbar(
 
   nav_panel("Git", value = "Git",
     layout_columns(col_widths = c(4),
-      card(
+      card(min_height = "400px",
         card_header("Git Summary"),
         tags$table(class = "table table-sm table-dark mb-0",
           tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
@@ -838,58 +838,58 @@ ui <- page_navbar(
       )
     ),
     layout_columns(col_widths = c(12),
-      card(card_header("Commits by Repo"), DTOutput("commits_by_proj"),
+      card(min_height = "400px", card_header("Commits by Repo"), DTOutput("commits_by_proj"),
         card_footer(class = "text-muted small",
           "All tracked repos — commits, lines added/deleted. Use Repo filter in sidebar to drill down."))
     ),
     layout_columns(col_widths = c(12),
-      card(card_header("Lines Changed per Commit"), uiOutput("commit_hist"),
+      card(min_height = "400px", card_header("Lines Changed per Commit"), uiOutput("commit_hist"),
         card_footer(class = "text-muted small", "Distribution of total lines changed per commit (selected repo)"))
     ),
     layout_columns(col_widths = c(6, 6),
-      card(card_header("Lines Changed Over Time"), uiOutput("commit_scatter_time"),
+      card(min_height = "400px", card_header("Lines Changed Over Time"), uiOutput("commit_scatter_time"),
         card_footer(class = "text-muted small", "Lines changed per commit over time, sized by files changed")),
-      card(card_header("Additions vs Deletions"), uiOutput("commit_scatter_add_del"),
+      card(min_height = "400px", card_header("Additions vs Deletions"), uiOutput("commit_scatter_add_del"),
         card_footer(class = "text-muted small", "Lines added vs deleted per commit"))
     ),
     layout_columns(col_widths = c(6, 6),
-      card(card_header("Bus Factor (All Time)"), uiOutput("rh_bus_all"),
+      card(min_height = "400px", card_header("Bus Factor (All Time)"), uiOutput("rh_bus_all"),
         card_footer(class = "text-muted small", "Contributor commit share — 1 person at 60%+ = risk")),
-      card(card_header("Bus Factor (6 Months)"), uiOutput("rh_bus_6mo"),
+      card(min_height = "400px", card_header("Bus Factor (6 Months)"), uiOutput("rh_bus_6mo"),
         card_footer(class = "text-muted small", "Recent contributor concentration"))
     ),
     layout_columns(col_widths = c(6, 6),
-      card(card_header("Velocity Trend"), uiOutput("rh_velocity"),
+      card(min_height = "400px", card_header("Velocity Trend"), uiOutput("rh_velocity"),
         card_footer(class = "text-muted small", "Commits per month")),
-      card(card_header("Commit Timing Heatmap"), uiOutput("rh_timing"),
+      card(min_height = "400px", card_header("Commit Timing Heatmap"), uiOutput("rh_timing"),
         card_footer(class = "text-muted small", "When commits happen — hour vs day of week"))
     ),
     layout_columns(col_widths = c(12),
-      card(card_header("File Growth (6-Month Rolling)"), uiOutput("rh_file_growth"),
+      card(min_height = "400px", card_header("File Growth (6-Month Rolling)"), uiOutput("rh_file_growth"),
         card_footer(class = "text-muted small", "6-month rolling aggregate of files added vs deleted — green = additions, red = deletions"))
     ),
     layout_columns(col_widths = c(6, 6),
-      card(card_header("Churn Hotspots"), uiOutput("rh_churn"),
+      card(min_height = "400px", card_header("Churn Hotspots"), uiOutput("rh_churn"),
         card_footer(class = "text-muted small", "Most-modified files in last 6 months")),
-      card(card_header("Bug Hotspots"), uiOutput("rh_bugs"),
+      card(min_height = "400px", card_header("Bug Hotspots"), uiOutput("rh_bugs"),
         card_footer(class = "text-muted small", "Files most often touched by fix/bug commits"))
     ),
     layout_columns(col_widths = c(6, 6),
-      card(card_header("TODO/FIXME Debt"), DTOutput("rh_todo"),
+      card(min_height = "400px", card_header("TODO/FIXME Debt"), DTOutput("rh_todo"),
         card_footer(class = "text-muted small", "Technical debt markers by file")),
-      card(card_header("Crisis Commits"), DTOutput("rh_crisis"),
+      card(min_height = "400px", card_header("Crisis Commits"), DTOutput("rh_crisis"),
         card_footer(class = "text-muted small", "Reverts, hotfixes, and emergency commits (last year)"))
     ),
     layout_columns(col_widths = c(12),
-      card(card_header("GitHub Issue Activity (Last 30 Days)"), uiOutput("gh_events_chart"),
+      card(min_height = "400px", card_header("GitHub Issue Activity (Last 30 Days)"), uiOutput("gh_events_chart"),
         card_footer(class = "text-muted small", "Issue open/close/label events across tracked repos"))
     ),
     layout_columns(col_widths = c(12),
-      card(card_header("File Churn Hotspots (Phase 2)"), DTOutput("file_churn_table"),
+      card(min_height = "400px", card_header("File Churn Hotspots (Phase 2)"), DTOutput("file_churn_table"),
         card_footer(class = "text-muted small", "Top files by lines changed over the last year, by project. Hotspots = high-risk surface area."))
     ),
     layout_columns(col_widths = c(12),
-      card(card_header("Change Coupling Graph (Phase 2)"), uiOutput("change_coupling_graph"),
+      card(min_height = "400px", card_header("Change Coupling Graph (Phase 2)"), uiOutput("change_coupling_graph"),
         card_footer(class = "text-muted small", "Files that frequently change together. Hover an edge to see co-change count. Highly-coupled clusters suggest hidden module boundaries. Filter by Repo in sidebar."))
     )
   ),
@@ -1694,7 +1694,7 @@ server <- function(input, output, session) {
     datatable(out,
       caption = "File churn by lines changed (top files per project)",
       options = list(
-        pageLength = 15, dom = "ftip", scrollX = TRUE,
+        pageLength = 15, dom = "ftip", scrollX = TRUE, scrollY = "350px",
         order = list(list(which(cols == "total_lines_changed") - 1L, "desc"))
       ),
       rownames = FALSE
@@ -1757,6 +1757,8 @@ server <- function(input, output, session) {
   output$block_table <- renderDT({
     d <- blk()
     if (nrow(d) == 0) return(datatable(data.frame()))
+    # Sort most-recent-first so display order is newest at top
+    d <- d[order(d$startTime, decreasing = TRUE), ]
     n <- nrow(d)
     eff_end <- coalesce2(d$actualEndTime, d$endTime)
     out <- data.frame(
