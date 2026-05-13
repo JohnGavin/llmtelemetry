@@ -31,6 +31,10 @@ format:
       - data/cost_by_project_estimated.json
       - data/predictions.json
       - data/calibration_buckets.json
+      - data/weekly_commits_by_project.json
+      - data/cost_per_commit.json
+      - data/file_churn.json
+      - data/change_coupling.json
 filters:
   - shinylive
 ---
@@ -78,9 +82,21 @@ ec_empty <- function(msg = "No data available", h = "300px") {
           grid = list(containLabel = TRUE)), h, aria_label = msg)
 }
 
-ec_line <- function(dates, series, h = "300px", y_name = NULL, aria_label = "Line chart") {
+ec_line <- function(dates, series, h = "300px", y_name = NULL, aria_label = "Line chart",
+                    default_window_days = 90) {
   y_axis <- list(type = "value")
   if (!is.null(y_name)) y_axis$name <- y_name
+  # Compute dynamic dataZoom start to default to last ~3 months
+  dz_start <- 0
+  if (length(dates) > 1) {
+    d_dates <- tryCatch(as.Date(as.character(dates)), error = function(e) NULL)
+    if (!is.null(d_dates) && !all(is.na(d_dates))) {
+      total_days <- as.numeric(max(d_dates, na.rm = TRUE) - min(d_dates, na.rm = TRUE))
+      if (!is.na(total_days) && total_days > default_window_days) {
+        dz_start <- round(100 * (1 - default_window_days / total_days))
+      }
+    }
+  }
   ec(list(
     tooltip = list(trigger = "axis"),
     legend = list(bottom = 30, textStyle = list(color = "#ccc")),
@@ -90,8 +106,8 @@ ec_line <- function(dates, series, h = "300px", y_name = NULL, aria_label = "Lin
       saveAsImage = list()
     )),
     dataZoom = list(
-      list(type = "inside", start = 0, end = 100),
-      list(type = "slider", start = 0, end = 100, bottom = 5)
+      list(type = "inside", start = dz_start, end = 100),
+      list(type = "slider", start = dz_start, end = 100, bottom = 5)
     ),
     grid = list(containLabel = TRUE, bottom = 80),
     xAxis = list(type = "category", data = I(as.character(dates))),
@@ -100,9 +116,21 @@ ec_line <- function(dates, series, h = "300px", y_name = NULL, aria_label = "Lin
   ), h, aria_label = aria_label)
 }
 
-ec_bar <- function(cats, series, h = "300px", y_name = NULL, aria_label = "Bar chart") {
+ec_bar <- function(cats, series, h = "300px", y_name = NULL, aria_label = "Bar chart",
+                   default_window_days = 90) {
   y_axis <- list(type = "value")
   if (!is.null(y_name)) y_axis$name <- y_name
+  # Compute dynamic dataZoom start to default to last ~3 months
+  dz_start <- 0
+  if (length(cats) > 1) {
+    d_dates <- tryCatch(as.Date(as.character(cats)), error = function(e) NULL)
+    if (!is.null(d_dates) && !all(is.na(d_dates))) {
+      total_days <- as.numeric(max(d_dates, na.rm = TRUE) - min(d_dates, na.rm = TRUE))
+      if (!is.na(total_days) && total_days > default_window_days) {
+        dz_start <- round(100 * (1 - default_window_days / total_days))
+      }
+    }
+  }
   ec(list(
     tooltip = list(trigger = "axis"),
     legend = list(bottom = 30, textStyle = list(color = "#ccc")),
@@ -112,8 +140,8 @@ ec_bar <- function(cats, series, h = "300px", y_name = NULL, aria_label = "Bar c
       saveAsImage = list()
     )),
     dataZoom = list(
-      list(type = "inside", start = 0, end = 100),
-      list(type = "slider", start = 0, end = 100, bottom = 5)
+      list(type = "inside", start = dz_start, end = 100),
+      list(type = "slider", start = dz_start, end = 100, bottom = 5)
     ),
     grid = list(containLabel = TRUE, bottom = 80),
     xAxis = list(type = "category", data = I(as.character(cats)),
@@ -153,6 +181,101 @@ ec_scatter <- function(data_pts, color = "#377eb8", h = "300px",
       "document.getElementById('", id, "').addEventListener('click',fs);",
       "document.getElementById('", id, "').addEventListener('keydown',function(e){",
       "if(e.key==='Enter'||e.key===' '){e.preventDefault();fs()}})})();"
+    )))
+  )
+}
+
+ec_heatmap <- function(data, x, y, value, h = "350px",
+                       default_window_weeks = 13,
+                       aria_label = "Heatmap chart") {
+  # Build x/y axis labels
+  xs <- sort(unique(data[[x]]))
+  ys <- sort(unique(data[[y]]))
+  # Dynamic x-axis window: default to last ~13 weeks
+  dz_start <- 0
+  if (length(xs) > default_window_weeks) {
+    dz_start <- round(100 * (1 - default_window_weeks / length(xs)))
+  }
+  heat_data <- lapply(seq_len(nrow(data)), function(i)
+    list(match(data[[x]][i], xs) - 1L, match(data[[y]][i], ys) - 1L,
+         as.numeric(data[[value]][i])))
+  max_val <- max(as.numeric(data[[value]]), na.rm = TRUE)
+  id <- paste0("ec", sample.int(1e7, 1))
+  opt <- list(
+    tooltip = list(trigger = "item",
+      formatter = paste0("function(p){return p.value[2]+' commits at week '+",
+                         "p.value[0]+'}')")),
+    grid = list(left = 100, bottom = 80, containLabel = TRUE),
+    xAxis = list(type = "category", data = I(xs), axisLabel = list(rotate = 30)),
+    yAxis = list(type = "category", data = I(ys)),
+    dataZoom = list(
+      list(type = "inside", xAxisIndex = 0, start = dz_start, end = 100),
+      list(type = "slider", xAxisIndex = 0, start = dz_start, end = 100, bottom = 5)
+    ),
+    visualMap = list(min = 0, max = max(max_val, 1), calculable = TRUE,
+      orient = "horizontal", left = "center", top = "top",
+      inRange = list(color = I(c("#1a2a1a", "#238636", "#40c463", "#7ee787"))),
+      textStyle = list(color = "#ccc")),
+    series = list(list(
+      type = "heatmap", data = heat_data,
+      emphasis = list(itemStyle = list(shadowBlur = 10, shadowColor = "rgba(0,0,0,0.5)"))
+    ))
+  )
+  j <- toJSON(opt, auto_unbox = TRUE, null = "null")
+  tagList(
+    tags$div(id = id, class = "echart-div", role = "img",
+             `aria-label` = aria_label, tabindex = "0",
+             style = paste0("width:100%;height:", h, ";cursor:zoom-in")),
+    tags$script(HTML(paste0(
+      "(function(){var c=echarts.init(document.getElementById('", id, "'),'dark');",
+      "c.setOption(", j, ");new ResizeObserver(function(){c.resize()})",
+      ".observe(document.getElementById('", id, "'));",
+      "function fs(){var url=c.getDataURL({type:'png',pixelRatio:2,backgroundColor:'#000'});",
+      "var ov=document.createElement('div');ov.className='fullscreen-overlay';",
+      "var img=document.createElement('img');img.src=url;ov.appendChild(img);",
+      "ov.onclick=function(){ov.remove()};document.body.appendChild(ov)}",
+      "document.getElementById('", id, "').addEventListener('click',fs);",
+      "document.getElementById('", id, "').addEventListener('keydown',function(e){",
+      "if(e.key==='Enter'||e.key===' '){e.preventDefault();fs()}})})();"
+    )))
+  )
+}
+
+ec_force_graph <- function(nodes, edges, h = "400px",
+                           aria_label = "Force-directed graph") {
+  id <- paste0("ec", sample.int(1e7, 1))
+  opt <- list(
+    tooltip = list(trigger = "item",
+      formatter = "function(p){if(p.dataType==='edge')return p.data.source+' ↔ '+p.data.target+': '+p.data.n_cochanges+' co-changes'; return p.data.name}"),
+    legend = list(top = "bottom", textStyle = list(color = "#ccc")),
+    series = list(list(
+      type = "graph",
+      layout = "force",
+      force = list(repulsion = 120, gravity = 0.05, edgeLength = list(50, 150)),
+      roam = TRUE,
+      draggable = TRUE,
+      data = nodes,
+      links = edges,
+      label = list(show = TRUE, position = "right", color = "#ccc", fontSize = 10),
+      lineStyle = list(color = "source", curveness = 0.1),
+      categories = list(
+        list(name = "llm", itemStyle = list(color = "#377eb8")),
+        list(name = "llmtelemetry", itemStyle = list(color = "#e41a1c")),
+        list(name = "other", itemStyle = list(color = "#4daf4a"))
+      ),
+      emphasis = list(focus = "adjacency",
+        lineStyle = list(width = 4))
+    ))
+  )
+  j <- toJSON(opt, auto_unbox = TRUE, null = "null")
+  tagList(
+    tags$div(id = id, class = "echart-div", role = "img",
+             `aria-label` = aria_label, tabindex = "0",
+             style = paste0("width:100%;height:", h, ";cursor:zoom-in")),
+    tags$script(HTML(paste0(
+      "(function(){var c=echarts.init(document.getElementById('", id, "'),'dark');",
+      "c.setOption(", j, ");new ResizeObserver(function(){c.resize()})",
+      ".observe(document.getElementById('", id, "'))})();"
     )))
   )
 }
@@ -197,11 +320,20 @@ git_todo    <- load_json("git_todo.json")
 git_tags    <- load_json("git_tags.json")
 git_file_growth <- load_json("git_file_growth.json")
 gh_events   <- load_json("github_issue_events.json")
+# Phase 2 data: new analytical JSON exports
+weekly_commits <- load_json("weekly_commits_by_project.json")
+cost_per_commit_data <- load_json("cost_per_commit.json")
+file_churn_data <- load_json("file_churn.json")
+change_coupling_data <- load_json("change_coupling.json")
 
 # Normalize data: fromJSON("[]") returns list(), nested objects need extraction
 as_df <- function(x) if (is.data.frame(x)) x else NULL
 git_file_growth <- as_df(git_file_growth)
 gh_events <- as_df(gh_events)
+weekly_commits <- as_df(weekly_commits)
+cost_per_commit_data <- as_df(cost_per_commit_data)
+file_churn_data <- as_df(file_churn_data)
+change_coupling_data <- as_df(change_coupling_data)
 has_rows <- function(x) is.data.frame(x) && nrow(x) > 0
 
 # Shorten project path: keep last 2 meaningful segments
@@ -347,6 +479,10 @@ if (has_rows(u_sessions)) {
   u_sessions$started_at <- as.POSIXct(u_sessions$started_at, tz = "UTC")
 }
 if (has_rows(u_costs)) u_costs$date <- as.Date(u_costs$date)
+if (has_rows(cost_per_commit_data)) cost_per_commit_data$date <- as.Date(cost_per_commit_data$date)
+if (has_rows(file_churn_data) && "last_changed_date" %in% names(file_churn_data)) {
+  file_churn_data$last_changed_date <- as.Date(file_churn_data$last_changed_date)
+}
 if (has_rows(gem_sess)) {
   gem_sess$start_time <- as.POSIXct(gem_sess$start_time, tz = "UTC")
   gem_sess$date <- as.Date(gem_sess$start_time)
