@@ -1017,10 +1017,12 @@ server <- function(input, output, session) {
   })
 
   # --- Phase B: one-shot sidebar population from projects_master.json ----------
-  # CRITICAL: choices are populated ONCE on session start, NOT recomputed on
-  # time-horizon change. This fixes W4 (stickiness: selector resetting when
-  # the user changes the time horizon).
-  observe({
+  # CRITICAL: choices are populated ONCE on session start by virtue of being
+  # called directly in the server body (no reactive wrapper). The original
+  # observe(..., once = TRUE) was invalid — `once` is an observeEvent() arg,
+  # not an observe() arg, and broke the entire server function.
+  # This fixes W4 (stickiness: selector resetting on time-horizon change).
+  local({
     master_choices <- c(
       "All projects" = "__ALL__",
       "None"         = "__NONE__",
@@ -1029,7 +1031,7 @@ server <- function(input, output, session) {
     updateSelectInput(session, "selected_projects",
                       choices  = master_choices,
                       selected = "__ALL__")
-  }, once = TRUE)  # isolate = FALSE, but run exactly once at session start
+  })
 
   # --- Project filter buttons -------------------------------------------------
   observeEvent(input$sel_all, {
