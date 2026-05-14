@@ -34,6 +34,45 @@ shorten_project <- function(x) {
     gsub("-", "/", x = _)
 }
 
+# Helper: map raw project path to canonical project name.
+# Returns NA_character_ for orphan/meta names that should be excluded from
+# project-aware aggregations (agent-worktree IDs, generic meta names).
+canonicalize_project <- function(name) {
+  if (is.null(name) || is.na(name) || !nzchar(name)) return(NA_character_)
+
+  # 1. Drop pure meta-names (agent dirs, generic worktree marker)
+  meta_only <- c("sonnet", "roborev", "worktree")
+  if (name %in% meta_only) return(NA_character_)
+
+  # 2. Strip agent worktree ID prefix — patterns like "D73dOZsvyf/repo" or
+  #    "kSBNJFuu6G/repo/subdir". Match alphanumeric strings of 8+ chars
+  #    followed by "/repo" (with optional path continuation).
+  name <- sub("^[A-Za-z0-9_]{8,}/repo/?", "", name)
+  if (!nzchar(name)) return(NA_character_)
+
+  # 3. Strip "worktree/" prefix (e.g. "worktree/llm" -> "llm")
+  name <- sub("^worktree/", "", name)
+
+  # 4. Explicit prefix overrides — sub-paths mapped to canonical parent project.
+  overrides <- list(
+    "buoy/network"    = "irish_buoy_network",
+    "data/historical" = "historical",
+    "data/micromort"  = "micromort",
+    "crypto/swarms"   = "swarms"
+  )
+  for (pat in names(overrides)) {
+    if (startsWith(name, pat)) return(overrides[[pat]])
+  }
+
+  # 5. Default: take the FIRST path segment as the canonical project name.
+  #    e.g. "llm/vignettes" -> "llm", "footbet" -> "footbet"
+  parts <- strsplit(name, "/", fixed = TRUE)[[1]]
+  if (length(parts) == 0L || !nzchar(parts[1L])) return(NA_character_)
+  parts[1L]
+}
+# Vectorise so it can be applied to a column directly:
+canonicalize_project <- Vectorize(canonicalize_project, USE.NAMES = FALSE)
+
 # --- 1. Daily usage from cmonitor-rs ------------------------------------------
 cat("Exporting ccusage daily (via cmonitor-rs)...\n")
 has_cmonitor <- file.exists(cmonitor_bin)
