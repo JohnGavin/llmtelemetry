@@ -1919,18 +1919,29 @@ server <- function(input, output, session) {
     d <- if (has_rows(git_commits_proj)) git_commits_proj else git_commits
     if (!has_rows(d)) return(DT::datatable(data.frame()))
     d <- d[!is.na(d$date) & d$date >= cutoff(), ]
+    if (nrow(d) == 0) return(DT::datatable(data.frame()))
     proj_col <- if ("project" %in% names(d)) d$project else rep("llmtelemetry", nrow(d))
-    summary_df <- do.call(rbind, lapply(split(d, proj_col), function(g) {
+    splits   <- split(d, proj_col)
+    if (length(splits) == 0) return(DT::datatable(data.frame()))
+    summary_df <- do.call(rbind, lapply(seq_along(splits), function(i) {
+      g <- splits[[i]]
+      if (is.null(g) || nrow(g) == 0) return(NULL)
+      lc  <- suppressWarnings(as.numeric(g$lines_changed))
+      la  <- suppressWarnings(as.numeric(g$lines_added))
+      ld  <- suppressWarnings(as.numeric(g$lines_deleted))
+      med <- if (any(!is.na(lc))) round(median(lc, na.rm = TRUE)) else NA_real_
+      mn  <- if (any(!is.na(lc))) round(mean(lc,   na.rm = TRUE)) else NA_real_
       data.frame(
-        Project     = g$project[1],
+        Project     = names(splits)[[i]],
         Commits     = nrow(g),
-        Med_Lines   = round(median(g$lines_changed, na.rm = TRUE)),
-        Mean_Lines  = round(mean(g$lines_changed, na.rm = TRUE)),
-        Lines_Added = sum(g$lines_added, na.rm = TRUE),
-        Lines_Del   = sum(g$lines_deleted, na.rm = TRUE),
+        Med_Lines   = med,
+        Mean_Lines  = mn,
+        Lines_Added = sum(la, na.rm = TRUE),
+        Lines_Del   = sum(ld, na.rm = TRUE),
         stringsAsFactors = FALSE
       )
     }))
+    if (is.null(summary_df) || nrow(summary_df) == 0) return(DT::datatable(data.frame()))
     summary_df <- summary_df[order(summary_df$Commits, decreasing = TRUE), ]
     DT::datatable(summary_df,
       rownames = FALSE,
