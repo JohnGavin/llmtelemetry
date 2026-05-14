@@ -95,6 +95,12 @@ test_that("first path segment is returned for unrecognised sub-paths", {
   expect_equal(canonicalize_project("llm/vignettes"), "llm")
 })
 
+# ── numeric-only segments → NA ────────────────────────────────────────────────
+test_that("pure numeric strings (worktree IDs) return NA", {
+  expect_equal(canonicalize_project("1020043174"),  NA_character_)
+  expect_equal(canonicalize_project("94513747"),    NA_character_)
+})
+
 # ── null / NA / empty ─────────────────────────────────────────────────────────
 test_that("NA input returns NA_character_", {
   expect_equal(canonicalize_project(NA_character_), NA_character_)
@@ -107,9 +113,11 @@ test_that("empty string returns NA_character_", {
 # ── vectorised behaviour ───────────────────────────────────────────────────────
 test_that("vectorised call over a column works correctly", {
   input    <- c("llm", "worktree/llm", "D73dOZsvyf/repo", "sonnet",
-                "buoy/network", "data/historical", NA_character_, "footbet/R")
+                "buoy/network", "data/historical", NA_character_, "footbet/R",
+                "1020043174")
   expected <- c("llm", "llm",          NA_character_,      NA_character_,
-                "irish_buoy_network", "historical",        NA_character_, "footbet")
+                "irish_buoy_network", "historical",        NA_character_, "footbet",
+                NA_character_)
   result   <- canonicalize_project(input)
   expect_equal(result, expected)
 })

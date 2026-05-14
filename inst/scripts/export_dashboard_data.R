@@ -68,7 +68,21 @@ canonicalize_project <- function(name) {
   #    e.g. "llm/vignettes" -> "llm", "footbet" -> "footbet"
   parts <- strsplit(name, "/", fixed = TRUE)[[1]]
   if (length(parts) == 0L || !nzchar(parts[1L])) return(NA_character_)
-  parts[1L]
+  first <- parts[1L]
+  # Drop purely numeric segments (worktree numeric IDs, e.g. "1020043174")
+  if (grepl("^[0-9]+$", first)) return(NA_character_)
+  # Drop first segments that are meta-only (e.g. "roborev/worktree/NNN")
+  if (first %in% meta_only) return(NA_character_)
+  first
+}
+
+# Internal helper: canonicalize a session project name stored in
+# dash-form by unified.duckdb hooks (e.g. "D73dOZsvyf-repo",
+# "buoy-network", "worktree-12345678").  Converts to slash form via
+# shorten_project() first, then falls through canonicalize_project().
+# Not exported; used only by the session and cost_by_project exports.
+canonicalize_session_project <- function(raw) {
+  canonicalize_project(shorten_project(raw))
 }
 # Vectorise so it can be applied to a column directly:
 canonicalize_project <- Vectorize(canonicalize_project, USE.NAMES = FALSE)
@@ -376,7 +390,9 @@ proj_commits_list <- lapply(names(tracked_repos), function(proj)
 proj_commits_list <- Filter(Negate(is.null), proj_commits_list)
 
 if (length(proj_commits_list) > 0) {
-  proj_commits_df <- bind_rows(proj_commits_list) |> arrange(date)
+  proj_commits_df <- bind_rows(proj_commits_list) |>
+    arrange(date) |>
+    mutate(canonical_project = canonicalize_project(project))
   write_json(proj_commits_df, file.path(out_dir, "git_commits_by_project.json"), auto_unbox = TRUE)
   write_json(proj_commits_df, file.path(extdata, "git_commits_by_project.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d commits across %d projects\n",
@@ -400,7 +416,7 @@ if (exists("proj_commits_df") && nrow(proj_commits_df) > 0) {
       iso_week      = format(date_parsed, "%G-%V"),
       week_start_date = as.character(date_parsed - as.integer(format(date_parsed, "%u")) + 1L)
     ) |>
-    group_by(project, iso_week, week_start_date) |>
+    group_by(project, canonical_project, iso_week, week_start_date) |>
     summarise(
       n_commits           = n(),
       total_lines_changed = sum(lines_changed, na.rm = TRUE),
@@ -417,13 +433,17 @@ if (exists("proj_commits_df") && nrow(proj_commits_df) > 0) {
   if (file.exists(fbsrc)) {
     fb_df <- fromJSON(fbsrc, simplifyDataFrame = TRUE)
     if (is.data.frame(fb_df) && nrow(fb_df) > 0) {
+      # Add canonical_project if not already present (CI fallback path)
+      if (!"canonical_project" %in% names(fb_df)) {
+        fb_df$canonical_project <- canonicalize_project(fb_df$project)
+      }
       weekly_commits <- fb_df |>
         mutate(
           date_parsed     = as.Date(date),
           iso_week        = format(date_parsed, "%G-%V"),
           week_start_date = as.character(date_parsed - as.integer(format(date_parsed, "%u")) + 1L)
         ) |>
-        group_by(project, iso_week, week_start_date) |>
+        group_by(project, canonical_project, iso_week, week_start_date) |>
         summarise(
           n_commits           = n(),
           total_lines_changed = sum(lines_changed, na.rm = TRUE),
@@ -473,9 +493,12 @@ if (file.exists(cost_src) && file.exists(commits_src)) {
       filter(n_commits > 0, !is.na(est_cost)) |>
       mutate(
         daily_cost_usd      = round(est_cost, 4),
-        cost_per_commit_usd = round(est_cost / n_commits, 4)
+        cost_per_commit_usd = round(est_cost / n_commits, 4),
+        # project in cost_df is from unified_sessions (dash-form); apply normalization
+        canonical_project   = canonicalize_session_project(project)
       ) |>
-      select(project, date, daily_cost_usd, n_commits, cost_per_commit_usd) |>
+      select(project, canonical_project, date, daily_cost_usd, n_commits,
+             cost_per_commit_usd) |>
       arrange(project, date)
 
     write_json(cost_per_commit, file.path(out_dir, "cost_per_commit.json"), auto_unbox = TRUE)
@@ -575,7 +598,9 @@ churn_list <- lapply(names(tracked_repos), function(proj)
 churn_list <- Filter(Negate(is.null), churn_list)
 
 if (length(churn_list) > 0) {
-  file_churn_df <- bind_rows(churn_list) |> arrange(project, desc(total_lines_changed))
+  file_churn_df <- bind_rows(churn_list) |>
+    arrange(project, desc(total_lines_changed)) |>
+    mutate(canonical_project = canonicalize_project(project))
   write_json(file_churn_df, file.path(out_dir, "file_churn.json"), auto_unbox = TRUE)
   write_json(file_churn_df, file.path(extdata, "file_churn.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d files across %d projects\n",
@@ -679,7 +704,8 @@ coupling_list <- Filter(Negate(is.null), coupling_list)
 
 if (length(coupling_list) > 0) {
   coupling_df <- bind_rows(coupling_list) |>
-    arrange(project, desc(n_cochanges))
+    arrange(project, desc(n_cochanges)) |>
+    mutate(canonical_project = canonicalize_project(project))
   write_json(coupling_df, file.path(out_dir, "change_coupling.json"), auto_unbox = TRUE)
   write_json(coupling_df, file.path(extdata, "change_coupling.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d file pairs across %d projects\n",
@@ -869,7 +895,12 @@ if (file.exists(unified_db)) {
       duration_min = pmax(0, round(duration_min, 1), na.rm = TRUE)
     ) |>
     select(session_id, project, started_at, ended_at, duration_min) |>
-    arrange(desc(started_at))
+    arrange(desc(started_at)) |>
+    mutate(
+      # project is stored in dash-form by unified.duckdb hooks;
+      # canonicalize_session_project() handles the dash→slash→canonical chain.
+      canonical_project = canonicalize_session_project(project)
+    )
   # Write to both locations: inst/extdata (commit) + vignettes/data (preview)
   write_json(u_sess, file.path(extdata, "unified_sessions.json"), auto_unbox = TRUE)
   write_json(u_sess, file.path(out_dir, "unified_sessions.json"), auto_unbox = TRUE)
@@ -916,6 +947,8 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
   cost_proj$est_cost <- round(cost_proj$totalCost * cost_proj$share, 4)
 
   out_data <- cost_proj[, c("date", "project", "est_cost", "duration_min", "share")]
+  # project here comes from unified_sessions which is in dash-form
+  out_data$canonical_project <- canonicalize_session_project(out_data$project)
   write_json(out_data, file.path(out_dir, "cost_by_project_estimated.json"), auto_unbox = TRUE)
   write_json(out_data, file.path(extdata, "cost_by_project_estimated.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d project-day cost estimates (written to inst/extdata + vignettes/data)\n", nrow(out_data)))
@@ -1333,7 +1366,7 @@ cat("Exporting git file growth data...\n")
 git_pulse_dir <- file.path(Sys.getenv("HOME"), ".claude/logs/git")
 parquet_files <- list.files(git_pulse_dir, pattern = "\\.parquet$", full.names = TRUE)
 
-if (length(parquet_files) > 0) {
+if (length(parquet_files) > 0 && requireNamespace("arrow", quietly = TRUE)) {
   library(arrow)
   # Read all parquet files and combine
   all_pulse <- lapply(parquet_files, function(f) {
@@ -1391,7 +1424,11 @@ if (length(parquet_files) > 0) {
     write_json(list(), file.path(out_dir, "git_file_growth.json"))
   }
 } else {
-  cat("  -> no parquet files found\n")
+  if (length(parquet_files) > 0) {
+    cat("  -> arrow package not available; falling back to inst/extdata/ snapshot\n")
+  } else {
+    cat("  -> no parquet files found\n")
+  }
   # CI fallback: copy from inst/extdata/ if available
   extdata_fallback <- file.path(extdata, "git_file_growth.json")
   if (file.exists(extdata_fallback)) {
@@ -1405,6 +1442,120 @@ if (length(parquet_files) > 0) {
   } else {
     write_json(list(), file.path(out_dir, "git_file_growth.json"))
   }
+}
+
+# --- 10b. Build projects_master.json — stable canonical project list -----------
+# Collects canonical project names + date ranges across ALL project-bearing
+# exports. This list is time-filter-independent: the dashboard sidebar uses it
+# as the stable universe of projects regardless of the selected date window.
+cat("Building projects_master.json...\n")
+
+# Helper to extract (canonical_project, date) rows from a committed JSON,
+# reading canonical_project if present, otherwise deriving from 'project'.
+extract_cp_dates <- function(json_path, date_col, proj_col = "project",
+                              cp_col = "canonical_project",
+                              dash_form = FALSE) {
+  if (!file.exists(json_path)) return(NULL)
+  df <- tryCatch(
+    fromJSON(json_path, simplifyDataFrame = TRUE),
+    error = function(e) NULL
+  )
+  if (is.null(df) || !is.data.frame(df) || nrow(df) == 0L) return(NULL)
+  if (!date_col %in% names(df)) return(NULL)
+  if (!proj_col %in% names(df)) return(NULL)
+
+  # Derive canonical_project: prefer stored column; fall back to helper
+  if (cp_col %in% names(df)) {
+    cp <- df[[cp_col]]
+  } else if (dash_form) {
+    cp <- canonicalize_session_project(df[[proj_col]])
+  } else {
+    cp <- canonicalize_project(df[[proj_col]])
+  }
+
+  dates_chr <- as.character(df[[date_col]])
+  data.frame(
+    canonical_project = cp,
+    date              = dates_chr,
+    stringsAsFactors  = FALSE
+  )
+}
+
+pm_sources <- list(
+  extract_cp_dates(file.path(extdata, "unified_sessions.json"),
+                   date_col = "started_at", proj_col = "project",
+                   dash_form = TRUE),
+  extract_cp_dates(file.path(extdata, "cost_by_project_estimated.json"),
+                   date_col = "date", proj_col = "project",
+                   dash_form = TRUE),
+  extract_cp_dates(file.path(extdata, "git_commits_by_project.json"),
+                   date_col = "date"),
+  extract_cp_dates(file.path(extdata, "weekly_commits_by_project.json"),
+                   date_col = "week_start_date"),
+  extract_cp_dates(file.path(extdata, "cost_per_commit.json"),
+                   date_col = "date"),
+  extract_cp_dates(file.path(extdata, "file_churn.json"),
+                   date_col = "last_changed_date"),
+  extract_cp_dates(file.path(extdata, "change_coupling.json"),
+                   date_col = NA_character_,  # no date column; omit
+                   proj_col = "project")
+)
+# Remove the change_coupling call (no date column); handle separately
+pm_cp_only <- if (!is.null(pm_sources[[7L]])) {
+  cp_vec <- canonicalize_project(
+    tryCatch(
+      fromJSON(file.path(extdata, "change_coupling.json"),
+               simplifyDataFrame = TRUE)$project,
+      error = function(e) character(0)
+    )
+  )
+  data.frame(canonical_project = cp_vec, date = NA_character_,
+             stringsAsFactors = FALSE)
+} else {
+  NULL
+}
+pm_sources[[7L]] <- pm_cp_only
+
+pm_all <- do.call(rbind, Filter(Negate(is.null), pm_sources))
+
+if (!is.null(pm_all) && nrow(pm_all) > 0L) {
+  pm_all <- pm_all[!is.na(pm_all$canonical_project) &
+                     nzchar(pm_all$canonical_project), ]
+
+  # Count distinct sources per canonical_project
+  source_counts <- tapply(
+    seq_len(nrow(pm_all)),
+    pm_all$canonical_project,
+    length
+  )
+
+  # Date range (ignoring NA dates)
+  pm_dates <- pm_all[!is.na(pm_all$date), ]
+  date_min <- tapply(pm_dates$date, pm_dates$canonical_project, min)
+  date_max <- tapply(pm_dates$date, pm_dates$canonical_project, max)
+
+  all_cp <- sort(unique(pm_all$canonical_project))
+  projects_master <- data.frame(
+    canonical_project = all_cp,
+    n_sources         = as.integer(source_counts[all_cp]),
+    first_seen        = as.character(date_min[all_cp]),
+    last_seen         = as.character(date_max[all_cp]),
+    stringsAsFactors  = FALSE
+  )
+  # Truncate dates to YYYY-MM-DD (they may include time component)
+  projects_master$first_seen <- substr(projects_master$first_seen, 1L, 10L)
+  projects_master$last_seen  <- substr(projects_master$last_seen,  1L, 10L)
+
+  write_json(projects_master, file.path(out_dir, "projects_master.json"),
+             auto_unbox = TRUE)
+  write_json(projects_master, file.path(extdata, "projects_master.json"),
+             auto_unbox = TRUE)
+  cat(sprintf("  -> %d canonical projects in projects_master.json\n",
+              nrow(projects_master)))
+} else {
+  write_json(list(), file.path(out_dir, "projects_master.json"))
+  write_json(list(), file.path(extdata, "projects_master.json"))
+  cat("  -> no project data available, writing empty projects_master.json\n")
 }
 
 # --- 9. QA validation — fail early on empty critical data ---------------------

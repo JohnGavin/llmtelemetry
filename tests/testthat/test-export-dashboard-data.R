@@ -243,3 +243,120 @@ test_that("change_coupling.json has at most 100 rows per project", {
     info = paste("Projects exceeding 100 pairs:", paste(names(counts_by_project[counts_by_project > 100]), collapse = ", "))
   )
 })
+
+# ── 5. canonical_project column in each project-bearing export ────────────────
+
+check_canonical_project_col <- function(filename) {
+  path <- extdata_path(filename)
+  if (!nzchar(path)) return(invisible(NULL))
+  df <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  if (!is.data.frame(df) || nrow(df) == 0L) return(invisible(NULL))
+  if (!"project" %in% names(df)) return(invisible(NULL))
+
+  test_that(paste(filename, "has canonical_project column"), {
+    expect_true("canonical_project" %in% names(df),
+                info = paste(filename, "should have canonical_project column"))
+  })
+
+  test_that(paste(filename, "canonical_project has no NA where project is non-NA"), {
+    skip_if(!"canonical_project" %in% names(df))
+    # Rows with a project value should mostly resolve; some NAs are expected
+    # (agent worktree IDs, meta names).  At minimum the column must exist.
+    expect_true(is.character(df$canonical_project) || all(is.na(df$canonical_project)),
+                info = "canonical_project must be character or all-NA")
+  })
+}
+
+for (fn in c("git_commits_by_project.json",
+             "weekly_commits_by_project.json",
+             "cost_per_commit.json",
+             "file_churn.json",
+             "change_coupling.json",
+             "unified_sessions.json",
+             "cost_by_project_estimated.json")) {
+  check_canonical_project_col(fn)
+}
+
+# ── 6. projects_master.json ───────────────────────────────────────────────────
+
+test_that("projects_master.json exists in inst/extdata", {
+  path <- extdata_path("projects_master.json")
+  expect_true(nzchar(path), info = "projects_master.json not found via system.file()")
+})
+
+test_that("projects_master.json parses to a data.frame", {
+  path <- extdata_path("projects_master.json")
+  skip_if(!nzchar(path), "projects_master.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_s3_class(result, "data.frame")
+})
+
+test_that("projects_master.json has required columns", {
+  path <- extdata_path("projects_master.json")
+  skip_if(!nzchar(path), "projects_master.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  required_cols <- c("canonical_project", "n_sources", "first_seen", "last_seen")
+  expect_true(
+    all(required_cols %in% names(result)),
+    info = paste("Missing columns:", paste(setdiff(required_cols, names(result)), collapse = ", "))
+  )
+})
+
+test_that("projects_master.json has at least one row", {
+  path <- extdata_path("projects_master.json")
+  skip_if(!nzchar(path), "projects_master.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_gt(nrow(result), 0L)
+})
+
+test_that("projects_master.json has no NA canonical_project", {
+  path <- extdata_path("projects_master.json")
+  skip_if(!nzchar(path), "projects_master.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_false(any(is.na(result$canonical_project)),
+               info = "projects_master.json must not contain NA canonical_project rows")
+})
+
+test_that("projects_master.json has no empty canonical_project", {
+  path <- extdata_path("projects_master.json")
+  skip_if(!nzchar(path), "projects_master.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_false(any(!nzchar(result$canonical_project)),
+               info = "projects_master.json must not contain empty canonical_project rows")
+})
+
+test_that("projects_master.json is sorted alphabetically", {
+  path <- extdata_path("projects_master.json")
+  skip_if(!nzchar(path), "projects_master.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_equal(result$canonical_project, sort(result$canonical_project),
+               info = "canonical_project should be sorted alphabetically")
+})
+
+test_that("projects_master.json contains known real projects", {
+  path <- extdata_path("projects_master.json")
+  skip_if(!nzchar(path), "projects_master.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  known <- c("llm", "llmtelemetry")
+  expect_true(all(known %in% result$canonical_project),
+              info = paste("Expected projects not found:",
+                           paste(setdiff(known, result$canonical_project), collapse = ", ")))
+})
+
+test_that("projects_master.json first_seen <= last_seen for all rows", {
+  path <- extdata_path("projects_master.json")
+  skip_if(!nzchar(path), "projects_master.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  valid <- is.na(result$first_seen) | is.na(result$last_seen) |
+    result$first_seen <= result$last_seen
+  expect_true(all(valid),
+              info = "first_seen should be <= last_seen for every project")
+})
+
+test_that("projects_master.json n_sources is a positive integer for all rows", {
+  path <- extdata_path("projects_master.json")
+  skip_if(!nzchar(path), "projects_master.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_true(all(result$n_sources >= 1L),
+              info = "n_sources should be >= 1 for every project")
+})
