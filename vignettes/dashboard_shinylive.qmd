@@ -1050,8 +1050,11 @@ server <- function(input, output, session) {
     # sentinel values are not real projects — exclude them when inverting
     real_current <- setdiff(current, c("__ALL__", "__NONE__"))
     inverted <- setdiff(all_projects, real_current)
-    if (length(inverted) == 0) inverted <- "__NONE__"
-    updateSelectInput(session, "selected_projects", selected = inverted)
+    # Collapse to sentinel when the inverted set is "everything" or "nothing"
+    new_sel <- if (length(inverted) == 0) "__NONE__"
+               else if (length(inverted) == length(all_projects)) "__ALL__"
+               else inverted
+    updateSelectInput(session, "selected_projects", selected = new_sel)
   })
 
   # Helper: resolve selected_projects input -> character vector of project names
