@@ -1,0 +1,128 @@
+---
+title: "DuckDB-WASM Phase 0 — step 4 (WebR + DuckDB-WASM coexistence)"
+format:
+  html:
+    self-contained: false
+    embed-resources: false
+---
+
+## Goal
+
+Verify that DuckDB-WASM (JS module, Web Worker) and Shinylive/WebR can coexist in the
+same browser tab without OOM or Worker conflicts. Part of llmtelemetry issue
+[#83](https://github.com/JohnGavin/llmtelemetry/issues/83) Phase 0 feasibility.
+
+**Note on render approach:** The `shinylive` R package is not in the llmtelemetry nix shell
+(confirmed 2026-05-15), so the `{shinylive-r}` Quarto filter cannot render at build time.
+Instead, this step embeds Shinylive via a raw `<iframe>` pointing to `shinylive.io/r/`.
+This tests the same coexistence question — two WASM runtimes in one tab — without requiring
+the filter. The iframe loads WebR from the Shinylive CDN; the main page loads DuckDB-WASM
+from jsDelivr. Both Workers run concurrently.
+
+**Manual step if you want the filter version:** `Rscript -e 'install.packages("shinylive")'`
+(outside Nix) then re-render with `filters: [shinylive]` added back to the YAML header.
+
+## What to check in DevTools
+
+- **Memory**: total tab usage after both panels fully load. Expected combined: ~500 MB.
+  Alarm if above 2 GB.
+- **Console**: no `SharedArrayBuffer` conflicts, no Worker registration errors from either
+  DuckDB-WASM or WebR/Shinylive.
+- **Network**: DuckDB-WASM fetches from `cdn.jsdelivr.net`; Shinylive iframe fetches from
+  `shinylive.io`. Both should load independently without blocking.
+- **Performance**: note when the Shinylive iframe shows "WebR alive" — this is WebR cold
+  load time.
+
+## DuckDB-WASM block (identical to step 3)
+
+<pre id="output" style="background:#1a1a1a; color:#0f0; padding:1em; min-height:200px; white-space:pre-wrap; font-family: monospace;">Loading DuckDB-WASM…</pre>
+
+<script type="module">
+  const out = document.getElementById('output');
+  const t0 = performance.now();
+  const ms = () => `[${Math.round(performance.now() - t0)}ms]`;
+
+  try {
+    const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.33.0/+esm');
+    out.textContent += `\n${ms()} DuckDB-WASM module imported`;
+
+    const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+    const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+    out.textContent += `\n${ms()} Bundle selected: ${bundle.mainModule}`;
+
+    const worker_url = URL.createObjectURL(
+      new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+    );
+    const worker = new Worker(worker_url);
+    const logger = new duckdb.ConsoleLogger();
+    const db = new duckdb.AsyncDuckDB(logger, worker);
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    URL.revokeObjectURL(worker_url);
+    out.textContent += `\n${ms()} DuckDB instantiated`;
+
+    const conn = await db.connect();
+
+    const result = await conn.query(
+      "SELECT * FROM 'test.parquet' WHERE project = 'llm' LIMIT 5"
+    );
+    const rows = result.toArray().map(r =>
+      Object.fromEntries(
+        Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? v.toString() : v])
+      )
+    );
+    out.textContent += `\n${ms()} Query returned ${rows.length} rows`;
+    out.textContent += `\n\nSAMPLE ROWS:\n${JSON.stringify(rows, null, 2)}`;
+
+    const count_result = await conn.query(
+      "SELECT project, count(*) AS n FROM 'test.parquet' GROUP BY project ORDER BY n DESC"
+    );
+    const counts = count_result.toArray().map(r =>
+      Object.fromEntries(
+        Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? v.toString() : v])
+      )
+    );
+    out.textContent += `\n\nCOUNTS BY PROJECT:\n${JSON.stringify(counts, null, 2)}`;
+
+    await conn.close();
+    out.textContent += `\n\n✅ DuckDB-WASM PASSED in ${Math.round(performance.now() - t0)}ms`;
+    out.textContent += `\n   WebR/Shinylive loading in iframe below — check DevTools Memory…`;
+    out.style.color = '#0f0';
+
+  } catch (e) {
+    out.textContent += `\n\n❌ DuckDB-WASM ERROR: ${e.message}\n${e.stack || ''}`;
+    out.style.color = '#f55';
+  }
+</script>
+
+## Shinylive / WebR block (iframe fallback)
+
+The panel below loads Shinylive via an `<iframe>` pointing to the live Shinylive
+deployment service. WebR runs inside the iframe sandbox, isolated from the main
+page's DuckDB-WASM Worker. If both output their success messages simultaneously,
+the coexistence assumption holds.
+
+<iframe
+  src="https://shinylive.io/r/app/#code=NobwRAdghgtgpmAXGKAHVA6ASmANGAYwHsIAXOMpMAGwEsAjAJykYE8AKAZwAtaJWAlAB0IdJiw71OAFSx0WRGFCVCAbnIBedZWwCuAT2aqoATwwxqFCHQC8UgMIALALIBHAA4BKHDqx0ANTBaKRYMFjs6OwA6BiVJd04LCioaemY2Th4+QVEJaRhLOlQAd1Y4IqA"
+  width="100%"
+  height="220"
+  style="border: 1px solid #444; border-radius: 4px;"
+  title="Shinylive WebR coexistence test"
+  loading="lazy"
+></iframe>
+
+<p style="font-size:0.85em; color:#888; margin-top:0.5em;">
+  The iframe loads WebR from <code>shinylive.io</code> CDN. If it shows "WebR alive", both
+  runtimes coexist. Check DevTools Memory tab for combined allocation.
+</p>
+
+## Verdict recording
+
+After observing both panels, record in README.md:
+
+| Check | Result |
+|-------|--------|
+| DuckDB-WASM output shows ✅ | |
+| Shinylive iframe shows "WebR alive" | |
+| Combined memory < 2 GB | |
+| No Worker conflicts in Console | |
+| Total cold-load time (both runtimes) | |
