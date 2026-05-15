@@ -285,7 +285,12 @@ pal <- list(claude = "#377eb8", gemini = "#e41a1c", accent = "#4daf4a",
             purple = "#984ea3", orange = "#ff7f00", hist = "#377eb8")
 
 # --- Data loading -------------------------------------------------------------
-base_url <- "https://johngavin.github.io/llmtelemetry"
+# Empty base_url means fetch from same origin as the served HTML — works for
+# both local walkthrough (python -m http.server) and production (gh-pages).
+# When the HTML is served locally, "/data/X.json" resolves to localhost.
+# When the HTML is served from gh-pages, "/data/X.json" resolves to
+# https://johngavin.github.io/llmtelemetry/data/X.json (same as before).
+base_url <- ""
 
 load_json <- function(filename) {
   tryCatch({
