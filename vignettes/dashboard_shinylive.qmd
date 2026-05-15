@@ -1611,9 +1611,10 @@ server <- function(input, output, session) {
         heat_data[[length(heat_data) + 1]] <- list(i - 1, j - 1, val)
       }
     }
-    ec(list(
-      tooltip = list(position = "top",
-        formatter = DT::JS("function(p){return p.value[2]+'% share'}")),
+    # Build spec without JS() wrappers to avoid JS_EVAL serialization error.
+    # The tooltip formatter is injected as a raw JS literal after toJSON().
+    spec <- list(
+      tooltip = list(position = "top", formatter = "__SHARE_FMT__"),
       grid = list(left = 100, bottom = 60, containLabel = FALSE),
       xAxis = list(type = "category", data = I(as.character(dates)), splitArea = list(show = TRUE)),
       yAxis = list(type = "category", data = I(projs), splitArea = list(show = TRUE)),
@@ -1624,7 +1625,20 @@ server <- function(input, output, session) {
         name = "Share", type = "heatmap", data = heat_data,
         emphasis = list(itemStyle = list(shadowBlur = 10, shadowColor = "rgba(0,0,0,0.5)"))
       ))
-    ), h = "300px", aria_label = "Heatmap: project cost share percentage by date")
+    )
+    id <- paste0("ec", sample.int(1e7, 1))
+    j <- toJSON(spec, auto_unbox = TRUE, null = "null")
+    j <- gsub('"__SHARE_FMT__"', 'function(p){return p.value[2]+"% share"}', j, fixed = TRUE)
+    tagList(
+      tags$div(id = id, class = "echart-div", role = "button",
+               `aria-label` = "Heatmap: project cost share percentage by date",
+               tabindex = "0", style = "width:100%;height:300px;cursor:zoom-in"),
+      tags$script(HTML(paste0(
+        "(function(){var c=echarts.init(document.getElementById('", id, "'),'dark');",
+        "c.setOption(", j, ");new ResizeObserver(function(){c.resize()})",
+        ".observe(document.getElementById('", id, "'));})();"
+      )))
+    )
   })
 
   # --- Phase 2: Weekly Commit Heatmap (By Project tab) -----------------------
