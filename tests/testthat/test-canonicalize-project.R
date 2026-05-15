@@ -69,6 +69,26 @@ test_that("meta-only names canonicalise to NA", {
   expect_equal(canonicalize_project("worktree"), NA_character_)
 })
 
+test_that("expanded meta-only top-level names canonicalise to NA", {
+  expect_equal(canonicalize_project("antigravity"), NA_character_)
+  expect_equal(canonicalize_project("crypto"),      NA_character_)
+  expect_equal(canonicalize_project("data"),        NA_character_)
+  expect_equal(canonicalize_project("github"),      NA_character_)
+  expect_equal(canonicalize_project("hello"),       NA_character_)
+  expect_equal(canonicalize_project("knowledge"),   NA_character_)
+  expect_equal(canonicalize_project("simulations"), NA_character_)
+  expect_equal(canonicalize_project("sport"),       NA_character_)
+  expect_equal(canonicalize_project("subagents"),   NA_character_)
+})
+
+# ── container-prefix stripping ─────────────────────────────────────────────────
+test_that("container-directory sub-paths strip prefix to reveal project", {
+  expect_equal(canonicalize_project("simulations/randomwalk"),  "randomwalk")
+  expect_equal(canonicalize_project("simulations/notmineraft"), "notmineraft")
+  expect_equal(canonicalize_project("sport/footbet"),           "footbet")
+  expect_equal(canonicalize_project("subagents/foo"),           "foo")
+})
+
 # ── explicit overrides ─────────────────────────────────────────────────────────
 test_that("buoy/network maps to irish_buoy_network", {
   expect_equal(canonicalize_project("buoy/network"),      "irish_buoy_network")
