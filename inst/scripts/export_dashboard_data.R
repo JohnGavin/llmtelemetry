@@ -45,7 +45,8 @@ canonicalize_project <- function(name) {
   meta_only <- c(
     "sonnet", "roborev", "worktree",
     "antigravity", "crypto", "data", "github", "hello",
-    "knowledge", "simulations", "sport", "subagents"
+    "knowledge", "simulations", "sport", "subagents",
+    "t", "io", "urban_planning", "notmineraft", "telemetry", "football"
   )
   if (name %in% meta_only) return(NA_character_)
 

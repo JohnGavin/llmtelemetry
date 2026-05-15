@@ -81,12 +81,24 @@ test_that("expanded meta-only top-level names canonicalise to NA", {
   expect_equal(canonicalize_project("subagents"),   NA_character_)
 })
 
+test_that("new AA1 meta-only names canonicalise to NA", {
+  expect_equal(canonicalize_project("t"),             NA_character_)
+  expect_equal(canonicalize_project("io"),            NA_character_)
+  expect_equal(canonicalize_project("urban_planning"), NA_character_)
+  expect_equal(canonicalize_project("notmineraft"),   NA_character_)
+  expect_equal(canonicalize_project("telemetry"),     NA_character_)
+  expect_equal(canonicalize_project("football"),      NA_character_)
+})
+
 # ── container-prefix stripping ─────────────────────────────────────────────────
 test_that("container-directory sub-paths strip prefix to reveal project", {
   expect_equal(canonicalize_project("simulations/randomwalk"),  "randomwalk")
-  expect_equal(canonicalize_project("simulations/notmineraft"), "notmineraft")
   expect_equal(canonicalize_project("sport/footbet"),           "footbet")
   expect_equal(canonicalize_project("subagents/foo"),           "foo")
+})
+
+test_that("notmineraft in simulations/ is itself meta-only so returns NA", {
+  expect_equal(canonicalize_project("simulations/notmineraft"), NA_character_)
 })
 
 # ── explicit overrides ─────────────────────────────────────────────────────────
