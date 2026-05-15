@@ -1,0 +1,97 @@
+---
+title: "DuckDB-WASM Phase 0 — step 3 (JS only, no WebR)"
+format:
+  html:
+    self-contained: false
+    embed-resources: false
+---
+
+## Goal
+
+Verify DuckDB-WASM can load, query a same-origin Parquet file, and return rows in the browser.
+No WebR yet. This is the critical path test for llmtelemetry issue [#83](https://github.com/JohnGavin/llmtelemetry/issues/83).
+
+The amended storage design (Phase 0 comment) serves `test.parquet` from the same origin as the HTML
+(via `python3 -m http.server`), bypassing CORS. DuckDB-WASM should be able to use HTTP Range
+requests for row-group pushdown against a same-origin server.
+
+## What to look for in DevTools
+
+- **Network tab**: `test.parquet` should appear. A single full GET (small file) is expected.
+  For large files (>1 MB), DuckDB-WASM uses Range requests — verify no CORS preflight errors.
+- **Console**: No `SharedArrayBuffer` or CORS errors. Worker creation should succeed.
+- **Memory**: Stay below 1 GB after DuckDB-WASM loads (~5 MB bundle + ~3 MB httpfs extension).
+
+## Status
+
+<pre id="output" style="background:#1a1a1a; color:#0f0; padding:1em; min-height:200px; white-space:pre-wrap; font-family: monospace;">Loading DuckDB-WASM…</pre>
+
+<script type="module">
+  const out = document.getElementById('output');
+  const t0 = performance.now();
+  const ms = () => `[${Math.round(performance.now() - t0)}ms]`;
+
+  try {
+    const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.33.0/+esm');
+    out.textContent += `\n${ms()} DuckDB-WASM module imported`;
+
+    const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+    const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+    out.textContent += `\n${ms()} Bundle selected: ${bundle.mainModule}`;
+
+    const worker_url = URL.createObjectURL(
+      new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+    );
+    const worker = new Worker(worker_url);
+    const logger = new duckdb.ConsoleLogger();
+    const db = new duckdb.AsyncDuckDB(logger, worker);
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    URL.revokeObjectURL(worker_url);
+    out.textContent += `\n${ms()} DuckDB instantiated`;
+
+    const conn = await db.connect();
+    out.textContent += `\n${ms()} Connection established`;
+
+    // Query the same-origin parquet (served by python3 -m http.server)
+    const result = await conn.query(
+      "SELECT * FROM 'test.parquet' WHERE project = 'llm' LIMIT 5"
+    );
+    const rows = result.toArray().map(r =>
+      Object.fromEntries(
+        Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? v.toString() : v])
+      )
+    );
+    out.textContent += `\n${ms()} Query returned ${rows.length} rows`;
+    out.textContent += `\n\nSAMPLE ROWS (project='llm', LIMIT 5):\n${JSON.stringify(rows, null, 2)}`;
+
+    // Aggregate count by project
+    const count_result = await conn.query(
+      "SELECT project, count(*) AS n FROM 'test.parquet' GROUP BY project ORDER BY n DESC"
+    );
+    const counts = count_result.toArray().map(r =>
+      Object.fromEntries(
+        Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? v.toString() : v])
+      )
+    );
+    out.textContent += `\n\nCOUNTS BY PROJECT:\n${JSON.stringify(counts, null, 2)}`;
+
+    // Total cost aggregate
+    const agg_result = await conn.query(
+      "SELECT project, ROUND(SUM(cost_usd),2) AS total_cost_usd FROM 'test.parquet' GROUP BY project ORDER BY total_cost_usd DESC"
+    );
+    const aggs = agg_result.toArray().map(r =>
+      Object.fromEntries(
+        Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? v.toString() : v])
+      )
+    );
+    out.textContent += `\n\nCOST BY PROJECT:\n${JSON.stringify(aggs, null, 2)}`;
+
+    await conn.close();
+    out.textContent += `\n\n✅ ALL PASSED in ${Math.round(performance.now() - t0)}ms total`;
+    out.style.color = '#0f0';
+
+  } catch (e) {
+    out.textContent += `\n\n❌ ERROR: ${e.message}\n${e.stack || ''}`;
+    out.style.color = '#f55';
+  }
+</script>
