@@ -1869,7 +1869,7 @@ server <- function(input, output, session) {
       tags$script(HTML(paste0(
         "(function(){var c=echarts.init(document.getElementById('", id, "'),'dark');",
         "var o=", j, ";",
-        "o.series[0].symbolSize=function(d){return Math.max(6,Math.sqrt(d[2])*8)};",
+        "o.series[0].symbolSize=function(d){return Math.max(3,Math.sqrt(d[2])*4)};",
         "o.tooltip.formatter=function(p){return '$'+p.value[0].toFixed(2)+' | '+p.value[1].toFixed(1)+'h'};",
         "c.setOption(o);new ResizeObserver(function(){c.resize()})",
         ".observe(document.getElementById('", id, "'));",
