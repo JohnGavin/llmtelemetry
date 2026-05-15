@@ -885,7 +885,7 @@ ui <- page_navbar(
     layout_columns(col_widths = c(6, 6),
       card(min_height = "400px", card_header("Bus Factor (All Time)"), uiOutput("rh_bus_all"),
         card_footer(class = "text-muted small", "Contributor commit share — 1 person at 60%+ = risk")),
-      card(min_height = "400px", card_header("Bus Factor (6 Months)"), uiOutput("rh_bus_6mo"),
+      card(min_height = "400px", card_header("Bus Factor (1 Month)"), uiOutput("rh_bus_6mo"),
         card_footer(class = "text-muted small", "Recent contributor concentration"))
     ),
     layout_columns(col_widths = c(6, 6),
@@ -2035,7 +2035,7 @@ server <- function(input, output, session) {
     ), aria_label = label)
   }
   output$rh_bus_all <- renderUI(bus_dot(git_bus$all_time, "Bus factor all time: contributor commit share"))
-  output$rh_bus_6mo <- renderUI(bus_dot(git_bus$recent_6mo, "Bus factor 6 months: recent contributor concentration"))
+  output$rh_bus_6mo <- renderUI(bus_dot(git_bus$recent_6mo, "Bus factor 1 month: recent contributor concentration"))
 
   output$rh_velocity <- renderUI({
     if (!has_rows(git_vel)) return(ec_empty())
