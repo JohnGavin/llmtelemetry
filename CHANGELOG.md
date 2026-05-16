@@ -12,6 +12,12 @@ full refresh history.
 
 ## [Unreleased]
 
+### Phase 2A of epic #83 (DRAFT PR)
+- `vignettes/dashboard_v1_pilot.qmd`: pilot demonstrating DuckDB-WASM querying real v1 sessions parquet (329 rows) rendered to ECharts horizontal bar chart — pure JS, no R reactivity
+- `.gitignore`: `vignettes/data/` already excluded (served copies are not source-of-truth)
+- `scripts/serve_pilot.sh`: convenience runner — copies parquet, starts python3 http.server on port 8900
+- Phase 2B will integrate this pattern into the main dashboard with project-filter reactivity
+
 ### Phase 1F of epic #83 (PR #N)
 - Refactor: `.canonicalize_project_local()` moved to `R/canonicalize.R` as shared internal helper (used by all 3 appenders)
 - New function: `append_costs_from_staging()` — consumes `cost_emitted` events into v1 costs parquet; dedup by `cost_id = paste(canonical_project, date, source, sep="|")`

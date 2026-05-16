@@ -1,0 +1,199 @@
+---
+title: "v1 Telemetry — DuckDB-WASM Pilot (Phase 2A)"
+format:
+  html:
+    self-contained: false
+    embed-resources: false
+---
+
+## What this shows
+
+End-to-end demo: real v1 sessions parquet (329 rows from Phase 1A) fetched and
+queried by DuckDB-WASM in the browser, rendered to an ECharts bar chart.
+
+No R reactivity yet. Pure JS pipeline:
+parquet → DuckDB-WASM (in Web Worker) → JS rowset → ECharts.
+
+Verifies the architecture works against REAL telemetry data, not just a fixture.
+
+## How to test locally
+
+```bash
+# 1. Copy the parquet next to the served HTML
+mkdir -p vignettes/data/v1
+cp inst/extdata/telemetry/v1/sessions.parquet vignettes/data/v1/sessions.parquet
+
+# 2. Render
+quarto render vignettes/dashboard_v1_pilot.qmd
+
+# 3. Serve (convenience wrapper)
+bash scripts/serve_pilot.sh
+# OR manually:
+python3 -m http.server 8900 --directory vignettes
+
+# 4. Open http://localhost:8900/dashboard_v1_pilot.html
+```
+
+## Sessions per canonical_project (last 30 days)
+
+<div id="status" style="background:#1a1a1a; color:#0f0; padding:0.8em; font-family:monospace; font-size:0.85em; margin-bottom:0.5em;">Loading DuckDB-WASM…</div>
+
+<div id="chart" style="width:100%; height:400px; background:#1a1a1a; border-radius:4px;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script type="module">
+  const statusDiv = document.getElementById('status');
+  const chartDiv  = document.getElementById('chart');
+  const t0 = performance.now();
+  const ms = () => `[${Math.round(performance.now() - t0)}ms]`;
+  const log = msg => { statusDiv.textContent += '\n' + msg; };
+
+  try {
+    // ── 1. Import DuckDB-WASM (version locked to 1.32.0 — proven in Phase 0) ──
+    const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/+esm');
+    log(`${ms()} DuckDB-WASM module imported`);
+
+    const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+    const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+    log(`${ms()} Bundle selected: ${bundle.mainModule}`);
+
+    const worker_url = URL.createObjectURL(
+      new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+    );
+    const worker = new Worker(worker_url);
+    const logger = new duckdb.ConsoleLogger();
+    const db     = new duckdb.AsyncDuckDB(logger, worker);
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    URL.revokeObjectURL(worker_url);
+    log(`${ms()} DuckDB instantiated`);
+
+    const conn = await db.connect();
+    log(`${ms()} Connection established`);
+
+    // ── 2. Register parquet into DuckDB-WASM virtual filesystem ──
+    // File must be same-origin (served by the local http.server).
+    // Path is relative to the vignettes/ serve root.
+    const parquet_url = new URL('data/v1/sessions.parquet', window.location.href).href;
+    await db.registerFileURL(
+      'sessions.parquet',
+      parquet_url,
+      duckdb.DuckDBDataProtocol.HTTP,
+      false  // direct IO (range requests if server supports them)
+    );
+    log(`${ms()} Registered sessions.parquet -> ${parquet_url}`);
+
+    // ── 3. Query: sessions per canonical_project, last 30 days ──
+    // canonical_project IS NOT NULL filters the 136 NULL-project rows.
+    const result = await conn.query(`
+      SELECT
+        canonical_project,
+        COUNT(*) AS n_sessions
+      FROM 'sessions.parquet'
+      WHERE canonical_project IS NOT NULL
+        -- Cast both sides to plain TIMESTAMP: DuckDB-WASM 1.32 has no
+        -- TIMESTAMPTZ - INTERVAL operator, only TIMESTAMP - INTERVAL.
+        AND started_at::TIMESTAMP >= NOW()::TIMESTAMP - INTERVAL '30 days'
+      GROUP BY canonical_project
+      ORDER BY n_sessions DESC
+    `);
+
+    // Arrow BigInt → plain number for ECharts
+    const rows = result.toArray().map(r =>
+      Object.fromEntries(
+        Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? Number(v) : v])
+      )
+    );
+    log(`${ms()} Query returned ${rows.length} projects (last 30 days)`);
+
+    await conn.close();
+    const elapsed = Math.round(performance.now() - t0);
+    log(`${ms()} Connection closed — total: ${elapsed}ms`);
+    statusDiv.style.color = rows.length > 0 ? '#0f0' : '#ff0';
+
+    // ── 4. Render ECharts bar chart ──
+    const projects    = rows.map(r => r.canonical_project);
+    const sessionCounts = rows.map(r => r.n_sessions);
+
+    const chart = echarts.init(chartDiv, 'dark');
+    chart.setOption({
+      backgroundColor: '#1a1a1a',
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      grid:    { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+      xAxis: {
+        type: 'value',
+        name: 'Sessions',
+        nameLocation: 'middle',
+        nameGap: 30,
+        axisLabel: { color: '#ccc' },
+        nameTextStyle: { color: '#ccc' }
+      },
+      yAxis: {
+        type: 'category',
+        data: projects.slice().reverse(),   // highest at top
+        axisLabel: { color: '#ccc', fontSize: 12 }
+      },
+      series: [{
+        name: 'Sessions',
+        type: 'bar',
+        data: sessionCounts.slice().reverse(),
+        itemStyle: { color: '#4ea8de' },
+        label: {
+          show: true,
+          position: 'right',
+          color: '#ccc',
+          formatter: '{c}'
+        }
+      }]
+    });
+
+    // Responsive resize
+    window.addEventListener('resize', () => chart.resize());
+
+  } catch (e) {
+    statusDiv.textContent += `\n\nERROR: ${e.message}\n${e.stack || ''}`;
+    statusDiv.style.color = '#f55';
+    console.error(e);
+  }
+</script>
+
+## Verification
+
+After rendering and opening locally, you should see:
+
+- Status div: green text showing load timings (target: < 1.5 s cold load)
+- Chart: horizontal bar chart with canonical_project on y-axis, session count on x-axis
+- DevTools Network tab: ONE fetch of `data/v1/sessions.parquet`, status 200
+
+## What this proves
+
+- DuckDB-WASM successfully queries a real Phase 1 v1 parquet file
+- ECharts renders the result without any R-side participation
+- Pattern is ready to scale to the main dashboard (Phase 2B, separate PR)
+
+## What is NOT proven yet (Phase 2B and beyond)
+
+- Reactivity: chart does not update when sidebar inputs change
+- Deploy: gh-pages CI workflow does not yet copy parquet to `_site/data/v1/`
+- Multiple charts on one page sharing a single DuckDB connection
+
+## Methodology
+
+### What this vignette computes
+
+Reads `inst/extdata/telemetry/v1/sessions.parquet` (329 rows, produced by Phase 1A
+of epic #83) directly in the browser via DuckDB-WASM. Counts sessions per
+`canonical_project` over the last 30 days and renders the result as an ECharts
+horizontal bar chart. No targets pipeline involved — this is a pure-JS pilot.
+
+### Data sources
+
+- `inst/extdata/telemetry/v1/sessions.parquet`: v1 sessions parquet written by
+  the Phase 1A targets pipeline; served from `vignettes/data/v1/` at local test
+  time via `python3 -m http.server`
+
+### AI disclosure
+
+This vignette was developed with assistance from Anthropic's Claude (model: Opus 4.7
+and Sonnet 4.6). AI helped with code structure, prose drafting, and visualization
+choices. All analytical decisions and data interpretations are the author's
+responsibility.
