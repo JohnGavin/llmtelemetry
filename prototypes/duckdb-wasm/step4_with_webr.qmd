@@ -1,0 +1,143 @@
+---
+title: "DuckDB-WASM Phase 0 — step 4 (WebR + DuckDB-WASM coexistence, native shinylive)"
+format:
+  html:
+    self-contained: false
+    embed-resources: false
+filters:
+  - shinylive
+---
+
+## Goal
+
+Verify that DuckDB-WASM (JS module, Web Worker) and Shinylive/WebR can coexist in the
+same browser tab without OOM or Worker conflicts. Part of llmtelemetry issue
+[#83](https://github.com/JohnGavin/llmtelemetry/issues/83) Phase 0 feasibility.
+
+**Render approach:** This step uses the native `{shinylive-r}` Quarto chunk. The `shinylive`
+R package was added to the project nix shell on 2026-05-16, so the filter renders at build
+time and bundles WebR inline. Unlike the earlier iframe approach (which only proved
+*isolation* across browsing contexts), this native chunk runs WebR in the **same browsing
+context** as the DuckDB-WASM `<script>` above — a true coexistence test.
+
+## What to check in DevTools
+
+- **Memory**: total tab usage after both panels fully load. Expected combined: ~500 MB.
+  Alarm if above 2 GB.
+- **Console**: no `SharedArrayBuffer` conflicts, no Worker registration errors from either
+  DuckDB-WASM or WebR/Shinylive.
+- **Network**: DuckDB-WASM fetches from `cdn.jsdelivr.net`; Shinylive iframe fetches from
+  `shinylive.io`. Both should load independently without blocking.
+- **Performance**: note when the Shinylive iframe shows "WebR alive" — this is WebR cold
+  load time.
+
+## DuckDB-WASM block (identical to step 3)
+
+<pre id="output" style="background:#1a1a1a; color:#0f0; padding:1em; min-height:200px; white-space:pre-wrap; font-family: monospace;">Loading DuckDB-WASM…</pre>
+
+<script type="module">
+  const out = document.getElementById('output');
+  const t0 = performance.now();
+  const ms = () => `[${Math.round(performance.now() - t0)}ms]`;
+
+  try {
+    const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/+esm');
+    out.textContent += `\n${ms()} DuckDB-WASM module imported`;
+
+    const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+    const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+    out.textContent += `\n${ms()} Bundle selected: ${bundle.mainModule}`;
+
+    const worker_url = URL.createObjectURL(
+      new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+    );
+    const worker = new Worker(worker_url);
+    const logger = new duckdb.ConsoleLogger();
+    const db = new duckdb.AsyncDuckDB(logger, worker);
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    URL.revokeObjectURL(worker_url);
+    out.textContent += `\n${ms()} DuckDB instantiated`;
+
+    const conn = await db.connect();
+
+    // Register same-origin parquet into DuckDB-WASM's virtual FS
+    const parquet_url = new URL('./test.parquet', window.location.href).href;
+    await db.registerFileURL(
+      'test.parquet',
+      parquet_url,
+      duckdb.DuckDBDataProtocol.HTTP,
+      false
+    );
+    out.textContent += `\n${ms()} Registered test.parquet`;
+
+    const result = await conn.query(
+      "SELECT * FROM 'test.parquet' WHERE project = 'llm' LIMIT 5"
+    );
+    const rows = result.toArray().map(r =>
+      Object.fromEntries(
+        Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? v.toString() : v])
+      )
+    );
+    out.textContent += `\n${ms()} Query returned ${rows.length} rows`;
+    out.textContent += `\n\nSAMPLE ROWS:\n${JSON.stringify(rows, null, 2)}`;
+
+    const count_result = await conn.query(
+      "SELECT project, count(*) AS n FROM 'test.parquet' GROUP BY project ORDER BY n DESC"
+    );
+    const counts = count_result.toArray().map(r =>
+      Object.fromEntries(
+        Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? v.toString() : v])
+      )
+    );
+    out.textContent += `\n\nCOUNTS BY PROJECT:\n${JSON.stringify(counts, null, 2)}`;
+
+    await conn.close();
+    out.textContent += `\n\n✅ DuckDB-WASM PASSED in ${Math.round(performance.now() - t0)}ms`;
+    out.textContent += `\n   WebR/Shinylive loading in iframe below — check DevTools Memory…`;
+    out.style.color = '#0f0';
+
+  } catch (e) {
+    out.textContent += `\n\n❌ DuckDB-WASM ERROR: ${e.message}\n${e.stack || ''}`;
+    out.style.color = '#f55';
+  }
+</script>
+
+## Shinylive / WebR block (native chunk — same browsing context as DuckDB-WASM)
+
+The Shiny app below is bundled at render time via the `shinylive` Quarto filter. WebR
+loads in this same page and tab — not in an iframe. If the DuckDB-WASM block above shows
+✅ AND this app reports "WebR alive" with an R version, then both runtimes coexist in a
+single browsing context. That answers Q3 from epic #83 conclusively.
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 280
+library(shiny)
+ui <- fluidPage(
+  h3("WebR alive — DuckDB-WASM should also be ✅ in the panel above"),
+  p(paste("WebR initialised at", Sys.time())),
+  verbatimTextOutput("r_info")
+)
+server <- function(input, output) {
+  output$r_info <- renderPrint({
+    list(
+      r_version    = R.version.string,
+      session_time = Sys.time(),
+      message      = "WebR is running in the SAME browser tab as DuckDB-WASM."
+    )
+  })
+}
+shinyApp(ui, server)
+```
+
+## Verdict recording
+
+After observing both panels, record in README.md:
+
+| Check | Result |
+|-------|--------|
+| DuckDB-WASM output shows ✅ | |
+| Shinylive iframe shows "WebR alive" | |
+| Combined memory < 2 GB | |
+| No Worker conflicts in Console | |
+| Total cold-load time (both runtimes) | |
