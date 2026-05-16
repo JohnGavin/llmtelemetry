@@ -103,6 +103,52 @@ canonicalize_session_project <- function(raw) {
 # Vectorise so it can be applied to a column directly:
 canonicalize_project <- Vectorize(canonicalize_project, USE.NAMES = FALSE)
 
+#' Sanitize a data frame before committing to public inst/extdata/ (#936)
+#'
+#' Drops rows where canonical_project IS NA (orphan/agent-worktree rows).
+#' Replaces the raw `project` column with the canonical form so that raw
+#' filesystem paths (e.g. "-Users-johngavin-docs-gh-llm") do not appear in
+#' publicly committed JSON/Parquet files.
+#' Sanitizes `session_id` if present: path-style ids (starting with "-" or
+#' containing "/") are replaced with a deterministic salted hash so that
+#' deduplication in rollup functions still works without exposing private paths.
+#'
+#' @param df A data frame to sanitize.
+#' @return A sanitized data frame (or the input unchanged if it has no rows
+#'   or no canonical_project column).
+sanitize_for_public <- function(df) {
+  if (!is.data.frame(df) || nrow(df) == 0L) return(df)
+  if ("canonical_project" %in% names(df)) {
+    # Drop orphan/agent-worktree rows (canonical_project is NA)
+    df <- df[!is.na(df$canonical_project), , drop = FALSE]
+    # Replace raw project with canonical form
+    df$project <- df$canonical_project
+  }
+  # Sanitize session_id: path-style ids contain private filesystem paths.
+  # Replace with a synthetic id built from canonical_project + started_at so
+  # that deduplication in rollup functions still works across re-exports (#936).
+  if ("session_id" %in% names(df)) {
+    ids <- df$session_id
+    is_path <- grepl("^-|[/\\\\]", ids)
+    if (any(is_path)) {
+      has_started_at <- "started_at" %in% names(df)
+      has_cp <- "canonical_project" %in% names(df)
+      df$session_id[is_path] <- vapply(
+        which(is_path),
+        function(i) {
+          # Deterministic synthetic id: "sanitized@{canonical_project}@{started_at}"
+          # This is unique per session and stable across re-exports.
+          cp  <- if (has_cp) df$canonical_project[i] else "unknown"
+          sat <- if (has_started_at) df$started_at[i] else as.character(i)
+          paste0("sanitized@", cp, "@", sat)
+        },
+        character(1L)
+      )
+    }
+  }
+  df
+}
+
 # --- 1. Daily usage from cmonitor-rs ------------------------------------------
 cat("Exporting ccusage daily (via cmonitor-rs)...\n")
 has_cmonitor <- file.exists(cmonitor_bin)
@@ -409,6 +455,8 @@ if (length(proj_commits_list) > 0) {
   proj_commits_df <- bind_rows(proj_commits_list) |>
     arrange(date) |>
     mutate(canonical_project = canonicalize_project(project))
+  # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
+  proj_commits_df <- sanitize_for_public(proj_commits_df)
   write_json(proj_commits_df, file.path(out_dir, "git_commits_by_project.json"), auto_unbox = TRUE)
   write_json(proj_commits_df, file.path(extdata, "git_commits_by_project.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d commits across %d projects\n",
@@ -439,6 +487,8 @@ if (exists("proj_commits_df") && nrow(proj_commits_df) > 0) {
       .groups = "drop"
     ) |>
     arrange(project, iso_week)
+  # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
+  weekly_commits <- sanitize_for_public(weekly_commits)
   write_json(weekly_commits, file.path(out_dir, "weekly_commits_by_project.json"), auto_unbox = TRUE)
   write_json(weekly_commits, file.path(extdata, "weekly_commits_by_project.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d project-week rows across %d projects\n",
@@ -466,6 +516,8 @@ if (exists("proj_commits_df") && nrow(proj_commits_df) > 0) {
           .groups = "drop"
         ) |>
         arrange(project, iso_week)
+      # Sanitize before public commit (#936)
+      weekly_commits <- sanitize_for_public(weekly_commits)
       write_json(weekly_commits, file.path(out_dir, "weekly_commits_by_project.json"), auto_unbox = TRUE)
       write_json(weekly_commits, file.path(extdata, "weekly_commits_by_project.json"), auto_unbox = TRUE)
       cat(sprintf("  -> %d project-week rows (CI fallback)\n", nrow(weekly_commits)))
@@ -517,6 +569,8 @@ if (file.exists(cost_src) && file.exists(commits_src)) {
              cost_per_commit_usd) |>
       arrange(project, date)
 
+    # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
+    cost_per_commit <- sanitize_for_public(cost_per_commit)
     write_json(cost_per_commit, file.path(out_dir, "cost_per_commit.json"), auto_unbox = TRUE)
     write_json(cost_per_commit, file.path(extdata, "cost_per_commit.json"), auto_unbox = TRUE)
     cat(sprintf("  -> %d project-day rows\n", nrow(cost_per_commit)))
@@ -617,6 +671,8 @@ if (length(churn_list) > 0) {
   file_churn_df <- bind_rows(churn_list) |>
     arrange(project, desc(total_lines_changed)) |>
     mutate(canonical_project = canonicalize_project(project))
+  # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
+  file_churn_df <- sanitize_for_public(file_churn_df)
   write_json(file_churn_df, file.path(out_dir, "file_churn.json"), auto_unbox = TRUE)
   write_json(file_churn_df, file.path(extdata, "file_churn.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d files across %d projects\n",
@@ -722,6 +778,8 @@ if (length(coupling_list) > 0) {
   coupling_df <- bind_rows(coupling_list) |>
     arrange(project, desc(n_cochanges)) |>
     mutate(canonical_project = canonicalize_project(project))
+  # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
+  coupling_df <- sanitize_for_public(coupling_df)
   write_json(coupling_df, file.path(out_dir, "change_coupling.json"), auto_unbox = TRUE)
   write_json(coupling_df, file.path(extdata, "change_coupling.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d file pairs across %d projects\n",
@@ -917,10 +975,15 @@ if (file.exists(unified_db)) {
       # canonicalize_session_project() handles the dash→slash→canonical chain.
       canonical_project = canonicalize_session_project(project)
     )
+  # Sanitize before public commit: replace raw project with canonical, drop
+  # orphans, remove session_id (raw filesystem path) (#936)
+  u_sess_pub <- sanitize_for_public(u_sess)
+  cat(sprintf("  -> dropped %d orphan/worktree sessions; %d kept\n",
+              nrow(u_sess) - nrow(u_sess_pub), nrow(u_sess_pub)))
   # Write to both locations: inst/extdata (commit) + vignettes/data (preview)
-  write_json(u_sess, file.path(extdata, "unified_sessions.json"), auto_unbox = TRUE)
-  write_json(u_sess, file.path(out_dir, "unified_sessions.json"), auto_unbox = TRUE)
-  cat(sprintf("  -> %d sessions (written to inst/extdata + vignettes/data)\n", nrow(u_sess)))
+  write_json(u_sess_pub, file.path(extdata, "unified_sessions.json"), auto_unbox = TRUE)
+  write_json(u_sess_pub, file.path(out_dir, "unified_sessions.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d sessions (written to inst/extdata + vignettes/data)\n", nrow(u_sess_pub)))
 
   u_costs <- dbReadTable(ucon, "costs") |>
     as_tibble() |>
@@ -965,6 +1028,8 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
   out_data <- cost_proj[, c("date", "project", "est_cost", "duration_min", "share")]
   # project here comes from unified_sessions which is in dash-form
   out_data$canonical_project <- canonicalize_session_project(out_data$project)
+  # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
+  out_data <- sanitize_for_public(out_data)
   write_json(out_data, file.path(out_dir, "cost_by_project_estimated.json"), auto_unbox = TRUE)
   write_json(out_data, file.path(extdata, "cost_by_project_estimated.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d project-day cost estimates (written to inst/extdata + vignettes/data)\n", nrow(out_data)))
@@ -1057,6 +1122,10 @@ if (length(pred_files) > 0) {
 
       # Write outputs to both locations: inst/extdata (commit) + vignettes/data (preview)
       preds_out <- resolved |> mutate(across(where(is.numeric), ~round(.x, 4)))
+      # Sanitize: drop project_slug column (raw filesystem path, e.g.
+      # "-Users-johngavin-docs-gh-proj-data-weather-irish-buoy-network").
+      # project_name is already the clean canonical identifier (#936).
+      if ("project_slug" %in% names(preds_out)) preds_out$project_slug <- NULL
       write_json(preds_out, file.path(extdata, "predictions.json"), auto_unbox = TRUE)
       write_json(preds_out, file.path(out_dir, "predictions.json"), auto_unbox = TRUE)
       write_json(cal_buckets, file.path(extdata, "calibration_buckets.json"), auto_unbox = TRUE)
