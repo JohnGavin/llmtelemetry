@@ -12,6 +12,17 @@ full refresh history.
 
 ## [Unreleased]
 
+### Privacy fix — closes roborev #936 (PR #N)
+- `sanitize_for_public()` helper added to `inst/scripts/export_dashboard_data.R`
+- Replaces raw `project` column with `canonical_project` before every write to `inst/extdata/`
+- Drops rows where `canonical_project IS NA` (orphan/agent-worktree rows that have no canonical project)
+- Sanitizes path-style `session_id` values (e.g. `-Users-johngavin-docs-gh-llm`) with a deterministic synthetic id built from `canonical_project@started_at`
+- Drops `project_slug` from `predictions.json` (raw filesystem path column)
+- All 7 affected committed JSONs regenerated clean: unified_sessions (136 orphans dropped), cost_by_project_estimated (37 dropped), cost_per_commit (0 dropped), weekly_commits_by_project (0 dropped), git_commits_by_project (0 dropped), file_churn (0 dropped), change_coupling (0 dropped)
+- v1 parquets regenerated clean (sessions 329→202 rows, costs 108→68 rows, git_commits 860 rows unchanged)
+- New `tests/testthat/test-no-path-leak.R` — 145 assertions blocking regressions across all JSON and Parquet extdata files
+- Version bumped to 0.5.1
+
 ### Phase 2A of epic #83 (DRAFT PR)
 - `vignettes/dashboard_v1_pilot.qmd`: pilot demonstrating DuckDB-WASM querying real v1 sessions parquet (329 rows) rendered to ECharts horizontal bar chart — pure JS, no R reactivity
 - `.gitignore`: `vignettes/data/` already excluded (served copies are not source-of-truth)
