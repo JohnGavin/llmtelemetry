@@ -1,6 +1,5 @@
 #!/usr/bin/env Rscript
-# Phase 1A rollup runner — backfills sessions from unified_sessions.json
-# into inst/extdata/telemetry/v1/sessions.parquet.
+# Phase 1A/B/C rollup runner — backfills all three v1 parquets from source JSON.
 #
 # Usage (from any working directory):
 #   Rscript /path/to/llmtelemetry/inst/scripts/run_rollup.R
@@ -18,20 +17,25 @@ package_dir <- normalizePath(file.path(dirname(script_path), "..", ".."),
 
 pkgload::load_all(package_dir, quiet = TRUE)
 
-output_path <- file.path(
-  package_dir, "inst", "extdata", "telemetry", "v1", "sessions.parquet"
-)
-input_path <- file.path(
-  package_dir, "inst", "extdata", "unified_sessions.json"
-)
+extdata  <- file.path(package_dir, "inst", "extdata")
+telv1    <- file.path(extdata, "telemetry", "v1")
 
-result <- rollup_sessions(
-  input_path  = input_path,
-  output_path = output_path
-)
-
-cat(sprintf(
-  "rollup_sessions: wrote %d rows to %s\n",
-  nrow(result),
-  output_path
+# --- Sessions (Phase 1A) -----------------------------------------------------
+n_sess <- nrow(rollup_sessions(
+  input_path  = file.path(extdata, "unified_sessions.json"),
+  output_path = file.path(telv1,   "sessions.parquet")
 ))
+
+# --- Costs (Phase 1B) --------------------------------------------------------
+n_costs <- nrow(rollup_costs(
+  input_path  = file.path(extdata, "cost_by_project_estimated.json"),
+  output_path = file.path(telv1,   "costs.parquet")
+))
+
+# --- Git commits (Phase 1C) --------------------------------------------------
+n_git <- nrow(rollup_git_commits(
+  input_path  = file.path(extdata, "git_commits_by_project.json"),
+  output_path = file.path(telv1,   "git_commits.parquet")
+))
+
+cat(sprintf("rollup: sessions=%d costs=%d git_commits=%d\n", n_sess, n_costs, n_git))
