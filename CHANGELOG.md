@@ -12,6 +12,8 @@ full refresh history.
 
 ## [Unreleased]
 
+> **Session 2026-05-16 evening (telemetry epic Phase 1 complete):** Phase 1A-F + Phase 2A landed across 6 merged PRs (#85, #86, #87, #88, #90, #91). Push pipeline closed for all 3 v1 tables (sessions, costs, git_commits). DuckDB-WASM pilot proved end-to-end browser query against real parquet in 539 ms cold (Q3 from Phase 0 verified). Privacy fix PR #91 closes roborev #936. Roborev #905 closed (verified PR #62 fix). Issue #58 closed with synthesis. Filed #92 (ccusage_daily.json contains stderr text instead of JSON — likely root cause of roborev #948's reported symptom). Tests: 28 → 543 (+515). DESCRIPTION: 0.1.0 → 0.5.1.
+
 ### Privacy fix — closes roborev #936 (PR #N)
 - `sanitize_for_public()` helper added to `inst/scripts/export_dashboard_data.R`
 - Replaces raw `project` column with `canonical_project` before every write to `inst/extdata/`
