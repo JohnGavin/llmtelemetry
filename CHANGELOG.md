@@ -12,6 +12,16 @@ full refresh history.
 
 ## [Unreleased]
 
+### Phase 1B/C/D of epic #83 (PR #86)
+
+- New tables: costs (Phase 1B), git_commits (Phase 1C)
+- New rollups: `rollup_costs()` from `cost_by_project_estimated.json` (72 rows)
+- New rollups: `rollup_git_commits()` from `git_commits_by_project.json` (837 rows)
+- Push hook: `inst/hooks/llmtelemetry_emit.sh` appends events to staging JSONL
+- Staging reader: `R/read_staging.R` — `read_staging()` returns tibble of staged events
+- `inst/scripts/run_rollup.R` now executes all 3 rollups
+- Version bumped to 0.3.0
+
 ### Phase 1A of epic #83
 
 - New schema `inst/schema/v1/sessions.sql` — PIT sessions table with `valid_from NOT NULL`, primary key, two indexes.
