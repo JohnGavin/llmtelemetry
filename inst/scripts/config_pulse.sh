@@ -160,7 +160,7 @@ total_sh_files=$(find -L "$CONFIG_DIR" -name "*.sh" -not -path "*/logs/*" 2>/dev
 echo "$TODAY,total,all,sh_files,$total_sh_files" >> "$OUTFILE"
 
 # Total bytes (excluding logs)
-total_bytes=$(find "$CONFIG_DIR" \( -name "*.md" -o -name "*.sh" \) -not -path "*/logs/*" -exec cat {} + 2>/dev/null | wc -c | tr -d ' ')
+total_bytes=$(find -L "$CONFIG_DIR" \( -name "*.md" -o -name "*.sh" \) -not -path "*/logs/*" -exec cat {} + 2>/dev/null | wc -c | tr -d ' ')
 echo "$TODAY,total,all,bytes,$total_bytes" >> "$OUTFILE"
 echo "$TODAY,total,all,tokens_estimate,$((total_bytes / 4))" >> "$OUTFILE"
 
