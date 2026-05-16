@@ -29,6 +29,7 @@ format:
       - data/unified_sessions.json
       - data/unified_costs.json
       - data/cost_by_project_estimated.json
+      - data/projects_master.json
       - data/predictions.json
       - data/calibration_buckets.json
       - data/weekly_commits_by_project.json
@@ -284,7 +285,12 @@ pal <- list(claude = "#377eb8", gemini = "#e41a1c", accent = "#4daf4a",
             purple = "#984ea3", orange = "#ff7f00", hist = "#377eb8")
 
 # --- Data loading -------------------------------------------------------------
-base_url <- "https://johngavin.github.io/llmtelemetry"
+# Empty base_url means fetch from same origin as the served HTML — works for
+# both local walkthrough (python -m http.server) and production (gh-pages).
+# When the HTML is served locally, "/data/X.json" resolves to localhost.
+# When the HTML is served from gh-pages, "/data/X.json" resolves to
+# https://johngavin.github.io/llmtelemetry/data/X.json (same as before).
+base_url <- ""
 
 load_json <- function(filename) {
   tryCatch({
@@ -325,6 +331,8 @@ weekly_commits <- load_json("weekly_commits_by_project.json")
 cost_per_commit_data <- load_json("cost_per_commit.json")
 file_churn_data <- load_json("file_churn.json")
 change_coupling_data <- load_json("change_coupling.json")
+# Phase B: canonical project master list (excludes agent-worktree/orphan rows)
+projects_master_raw <- load_json("projects_master.json")
 
 # Normalize data: fromJSON("[]") returns list(), nested objects need extraction
 as_df <- function(x) if (is.data.frame(x)) x else NULL
@@ -335,6 +343,10 @@ cost_per_commit_data <- as_df(cost_per_commit_data)
 file_churn_data <- as_df(file_churn_data)
 change_coupling_data <- as_df(change_coupling_data)
 has_rows <- function(x) is.data.frame(x) && nrow(x) > 0
+# Normalise the master list; fall back gracefully
+projects_master_raw <- as_df(projects_master_raw)
+projects_master_canonical <- if (has_rows(projects_master_raw) && "canonical_project" %in% names(projects_master_raw))
+  sort(projects_master_raw$canonical_project) else character(0)
 
 # Shorten project path: keep last 2 meaningful segments
 # Also strip worktree suffixes to aggregate to project level
@@ -488,19 +500,30 @@ if (has_rows(gem_sess)) {
   gem_sess$date <- as.Date(gem_sess$start_time)
 }
 
-# Get unique projects from unified_sessions (has real project names)
-# Aggregate git worktrees (e.g. llmtelemetry/sonnet) into parent (llmtelemetry)
-all_projects <- character(0)
+# Phase B: use canonical_project column where available; fall back to legacy derivation
 base_projs <- character(0)
-if (has_rows(u_sessions) && "project" %in% names(u_sessions)) {
+if (has_rows(u_sessions) && "canonical_project" %in% names(u_sessions)) {
+  # Use Phase-A canonical_project; rows with NA canonical_project are orphan/worktree — exclude
+  u_sessions <- u_sessions[!is.na(u_sessions$canonical_project), ]
+  u_sessions$project_short <- u_sessions$canonical_project
+  base_projs <- sort(unique(u_sessions$canonical_project))
+} else if (has_rows(u_sessions) && "project" %in% names(u_sessions)) {
+  # Legacy fallback: derive from project path
   all_proj_short <- sort(unique(shorten_proj(u_sessions$project)))
   base_projs <- all_proj_short[!grepl("/", all_proj_short)]
-  all_projects <- sort(unique(canonical_proj(all_proj_short, base_projs)))
   u_sessions$project_short <- canonical_proj(shorten_proj(u_sessions$project), base_projs)
+  base_projs <- sort(unique(u_sessions$project_short))
 }
-# Propagate canonical names to derived datasets
-if (has_rows(cost_proj) && "project" %in% names(cost_proj)) {
-  cost_proj$project <- canonical_proj(shorten_proj(cost_proj$project), base_projs)
+# Prefer projects_master canonical list over session-derived list
+all_projects <- if (length(projects_master_canonical) > 0) projects_master_canonical else base_projs
+# Propagate canonical names to derived datasets using Phase-A column when present
+if (has_rows(cost_proj)) {
+  if ("canonical_project" %in% names(cost_proj)) {
+    cost_proj <- cost_proj[!is.na(cost_proj$canonical_project), ]
+    cost_proj$project <- cost_proj$canonical_project
+  } else if ("project" %in% names(cost_proj)) {
+    cost_proj$project <- canonical_proj(shorten_proj(cost_proj$project), base_projs)
+  }
 }
 if (has_rows(cc_daily) && "project" %in% names(cc_daily)) {
   cc_daily$project <- canonical_proj(cc_daily$project, base_projs)
@@ -647,11 +670,18 @@ ui <- page_navbar(
       min = 1, max = 30, value = 30, step = 1),
     conditionalPanel(
       condition = "input.tabs == 'Cost Trends' || input.tabs == 'Token Analysis' || input.tabs == 'Sessions' || input.tabs == 'By Project'",
-      selectInput("projects", "Projects", choices = all_projects,
-        selected = all_projects, multiple = TRUE),
-      tags$div(style = "display: flex; gap: 4px; margin-top: -10px;",
-        actionButton("sel_all", "All", class = "btn-sm btn-outline-secondary"),
-        actionButton("sel_none", "None", class = "btn-sm btn-outline-secondary"),
+      selectInput(
+        "selected_projects",
+        "Projects:",
+        choices  = NULL,   # populated server-side from projects_master.json
+        selected = "__ALL__",
+        multiple = TRUE,
+        selectize = FALSE, # classic list-box: ctrl+click for multi-select
+        size = 10
+      ),
+      tags$div(style = "display: flex; gap: 4px; margin-top: 4px;",
+        actionButton("sel_all",    "All",    class = "btn-sm btn-outline-secondary"),
+        actionButton("sel_none",   "None",   class = "btn-sm btn-outline-secondary"),
         actionButton("sel_invert", "Invert", class = "btn-sm btn-outline-secondary")
       )
     ),
@@ -855,7 +885,7 @@ ui <- page_navbar(
     layout_columns(col_widths = c(6, 6),
       card(min_height = "400px", card_header("Bus Factor (All Time)"), uiOutput("rh_bus_all"),
         card_footer(class = "text-muted small", "Contributor commit share — 1 person at 60%+ = risk")),
-      card(min_height = "400px", card_header("Bus Factor (6 Months)"), uiOutput("rh_bus_6mo"),
+      card(min_height = "400px", card_header("Bus Factor (1 Month)"), uiOutput("rh_bus_6mo"),
         card_footer(class = "text-muted small", "Recent contributor concentration"))
     ),
     layout_columns(col_widths = c(6, 6),
@@ -865,8 +895,8 @@ ui <- page_navbar(
         card_footer(class = "text-muted small", "When commits happen — hour vs day of week"))
     ),
     layout_columns(col_widths = c(12),
-      card(min_height = "400px", card_header("File Growth (6-Month Rolling)"), uiOutput("rh_file_growth"),
-        card_footer(class = "text-muted small", "6-month rolling aggregate of files added vs deleted — green = additions, red = deletions"))
+      card(min_height = "400px", card_header("File Growth (1-Week Rolling)"), uiOutput("rh_file_growth"),
+        card_footer(class = "text-muted small", "1-week rolling aggregate of files added vs deleted — green = additions, red = deletions"))
     ),
     layout_columns(col_widths = c(6, 6),
       card(min_height = "400px", card_header("Churn Hotspots"), uiOutput("rh_churn"),
@@ -985,39 +1015,55 @@ server <- function(input, output, session) {
   cc_d_proj <- reactive({
     d <- cc_d()
     if (nrow(d) == 0) return(d)
-    d <- d[d$project %in% input$projects, ]
+    sel <- resolve_sel(input$selected_projects)
+    if (!is.null(sel) && "project" %in% names(d))
+      d <- d[d$project %in% sel, ]
     d
   })
 
-  # Projects available in the current time window (dynamic sidebar list)
-  avail_projects <- reactive({
-    if (!has_rows(u_sessions)) return(all_projects)
-    d <- u_sessions[u_sessions$date >= cutoff(), ]
-    if (nrow(d) == 0) return(all_projects)
-    sort(unique(d$project_short))
-  })
-
-  # Update sidebar choices when time horizon changes
-  observe({
-    new_projs <- avail_projects()
-    current_sel <- isolate(input$projects)
-    new_sel <- if (length(current_sel) > 0) intersect(current_sel, new_projs) else new_projs
-    if (length(new_sel) == 0) new_sel <- new_projs
-    updateSelectInput(session, "projects", choices = new_projs, selected = new_sel)
+  # --- Phase B: one-shot sidebar population from projects_master.json ----------
+  # CRITICAL: choices are populated ONCE on session start by virtue of being
+  # called directly in the server body (no reactive wrapper). The original
+  # observe(..., once = TRUE) was invalid — `once` is an observeEvent() arg,
+  # not an observe() arg, and broke the entire server function.
+  # This fixes W4 (stickiness: selector resetting on time-horizon change).
+  local({
+    master_choices <- c(
+      "All projects" = "__ALL__",
+      "None"         = "__NONE__",
+      setNames(all_projects, all_projects)
+    )
+    updateSelectInput(session, "selected_projects",
+                      choices  = master_choices,
+                      selected = "__ALL__")
   })
 
   # --- Project filter buttons -------------------------------------------------
   observeEvent(input$sel_all, {
-    updateSelectInput(session, "projects", selected = avail_projects())
+    updateSelectInput(session, "selected_projects", selected = "__ALL__")
   })
   observeEvent(input$sel_none, {
-    updateSelectInput(session, "projects", selected = character(0))
+    updateSelectInput(session, "selected_projects", selected = "__NONE__")
   })
   observeEvent(input$sel_invert, {
-    current <- input$projects
-    inverted <- setdiff(avail_projects(), current)
-    updateSelectInput(session, "projects", selected = inverted)
+    current <- input$selected_projects
+    # sentinel values are not real projects — exclude them when inverting
+    real_current <- setdiff(current, c("__ALL__", "__NONE__"))
+    inverted <- setdiff(all_projects, real_current)
+    # Collapse to sentinel when the inverted set is "everything" or "nothing"
+    new_sel <- if (length(inverted) == 0) "__NONE__"
+               else if (length(inverted) == length(all_projects)) "__ALL__"
+               else inverted
+    updateSelectInput(session, "selected_projects", selected = new_sel)
   })
+
+  # Helper: resolve selected_projects input -> character vector of project names
+  # Returns NULL (meaning "all projects") when __ALL__ is selected.
+  resolve_sel <- function(sel) {
+    if (is.null(sel) || "__ALL__" %in% sel) return(NULL)
+    if ("__NONE__" %in% sel) return(character(0))
+    sel
+  }
 
   # --- Overview ---------------------------------------------------------------
   output$vb_cost <- renderText({
@@ -1139,11 +1185,13 @@ server <- function(input, output, session) {
   output$cost_by_project <- renderUI({
     d <- cost_proj
     if (!is.data.frame(d) || nrow(d) == 0) return(ec_empty("No project cost estimates available"))
-    # Apply date and project filters
-    if (!is.null(input$date_range) && length(input$date_range) == 2) {
-      d <- d[d$date >= input$date_range[1] & d$date <= input$date_range[2], ]
+    # Apply time filter
+    if (!is.null(cutoff())) d <- d[d$date >= cutoff(), ]
+    # Apply project filter from canonical master list
+    sel <- resolve_sel(input$selected_projects)
+    if (!is.null(sel)) {
+      d <- d[d$project %in% sel, ]
     }
-    d <- d[d$project %in% input$projects, ]
     if (nrow(d) == 0) return(ec_empty("No data for selected filters"))
 
     all_d <- sort(unique(d$date))
@@ -1361,41 +1409,34 @@ server <- function(input, output, session) {
 
   # --- Sessions ---------------------------------------------------------------
   # Summary value boxes
-  output$vb_sess_count <- renderText({
-    if (!has_rows(u_sessions)) return("0")
+  # Helper: filter u_sessions by time cutoff + selected_projects
+  sess_filtered <- reactive({
+    if (!has_rows(u_sessions)) return(data.frame())
     d <- u_sessions[u_sessions$date >= cutoff(), ]
-    if (!all(all_projects %in% input$projects)) {
-      d <- d[d$project_short %in% input$projects, ]
-    }
-    as.character(nrow(d))
+    sel <- resolve_sel(input$selected_projects)
+    if (!is.null(sel) && "project_short" %in% names(d))
+      d <- d[d$project_short %in% sel, ]
+    d
+  })
+
+  output$vb_sess_count <- renderText({
+    as.character(nrow(sess_filtered()))
   })
   output$vb_sess_duration <- renderText({
-    if (!has_rows(u_sessions)) return("0 min")
-    d <- u_sessions[u_sessions$date >= cutoff(), ]
-    if (!all(all_projects %in% input$projects)) {
-      d <- d[d$project_short %in% input$projects, ]
-    }
+    d <- sess_filtered()
+    if (nrow(d) == 0) return("0 min")
     total <- sum(d$duration_min, na.rm = TRUE)
     if (total >= 60) sprintf("%.1f hr", total / 60) else sprintf("%.0f min", total)
   })
   output$vb_sess_avg <- renderText({
-    if (!has_rows(u_sessions)) return("0 min")
-    d <- u_sessions[u_sessions$date >= cutoff(), ]
-    if (!all(all_projects %in% input$projects)) {
-      d <- d[d$project_short %in% input$projects, ]
-    }
+    d <- sess_filtered()
     if (nrow(d) == 0) return("0 min")
     avg <- mean(d$duration_min, na.rm = TRUE)
     sprintf("%.1f min", avg)
   })
 
   output$sess_claude <- renderDT({
-    if (!has_rows(u_sessions)) return(datatable(data.frame()))
-    d <- u_sessions[u_sessions$date >= cutoff(), ]
-    # Filter by selected projects
-    if ("project_short" %in% names(d)) {
-      d <- d[d$project_short %in% input$projects, ]
-    }
+    d <- sess_filtered()
     if (nrow(d) == 0) return(datatable(data.frame(Message = "No sessions for selected projects")))
     d <- d[order(d$started_at, decreasing = TRUE), ]
     d <- head(d, input$top_n)
@@ -1425,12 +1466,8 @@ server <- function(input, output, session) {
   })
 
   output$sess_hist <- renderUI({
-    if (!has_rows(u_sessions)) return(ec_empty())
-    d <- u_sessions[u_sessions$date >= cutoff() & u_sessions$duration_min > 0, ]
-    # Filter by selected projects
-    if ("project_short" %in% names(d)) {
-      d <- d[d$project_short %in% input$projects, ]
-    }
+    d <- sess_filtered()
+    d <- d[!is.na(d$duration_min) & d$duration_min > 0, ]
     if (nrow(d) == 0) return(ec_empty("No sessions for selected projects"))
     h <- hist(d$duration_min, breaks = 20, plot = FALSE)
     ec_bar(round(h$mids, 1), list(
@@ -1439,12 +1476,8 @@ server <- function(input, output, session) {
   })
 
   output$sess_scatter <- renderUI({
-    if (!has_rows(u_sessions)) return(ec_empty())
-    d <- u_sessions[u_sessions$date >= cutoff() & u_sessions$duration_min > 0, ]
-    # Filter by selected projects
-    if ("project_short" %in% names(d)) {
-      d <- d[d$project_short %in% input$projects, ]
-    }
+    d <- sess_filtered()
+    d <- d[!is.na(d$duration_min) & d$duration_min > 0, ]
     if (nrow(d) == 0) return(ec_empty("No sessions for selected projects"))
     daily <- aggregate(
       cbind(n = duration_min, total_min = duration_min) ~ date,
@@ -1474,12 +1507,12 @@ server <- function(input, output, session) {
     d <- cost_proj
     d$date <- as.Date(d$date)
     d <- d[d$date >= cutoff(), ]
-    # Shorten project names for display
-    d$project_short <- shorten_proj(d$project)
-    # Filter by selected projects
-    if (!all(all_projects %in% input$projects)) {
-      d <- d[d$project_short %in% input$projects, ]
-    }
+    # project column already normalised to canonical_project at load time
+    d$project_short <- d$project
+    # Apply project filter from master list
+    sel <- resolve_sel(input$selected_projects)
+    if (!is.null(sel))
+      d <- d[d$project_short %in% sel, ]
     d
   })
 
@@ -1505,12 +1538,7 @@ server <- function(input, output, session) {
   })
 
   output$proj_sessions <- renderUI({
-    if (!has_rows(u_sessions)) return(ec_empty())
-    d <- u_sessions[u_sessions$date >= cutoff(), ]
-    # Filter by selected projects
-    if (!all(all_projects %in% input$projects)) {
-      d <- d[d$project_short %in% input$projects, ]
-    }
+    d <- sess_filtered()
     if (nrow(d) == 0) return(ec_empty())
     # Count sessions per project
     agg <- aggregate(session_id ~ project_short, data = d, FUN = length)
@@ -1555,11 +1583,7 @@ server <- function(input, output, session) {
   })
 
   output$proj_duration <- renderUI({
-    if (!has_rows(u_sessions)) return(ec_empty())
-    d <- u_sessions[u_sessions$date >= cutoff(), ]
-    if (!all(all_projects %in% input$projects)) {
-      d <- d[d$project_short %in% input$projects, ]
-    }
+    d <- sess_filtered()
     if (nrow(d) == 0 || !"duration_min" %in% names(d)) return(ec_empty())
     agg <- aggregate(duration_min ~ project_short, data = d, FUN = sum, na.rm = TRUE)
     agg <- agg[order(agg$duration_min, decreasing = FALSE), ]
@@ -1595,9 +1619,10 @@ server <- function(input, output, session) {
         heat_data[[length(heat_data) + 1]] <- list(i - 1, j - 1, val)
       }
     }
-    ec(list(
-      tooltip = list(position = "top",
-        formatter = DT::JS("function(p){return p.value[2]+'% share'}")),
+    # Build spec without JS() wrappers to avoid JS_EVAL serialization error.
+    # The tooltip formatter is injected as a raw JS literal after toJSON().
+    spec <- list(
+      tooltip = list(position = "top", formatter = "__SHARE_FMT__"),
       grid = list(left = 100, bottom = 60, containLabel = FALSE),
       xAxis = list(type = "category", data = I(as.character(dates)), splitArea = list(show = TRUE)),
       yAxis = list(type = "category", data = I(projs), splitArea = list(show = TRUE)),
@@ -1608,7 +1633,20 @@ server <- function(input, output, session) {
         name = "Share", type = "heatmap", data = heat_data,
         emphasis = list(itemStyle = list(shadowBlur = 10, shadowColor = "rgba(0,0,0,0.5)"))
       ))
-    ), h = "300px", aria_label = "Heatmap: project cost share percentage by date")
+    )
+    id <- paste0("ec", sample.int(1e7, 1))
+    j <- toJSON(spec, auto_unbox = TRUE, null = "null")
+    j <- gsub('"__SHARE_FMT__"', 'function(p){return p.value[2]+"% share"}', j, fixed = TRUE)
+    tagList(
+      tags$div(id = id, class = "echart-div", role = "button",
+               `aria-label` = "Heatmap: project cost share percentage by date",
+               tabindex = "0", style = "width:100%;height:300px;cursor:zoom-in"),
+      tags$script(HTML(paste0(
+        "(function(){var c=echarts.init(document.getElementById('", id, "'),'dark');",
+        "c.setOption(", j, ");new ResizeObserver(function(){c.resize()})",
+        ".observe(document.getElementById('", id, "'));})();"
+      )))
+    )
   })
 
   # --- Phase 2: Weekly Commit Heatmap (By Project tab) -----------------------
@@ -1631,6 +1669,13 @@ server <- function(input, output, session) {
     # TODO(#27 Phase 4): wire granularity to existing time-series charts
     if (!has_rows(cost_per_commit_data)) return(ec_empty("No cost-per-commit data available"))
     d <- cost_per_commit_data
+    # Use canonical_project column when available
+    if ("canonical_project" %in% names(d)) d$project <- d$canonical_project
+    # Apply project filter
+    sel <- resolve_sel(input$selected_projects)
+    if (!is.null(sel) && "project" %in% names(d))
+      d <- d[d$project %in% sel, ]
+    if (nrow(d) == 0) return(ec_empty("No data for selected projects"))
     gran <- input$granularity
     if (is.null(gran)) gran <- "weekly"
 
@@ -1832,7 +1877,7 @@ server <- function(input, output, session) {
       tags$script(HTML(paste0(
         "(function(){var c=echarts.init(document.getElementById('", id, "'),'dark');",
         "var o=", j, ";",
-        "o.series[0].symbolSize=function(d){return Math.max(6,Math.sqrt(d[2])*8)};",
+        "o.series[0].symbolSize=function(d){return Math.max(3,Math.sqrt(d[2])*4)};",
         "o.tooltip.formatter=function(p){return '$'+p.value[0].toFixed(2)+' | '+p.value[1].toFixed(1)+'h'};",
         "c.setOption(o);new ResizeObserver(function(){c.resize()})",
         ".observe(document.getElementById('", id, "'));",
@@ -1896,18 +1941,29 @@ server <- function(input, output, session) {
     d <- if (has_rows(git_commits_proj)) git_commits_proj else git_commits
     if (!has_rows(d)) return(DT::datatable(data.frame()))
     d <- d[!is.na(d$date) & d$date >= cutoff(), ]
+    if (nrow(d) == 0) return(DT::datatable(data.frame()))
     proj_col <- if ("project" %in% names(d)) d$project else rep("llmtelemetry", nrow(d))
-    summary_df <- do.call(rbind, lapply(split(d, proj_col), function(g) {
+    splits   <- split(d, proj_col)
+    if (length(splits) == 0) return(DT::datatable(data.frame()))
+    summary_df <- do.call(rbind, lapply(seq_along(splits), function(i) {
+      g <- splits[[i]]
+      if (is.null(g) || nrow(g) == 0) return(NULL)
+      lc  <- suppressWarnings(as.numeric(g$lines_changed))
+      la  <- suppressWarnings(as.numeric(g$lines_added))
+      ld  <- suppressWarnings(as.numeric(g$lines_deleted))
+      med <- if (any(!is.na(lc))) round(median(lc, na.rm = TRUE)) else NA_real_
+      mn  <- if (any(!is.na(lc))) round(mean(lc,   na.rm = TRUE)) else NA_real_
       data.frame(
-        Project     = g$project[1],
+        Project     = names(splits)[[i]],
         Commits     = nrow(g),
-        Med_Lines   = round(median(g$lines_changed, na.rm = TRUE)),
-        Mean_Lines  = round(mean(g$lines_changed, na.rm = TRUE)),
-        Lines_Added = sum(g$lines_added, na.rm = TRUE),
-        Lines_Del   = sum(g$lines_deleted, na.rm = TRUE),
+        Med_Lines   = med,
+        Mean_Lines  = mn,
+        Lines_Added = sum(la, na.rm = TRUE),
+        Lines_Del   = sum(ld, na.rm = TRUE),
         stringsAsFactors = FALSE
       )
     }))
+    if (is.null(summary_df) || nrow(summary_df) == 0) return(DT::datatable(data.frame()))
     summary_df <- summary_df[order(summary_df$Commits, decreasing = TRUE), ]
     DT::datatable(summary_df,
       rownames = FALSE,
@@ -1982,7 +2038,7 @@ server <- function(input, output, session) {
     ), aria_label = label)
   }
   output$rh_bus_all <- renderUI(bus_dot(git_bus$all_time, "Bus factor all time: contributor commit share"))
-  output$rh_bus_6mo <- renderUI(bus_dot(git_bus$recent_6mo, "Bus factor 6 months: recent contributor concentration"))
+  output$rh_bus_6mo <- renderUI(bus_dot(git_bus$recent_6mo, "Bus factor 1 month: recent contributor concentration"))
 
   output$rh_velocity <- renderUI({
     if (!has_rows(git_vel)) return(ec_empty())

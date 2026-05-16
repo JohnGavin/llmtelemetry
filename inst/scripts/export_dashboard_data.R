@@ -40,8 +40,14 @@ shorten_project <- function(x) {
 canonicalize_project <- function(name) {
   if (is.null(name) || is.na(name) || !nzchar(name)) return(NA_character_)
 
-  # 1. Drop pure meta-names (agent dirs, generic worktree marker)
-  meta_only <- c("sonnet", "roborev", "worktree")
+  # 1. Drop pure meta-names (agent dirs, generic worktree marker, and
+  #    top-level container directories that are not real projects).
+  meta_only <- c(
+    "sonnet", "roborev", "worktree",
+    "antigravity", "crypto", "data", "github", "hello",
+    "knowledge", "simulations", "sport", "subagents",
+    "t", "io", "urban_planning", "notmineraft", "telemetry", "football"
+  )
   if (name %in% meta_only) return(NA_character_)
 
   # 2. Strip agent worktree ID prefix — patterns like "D73dOZsvyf/repo" or
@@ -50,19 +56,29 @@ canonicalize_project <- function(name) {
   name <- sub("^[A-Za-z0-9_]{8,}/repo/?", "", name)
   if (!nzchar(name)) return(NA_character_)
 
-  # 3. Strip "worktree/" prefix (e.g. "worktree/llm" -> "llm")
-  name <- sub("^worktree/", "", name)
-
-  # 4. Explicit prefix overrides — sub-paths mapped to canonical parent project.
+  # 3. Explicit prefix overrides — sub-paths mapped to canonical parent project.
+  #    Checked BEFORE the container-prefix strip so named overrides win.
   overrides <- list(
-    "buoy/network"    = "irish_buoy_network",
-    "data/historical" = "historical",
-    "data/micromort"  = "micromort",
-    "crypto/swarms"   = "swarms"
+    "buoy/network" = "irish_buoy_network"
   )
   for (pat in names(overrides)) {
     if (startsWith(name, pat)) return(overrides[[pat]])
   }
+
+  # 4. Strip container-directory prefixes (sub-paths where the FIRST segment is
+  #    a meta container and the SECOND segment is the actual project).
+  #    e.g. "simulations/randomwalk" -> "randomwalk", "sport/footbet" -> "footbet"
+  container_prefixes <- c(
+    "worktree/", "simulations/", "sport/", "data/", "crypto/",
+    "subagents/", "knowledge/", "github/"
+  )
+  for (pfx in container_prefixes) {
+    if (startsWith(name, pfx)) {
+      name <- sub(paste0("^", pfx), "", name)
+      break
+    }
+  }
+  if (!nzchar(name)) return(NA_character_)
 
   # 5. Default: take the FIRST path segment as the canonical project name.
   #    e.g. "llm/vignettes" -> "llm", "footbet" -> "footbet"
