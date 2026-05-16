@@ -43,7 +43,7 @@ from jsDelivr. Both Workers run concurrently.
   const ms = () => `[${Math.round(performance.now() - t0)}ms]`;
 
   try {
-    const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.33.0/+esm');
+    const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/+esm');
     out.textContent += `\n${ms()} DuckDB-WASM module imported`;
 
     const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
