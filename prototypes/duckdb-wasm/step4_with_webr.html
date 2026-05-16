@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>DuckDB-WASM Phase 0 — step 4 (WebR + DuckDB-WASM coexistence)</title>
+<title>DuckDB-WASM Phase 0 — step 4 (WebR + DuckDB-WASM coexistence, native shinylive)</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -35,6 +35,11 @@ ul.task-list li input[type="checkbox"] {
 <script src="step4_with_webr_files/libs/bootstrap/bootstrap.min.js"></script>
 <link href="step4_with_webr_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="step4_with_webr_files/libs/bootstrap/bootstrap-d5fa03fb90ac27921a6d47853be462c0.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<meta name="shinylive:serviceworker_dir" content=".">
+<script src="step4_with_webr_files/libs/quarto-contrib/shinylive-0.9.1/shinylive/load-shinylive-sw.js" type="module"></script>
+<script src="step4_with_webr_files/libs/quarto-contrib/shinylive-0.9.1/shinylive/run-python-blocks.js" type="module"></script>
+<link href="step4_with_webr_files/libs/quarto-contrib/shinylive-0.9.1/shinylive/shinylive.css" rel="stylesheet">
+<link href="step4_with_webr_files/libs/quarto-contrib/shinylive-quarto-css/shinylive-quarto.css" rel="stylesheet">
 
 
 </head>
@@ -47,7 +52,7 @@ ul.task-list li input[type="checkbox"] {
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">DuckDB-WASM Phase 0 — step 4 (WebR + DuckDB-WASM coexistence)</h1>
+<h1 class="title">DuckDB-WASM Phase 0 — step 4 (WebR + DuckDB-WASM coexistence, native shinylive)</h1>
 </div>
 
 
@@ -67,8 +72,7 @@ ul.task-list li input[type="checkbox"] {
 <section id="goal" class="level2">
 <h2 class="anchored" data-anchor-id="goal">Goal</h2>
 <p>Verify that DuckDB-WASM (JS module, Web Worker) and Shinylive/WebR can coexist in the same browser tab without OOM or Worker conflicts. Part of llmtelemetry issue <a href="https://github.com/JohnGavin/llmtelemetry/issues/83">#83</a> Phase 0 feasibility.</p>
-<p><strong>Note on render approach:</strong> The <code>shinylive</code> R package is not in the llmtelemetry nix shell (confirmed 2026-05-15), so the <code>{shinylive-r}</code> Quarto filter cannot render at build time. Instead, this step embeds Shinylive via a raw <code>&lt;iframe&gt;</code> pointing to <code>shinylive.io/r/</code>. This tests the same coexistence question — two WASM runtimes in one tab — without requiring the filter. The iframe loads WebR from the Shinylive CDN; the main page loads DuckDB-WASM from jsDelivr. Both Workers run concurrently.</p>
-<p><strong>Manual step if you want the filter version:</strong> <code>Rscript -e 'install.packages("shinylive")'</code> (outside Nix) then re-render with <code>filters: [shinylive]</code> added back to the YAML header.</p>
+<p><strong>Render approach:</strong> This step uses the native <code>{shinylive-r}</code> Quarto chunk. The <code>shinylive</code> R package was added to the project nix shell on 2026-05-16, so the filter renders at build time and bundles WebR inline. Unlike the earlier iframe approach (which only proved <em>isolation</em> across browsing contexts), this native chunk runs WebR in the <strong>same browsing context</strong> as the DuckDB-WASM <code>&lt;script&gt;</code> above — a true coexistence test.</p>
 </section>
 <section id="what-to-check-in-devtools" class="level2">
 <h2 class="anchored" data-anchor-id="what-to-check-in-devtools">What to check in DevTools</h2>
@@ -149,14 +153,30 @@ ul.task-list li input[type="checkbox"] {
   }
 </script>
 </section>
-<section id="shinylive-webr-block-iframe-fallback" class="level2">
-<h2 class="anchored" data-anchor-id="shinylive-webr-block-iframe-fallback">Shinylive / WebR block (iframe fallback)</h2>
-<p>The panel below loads Shinylive via an <code>&lt;iframe&gt;</code> pointing to the live Shinylive deployment service. WebR runs inside the iframe sandbox, isolated from the main page’s DuckDB-WASM Worker. If both output their success messages simultaneously, the coexistence assumption holds.</p>
-<iframe src="https://shinylive.io/r/app/#code=NobwRAdghgtgpmAXGKAHVA6ASmANGAYwHsIAXOMpMAGwEsAjAJykYE8AKAZwAtaJWAlAB0IdJiw71OAFSx0WRGFCVCAbnIBedZWwCuAT2aqoATwwxqFCHQC8UgMIALALIBHAA4BKHDqx0ANTBaKRYMFjs6OwA6BiVJd04LCioaemY2Th4+QVEJaRhLOlQAd1Y4IqA" width="100%" height="220" style="border: 1px solid #444; border-radius: 4px;" title="Shinylive WebR coexistence test" loading="lazy">
-</iframe>
-<p style="font-size:0.85em; color:#888; margin-top:0.5em;">
-The iframe loads WebR from <code>shinylive.io</code> CDN. If it shows “WebR alive”, both runtimes coexist. Check DevTools Memory tab for combined allocation.
-</p>
+<section id="shinylive-webr-block-native-chunk-same-browsing-context-as-duckdb-wasm" class="level2">
+<h2 class="anchored" data-anchor-id="shinylive-webr-block-native-chunk-same-browsing-context-as-duckdb-wasm">Shinylive / WebR block (native chunk — same browsing context as DuckDB-WASM)</h2>
+<p>The Shiny app below is bundled at render time via the <code>shinylive</code> Quarto filter. WebR loads in this same page and tab — not in an iframe. If the DuckDB-WASM block above shows ✅ AND this app reports “WebR alive” with an R version, then both runtimes coexist in a single browsing context. That answers Q3 from epic #83 conclusively.</p>
+<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
+#|   shinylive does not work in self-contained HTML documents.
+#|   Please set `embed-resources: false` in your metadata.
+#| standalone: true
+#| viewerHeight: 280
+library(shiny)
+ui &lt;- fluidPage(
+  h3("WebR alive — DuckDB-WASM should also be ✅ in the panel above"),
+  p(paste("WebR initialised at", Sys.time())),
+  verbatimTextOutput("r_info")
+)
+server &lt;- function(input, output) {
+  output$r_info &lt;- renderPrint({
+    list(
+      r_version    = R.version.string,
+      session_time = Sys.time(),
+      message      = "WebR is running in the SAME browser tab as DuckDB-WASM."
+    )
+  })
+}
+shinyApp(ui, server)</code></pre>
 </section>
 <section id="verdict-recording" class="level2">
 <h2 class="anchored" data-anchor-id="verdict-recording">Verdict recording</h2>
