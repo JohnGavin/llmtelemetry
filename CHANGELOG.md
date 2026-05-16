@@ -12,6 +12,16 @@ full refresh history.
 
 ## [Unreleased]
 
+### Phase 1A of epic #83
+
+- New schema `inst/schema/v1/sessions.sql` — PIT sessions table with `valid_from NOT NULL`, primary key, two indexes.
+- `R/schema.R` — `schema_version()`, `apply_schema_v1()`, `open_telemetry_db()` exported helpers.
+- `R/rollup_sessions.R` — backfills sessions from `unified_sessions.json` into v1 Parquet via duckplyr + DuckDB COPY TO (no arrow dependency).
+- `inst/scripts/run_rollup.R` — CLI runner; produces 329-row initial parquet.
+- `inst/extdata/telemetry/v1/sessions.parquet` — first PIT data committed (329 rows, zstd compression).
+- Tests: 5 schema tests + 8 rollup tests (column set, valid_from, round-trip, idempotency, error on empty input).
+- Version bumped to 0.2.0; `withr` added to Suggests.
+
 ---
 
 ## 2026-05-13 to 2026-05-16 (session: dashboard-refresh-and-telemetry-epic)
