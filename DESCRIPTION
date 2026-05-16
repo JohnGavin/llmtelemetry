@@ -1,6 +1,6 @@
 Package: llmtelemetry
 Title: LLM Usage Telemetry
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: person("John", "Gavin", email = "john.gavin@example.com", role = c("aut", "cre"))
 Description: Telemetry, cost tracking, and automated reporting for LLM usage.
 License: MIT + file LICENSE
@@ -22,5 +22,6 @@ Imports:
     tibble,
     tidyr
 Suggests:
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    withr
 Config/testthat/edition: 3
