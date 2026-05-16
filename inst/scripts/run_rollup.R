@@ -38,4 +38,13 @@ n_git <- nrow(rollup_git_commits(
   output_path = file.path(telv1,   "git_commits.parquet")
 ))
 
-cat(sprintf("rollup: sessions=%d costs=%d git_commits=%d\n", n_sess, n_costs, n_git))
+# --- Staging drain (Phase 1E) ------------------------------------------------
+# Append any hook-emitted session_stop events that have not yet been written
+# to the sessions parquet.  Idempotent: re-running adds 0 rows if all events
+# are already present.
+n_new <- append_sessions_from_staging(
+  parquet_path = file.path(telv1, "sessions.parquet")
+)
+
+cat(sprintf("rollup: sessions=%d (+%d from staging) costs=%d git_commits=%d\n",
+            n_sess, n_new, n_costs, n_git))

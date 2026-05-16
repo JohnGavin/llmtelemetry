@@ -12,6 +12,14 @@ full refresh history.
 
 ## [Unreleased]
 
+### Phase 1E of epic #83 (PR #N)
+- New function: `append_sessions_from_staging()` — consumes hook events into v1 sessions parquet
+- Dedup by `session_id`; idempotent (running twice yields identical row count)
+- Event envelope schema documented at `inst/schema/v1/events.md`
+- `inst/scripts/run_rollup.R` now also drains the staging dir after backfills
+- 31 tests in `tests/testthat/test-append-from-staging.R`
+- Version bumped to 0.4.0
+
 ### Phase 1B/C/D of epic #83 (PR #86)
 
 - New tables: costs (Phase 1B), git_commits (Phase 1C)
