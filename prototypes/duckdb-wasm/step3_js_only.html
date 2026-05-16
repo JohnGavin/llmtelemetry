@@ -106,7 +106,19 @@ ul.task-list li input[type="checkbox"] {
     const conn = await db.connect();
     out.textContent += `\n${ms()} Connection established`;
 
-    // Query the same-origin parquet (served by python3 -m http.server)
+    // Register the same-origin parquet into DuckDB-WASM's virtual filesystem.
+    // DuckDB-WASM cannot directly resolve relative paths in SQL — files must
+    // be registered first (or httpfs+full URL must be used).
+    const parquet_url = new URL('./test.parquet', window.location.href).href;
+    await db.registerFileURL(
+      'test.parquet',
+      parquet_url,
+      duckdb.DuckDBDataProtocol.HTTP,
+      false  // direct IO (range requests if server supports them)
+    );
+    out.textContent += `\n${ms()} Registered test.parquet -> ${parquet_url}`;
+
+    // Query the registered virtual filesystem entry
     const result = await conn.query(
       "SELECT * FROM 'test.parquet' WHERE project = 'llm' LIMIT 5"
     );

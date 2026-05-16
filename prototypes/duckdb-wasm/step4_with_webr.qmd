@@ -62,6 +62,16 @@ from jsDelivr. Both Workers run concurrently.
 
     const conn = await db.connect();
 
+    // Register same-origin parquet into DuckDB-WASM's virtual FS
+    const parquet_url = new URL('./test.parquet', window.location.href).href;
+    await db.registerFileURL(
+      'test.parquet',
+      parquet_url,
+      duckdb.DuckDBDataProtocol.HTTP,
+      false
+    );
+    out.textContent += `\n${ms()} Registered test.parquet`;
+
     const result = await conn.query(
       "SELECT * FROM 'test.parquet' WHERE project = 'llm' LIMIT 5"
     );
