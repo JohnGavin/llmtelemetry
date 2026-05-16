@@ -179,7 +179,9 @@ Loading DuckDB-WASM…
         COUNT(*) AS n_sessions
       FROM 'sessions.parquet'
       WHERE canonical_project IS NOT NULL
-        AND started_at >= NOW() - INTERVAL '30 days'
+        -- Cast both sides to plain TIMESTAMP: DuckDB-WASM 1.32 has no
+        -- TIMESTAMPTZ - INTERVAL operator, only TIMESTAMP - INTERVAL.
+        AND started_at::TIMESTAMP >= NOW()::TIMESTAMP - INTERVAL '30 days'
       GROUP BY canonical_project
       ORDER BY n_sessions DESC
     `);
