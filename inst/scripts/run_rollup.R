@@ -1,5 +1,6 @@
 #!/usr/bin/env Rscript
-# Phase 1A/B/C rollup runner — backfills all three v1 parquets from source JSON.
+# Phase 1A/B/C/E/F rollup runner — backfills all three v1 parquets from source
+# JSON, then drains the staging directory for all three tables.
 #
 # Usage (from any working directory):
 #   Rscript /path/to/llmtelemetry/inst/scripts/run_rollup.R
@@ -38,13 +39,22 @@ n_git <- nrow(rollup_git_commits(
   output_path = file.path(telv1,   "git_commits.parquet")
 ))
 
-# --- Staging drain (Phase 1E) ------------------------------------------------
-# Append any hook-emitted session_stop events that have not yet been written
-# to the sessions parquet.  Idempotent: re-running adds 0 rows if all events
-# are already present.
-n_new <- append_sessions_from_staging(
+# --- Staging drain (Phase 1E/F) ----------------------------------------------
+# Append any hook-emitted events that have not yet been written to the parquets.
+# Each appender is idempotent: re-running adds 0 rows for events already present.
+n_new_sess <- append_sessions_from_staging(
   parquet_path = file.path(telv1, "sessions.parquet")
 )
 
-cat(sprintf("rollup: sessions=%d (+%d from staging) costs=%d git_commits=%d\n",
-            n_sess, n_new, n_costs, n_git))
+n_new_costs <- append_costs_from_staging(
+  parquet_path = file.path(telv1, "costs.parquet")
+)
+
+n_new_git <- append_git_commits_from_staging(
+  parquet_path = file.path(telv1, "git_commits.parquet")
+)
+
+cat(sprintf(
+  "rollup: sessions=%d (+%d) costs=%d (+%d) git_commits=%d (+%d)\n",
+  n_sess, n_new_sess, n_costs, n_new_costs, n_git, n_new_git
+))

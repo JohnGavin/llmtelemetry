@@ -12,6 +12,15 @@ full refresh history.
 
 ## [Unreleased]
 
+### Phase 1F of epic #83 (PR #N)
+- Refactor: `.canonicalize_project_local()` moved to `R/canonicalize.R` as shared internal helper (used by all 3 appenders)
+- New function: `append_costs_from_staging()` — consumes `cost_emitted` events into v1 costs parquet; dedup by `cost_id = paste(canonical_project, date, source, sep="|")`
+- New function: `append_git_commits_from_staging()` — consumes `git_commit` events into v1 git_commits parquet; dedup by `commit_pk = paste(canonical_project, hash, sep="|")`
+- `inst/schema/v1/events.md` updated with full payload specs for `cost_emitted` and `git_commit`
+- `inst/scripts/run_rollup.R` now drains staging for all 3 tables (sessions, costs, git_commits)
+- 30 tests in `tests/testthat/test-append-costs-from-staging.R`; 35 tests in `tests/testthat/test-append-git-commits-from-staging.R`
+- Version bumped to 0.5.0
+
 ### Phase 1E of epic #83 (PR #N)
 - New function: `append_sessions_from_staging()` — consumes hook events into v1 sessions parquet
 - Dedup by `session_id`; idempotent (running twice yields identical row count)
