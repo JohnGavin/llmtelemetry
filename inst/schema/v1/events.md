@@ -45,43 +45,68 @@ with a warning; it cannot be deduplicated.
 
 ---
 
-## cost_emitted  (Phase 1F — NOT YET WIRED)
+## cost_emitted  (wired in Phase 1F)
 
 Emitted when a session cost record is available from ccusage or cmonitor-rs.
 
 ```json
 {
-  "event_type":  "cost_emitted",
-  "session_id":  "string — links to sessions table",
-  "source":      "string — e.g. 'ccusage' or 'cmonitor'",
-  "cost_usd":    "number",
-  "input_tok":   "integer (optional)",
-  "output_tok":  "integer (optional)",
-  "date":        "ISO 8601 date string"
+  "event_type":     "cost_emitted",
+  "project":        "string — raw project path (required)",
+  "date":           "YYYY-MM-DD (required)",
+  "source":         "string — e.g. 'ccusage' / 'gemini' / 'estimated' (required)",
+  "daily_cost_usd": "number — total cost for the project on this date",
+  "n_sessions":     "integer (optional) — number of sessions contributing",
+  "duration_min":   "number (optional) — total session minutes for the day"
 }
 ```
 
-Maps to the v1 `costs` table. Phase 1F will wire this into `rollup_costs()`.
+Maps to the v1 `costs` table (see `inst/schema/v1/costs.sql`).
+`canonical_project` is derived at rollup time from `project` via
+`.canonicalize_project_local()` in `R/canonicalize.R`.
+
+Synthetic dedup key: `cost_id = paste(canonical_project, date, source, sep="|")`.
+This matches the key constructed by `rollup_costs()` during the JSON backfill,
+so a staged event whose cost already appears in the parquet is silently skipped.
+
+A `cost_emitted` event missing any of `project`, `date`, or `source` is
+**skipped**; if all staged events are missing required fields a warning is
+emitted and 0 rows are appended.
 
 ---
 
-## git_commit  (Phase 1F — NOT YET WIRED)
+## git_commit  (wired in Phase 1F)
 
 Emitted when a git commit is detected in a watched project directory.
 
 ```json
 {
-  "event_type": "git_commit",
-  "project":    "string — raw project path",
-  "hash":       "string — 40-char SHA",
-  "date":       "ISO 8601 UTC",
-  "author":     "string",
-  "message":    "string — first line of commit message"
+  "event_type":    "git_commit",
+  "project":       "string — raw project path (required)",
+  "hash":          "string — full or short commit SHA (required)",
+  "date":          "YYYY-MM-DD",
+  "message":       "string — first line of commit message",
+  "lines_added":   "integer",
+  "lines_deleted": "integer",
+  "files_changed": "integer",
+  "lines_changed": "integer — added + deleted; computed from the above if absent"
 }
 ```
 
-Maps to the v1 `git_commits` table. Phase 1F will wire this into
-`rollup_git_commits()`.
+Maps to the v1 `git_commits` table (see `inst/schema/v1/git_commits.sql`).
+`canonical_project` is derived at rollup time from `project` via
+`.canonicalize_project_local()` in `R/canonicalize.R`.
+
+Composite dedup key: `commit_pk = paste(canonical_project, hash, sep="|")`.
+This matches the key constructed by `rollup_git_commits()` during the JSON
+backfill.  A staged event whose commit already appears in the parquet is
+silently skipped.
+
+`lines_changed` is computed as `lines_added + lines_deleted` when the field
+is absent from the payload.
+
+A `git_commit` event missing `project` or `hash` is **skipped**; if all
+staged events fail validation a warning is emitted and 0 rows are appended.
 
 ---
 
