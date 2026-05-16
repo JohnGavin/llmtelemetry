@@ -2,8 +2,10 @@
 title: "DuckDB-WASM Phase 0 — step 4 (WebR + DuckDB-WASM coexistence, native shinylive)"
 format:
   html:
-    self-contained: false
     embed-resources: false
+    resources:
+      - shinylive-sw.js
+      - test.parquet
 filters:
   - shinylive
 ---
