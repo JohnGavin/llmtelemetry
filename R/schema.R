@@ -20,6 +20,9 @@ apply_schema_v1 <- function(con) {
     ddl_dir <- here::here("inst", "schema", "v1")
   }
   sql_files <- list.files(ddl_dir, pattern = "\\.sql$", full.names = TRUE)
+  if (length(sql_files) == 0L) {
+    cli::cli_abort("Schema directory not found; no SQL files resolved")
+  }
   for (f in sql_files) {
     DBI::dbExecute(con, paste(readLines(f, warn = FALSE), collapse = "\n"))
   }

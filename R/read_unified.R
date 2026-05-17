@@ -60,7 +60,9 @@ unified_summary <- function(db_path = file.path(Sys.getenv("HOME"), ".claude", "
 
   tables <- DBI::dbListTables(con)
   purrr::map_dfr(tables, function(tbl_name) {
-    n <- nrow(DBI::dbReadTable(con, tbl_name))
+    n <- DBI::dbGetQuery(
+      con, sprintf("SELECT count(*) FROM %s", tbl_name)
+    )[[1]]
     tibble::tibble(table = tbl_name, rows = as.integer(n))
   })
 }

@@ -7,19 +7,32 @@
 #'
 #' `arrow` is not required; DuckDB's built-in Parquet writer is used instead.
 #'
-#' @param input_path Path to `unified_sessions.json`. Defaults to the package's
-#'   `inst/extdata/unified_sessions.json`.
-#' @param output_path Where to write `sessions.parquet`. Defaults to
-#'   `inst/extdata/telemetry/v1/sessions.parquet`.
+#' @param input_path Path to `unified_sessions.json`. Defaults to `NULL`,
+#'   resolved via `system.file()` for an installed package or `here::here()`
+#'   during development.
+#' @param output_path Where to write `sessions.parquet`. Defaults to `NULL`,
+#'   resolved to `inst/extdata/telemetry/v1/sessions.parquet` relative to the
+#'   project root via `here::here()`.
 #' @param now Override the `valid_from` timestamp. Mainly useful in tests to
 #'   produce deterministic output. Defaults to `Sys.time()`.
 #' @return Invisibly returns a data frame with the transformed rows (v1 schema).
 #' @export
 rollup_sessions <- function(
-  input_path  = here::here("inst", "extdata", "unified_sessions.json"),
-  output_path = here::here("inst", "extdata", "telemetry", "v1", "sessions.parquet"),
+  input_path  = NULL,
+  output_path = NULL,
   now = Sys.time()
 ) {
+  if (is.null(input_path)) {
+    input_path <- system.file("extdata", "unified_sessions.json",
+                              package = "llmtelemetry")
+    if (!nzchar(input_path)) {
+      input_path <- here::here("inst", "extdata", "unified_sessions.json")
+    }
+  }
+  if (is.null(output_path)) {
+    output_path <- here::here("inst", "extdata", "telemetry", "v1",
+                              "sessions.parquet")
+  }
   dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
 
   # --- 1. Read input --------------------------------------------------------
