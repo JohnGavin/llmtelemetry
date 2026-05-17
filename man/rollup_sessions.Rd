@@ -4,18 +4,16 @@
 \alias{rollup_sessions}
 \title{Backfill the v1 sessions parquet from unified_sessions.json}
 \usage{
-rollup_sessions(
-  input_path = here::here("inst", "extdata", "unified_sessions.json"),
-  output_path = here::here("inst", "extdata", "telemetry", "v1", "sessions.parquet"),
-  now = Sys.time()
-)
+rollup_sessions(input_path = NULL, output_path = NULL, now = Sys.time())
 }
 \arguments{
-\item{input_path}{Path to \code{unified_sessions.json}. Defaults to the package's
-\code{inst/extdata/unified_sessions.json}.}
+\item{input_path}{Path to \code{unified_sessions.json}. Defaults to \code{NULL},
+resolved via \code{system.file()} for an installed package or \code{here::here()}
+during development.}
 
-\item{output_path}{Where to write \code{sessions.parquet}. Defaults to
-\code{inst/extdata/telemetry/v1/sessions.parquet}.}
+\item{output_path}{Where to write \code{sessions.parquet}. Defaults to \code{NULL},
+resolved to \code{inst/extdata/telemetry/v1/sessions.parquet} relative to the
+project root via \code{here::here()}.}
 
 \item{now}{Override the \code{valid_from} timestamp. Mainly useful in tests to
 produce deterministic output. Defaults to \code{Sys.time()}.}
