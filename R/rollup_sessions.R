@@ -193,16 +193,18 @@ append_sessions_from_staging <- function(
       ifelse(is.na(new_rows$canonical_project[is_path]), "unknown",
              new_rows$canonical_project[is_path]),
       "@",
-      as.character(new_rows$started_at[is_path])
+      as.character(new_rows$started_at[is_path]),
+      "@k", seq_len(sum(is_path))
     )
   }
 
   # --- 4. Dedup against existing parquet ------------------------------------
   dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
 
-  # Deduplicate within the incoming batch first: if the same session_id appears
-  # more than once in the staging files (e.g. a hook fired twice), keep only the
-  # last row so the append remains idempotent regardless of staging content.
+  # Deduplicate within the incoming batch: sort descending so distinct() keeps
+  # the last (most-recent) row when the same session_id appears more than once
+  # (e.g. a hook fired twice for the same session).
+  new_rows <- new_rows[order(new_rows$started_at, decreasing = TRUE), ]
   new_rows <- dplyr::distinct(new_rows, session_id, .keep_all = TRUE)
 
   con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
