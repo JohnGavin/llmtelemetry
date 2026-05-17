@@ -243,6 +243,9 @@ if (has_cmonitor) {
   cat(sprintf("  -> %d active blocks\n", nrow(blk_rows)))
 
   # --- 3b. Per-model daily breakdown from model_stats -------------------------
+  # NOTE (#1032): model_daily is a GLOBAL metric (cost/tokens by model, not by
+  # project). It must NEVER be filtered by canonical_project or any project
+  # membership condition — doing so would silently corrupt historical dates.
   cat("Exporting per-model daily data...\n")
   model_daily <- lapply(blocks_all, function(b) {
     if (isTRUE(b$is_gap) || is.null(b$model_stats)) return(NULL)
@@ -422,7 +425,7 @@ tracked_repos <- list(
 )
 
 parse_git_log <- function(repo_path, project_name) {
-  if (!dir.exists(file.path(repo_path, ".git"))) return(NULL)
+  if (!file.exists(file.path(repo_path, ".git"))) return(NULL)
   raw <- tryCatch(
     system(
       sprintf("git -C '%s' log '--format=%%H|%%ai|%%s' --numstat --since='1 year ago'",
@@ -601,8 +604,8 @@ cat("Exporting file churn per project...\n")
 # For each tracked repo: git log --numstat --since='1 year ago', aggregate per file.
 
 parse_git_numstat_files <- function(repo_path, project_name, since = "1 year ago") {
-  if (!dir.exists(file.path(repo_path, ".git"))) {
-    warning(sprintf("Skipping %s: .git dir not found at %s", project_name, repo_path))
+  if (!file.exists(file.path(repo_path, ".git"))) {
+    warning(sprintf("Skipping %s: .git not found at %s", project_name, repo_path))
     return(NULL)
   }
   raw <- tryCatch(
@@ -701,8 +704,8 @@ cat("Exporting change coupling...\n")
 # Keep top 100 pairs per project with n_cochanges >= 3.
 
 parse_git_coupling <- function(repo_path, project_name, since = "1 year ago") {
-  if (!dir.exists(file.path(repo_path, ".git"))) {
-    warning(sprintf("Skipping %s: .git dir not found at %s", project_name, repo_path))
+  if (!file.exists(file.path(repo_path, ".git"))) {
+    warning(sprintf("Skipping %s: .git not found at %s", project_name, repo_path))
     return(NULL)
   }
   raw <- tryCatch(
