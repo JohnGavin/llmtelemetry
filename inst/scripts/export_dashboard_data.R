@@ -202,6 +202,8 @@ if (has_cmonitor) {
     arrange(date)
 
   write_json(daily_rows, file.path(out_dir, "ccusage_daily.json"), auto_unbox = TRUE)
+  # Also persist to inst/extdata so CI has a valid committed snapshot
+  write_json(daily_rows, file.path(extdata, "ccusage_daily.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d daily rows\n", nrow(daily_rows)))
 
   # --- 2. Sessions (not available from cmonitor-rs) ---------------------------

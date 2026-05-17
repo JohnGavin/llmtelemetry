@@ -66,3 +66,16 @@ test_that("no filesystem-path-style strings in committed extdata", {
     }
   }
 })
+
+test_that("committed extdata JSON files are valid JSON", {
+  pkg_root <- normalizePath(file.path(test_path(), "..", ".."), mustWork = FALSE)
+  extdata_dir <- file.path(pkg_root, "inst", "extdata")
+  json_files <- list.files(extdata_dir, pattern = "\\.json$", full.names = TRUE)
+  for (f in json_files) {
+    result <- tryCatch(jsonlite::fromJSON(f), error = function(e) e)
+    expect_false(
+      inherits(result, "error"),
+      info = sprintf("%s is not valid JSON: %s", basename(f), if (inherits(result, "error")) conditionMessage(result) else "")
+    )
+  }
+})
