@@ -90,9 +90,14 @@ python3 -m http.server 8900 --directory vignettes
         COUNT(*) AS n_sessions
       FROM 'sessions.parquet'
       WHERE canonical_project IS NOT NULL
+        -- (#1711/#1718) Anchor to the most recent record in the snapshot
+        -- instead of NOW() so the window does not decay to zero as wall-clock
+        -- time advances past the snapshot date.
         -- Cast both sides to plain TIMESTAMP: DuckDB-WASM 1.32 has no
         -- TIMESTAMPTZ - INTERVAL operator, only TIMESTAMP - INTERVAL.
-        AND started_at::TIMESTAMP >= NOW()::TIMESTAMP - INTERVAL '30 days'
+        AND started_at::TIMESTAMP >= (
+              SELECT MAX(started_at)::TIMESTAMP FROM 'sessions.parquet'
+            ) - INTERVAL '30 days'
       GROUP BY canonical_project
       ORDER BY n_sessions DESC
     `);
