@@ -33,22 +33,34 @@ rollup_costs <- function(
 
   # cost_by_project_estimated.json columns:
   #   date, project, est_cost, duration_min, share, canonical_project
+  #
+  # Multiple alias projects (e.g. "llm" and "llm/vignettes") may map to the
+  # same canonical_project on the same day.  Using distinct(cost_id) would
+  # silently drop those rows and undercount daily costs.  Instead we
+  # group_by(canonical_project, date) and sum daily_cost_usd so that all
+  # alias rows are correctly aggregated into a single canonical row.
   out <- duckplyr::as_duckdb_tibble(raw) |>
-    dplyr::transmute(
-      cost_id           = paste(as.character(canonical_project),
-                                as.character(date),
-                                "estimated",
-                                sep = "|"),
-      project           = as.character(project),
+    dplyr::mutate(
       canonical_project = as.character(canonical_project),
       date              = as.Date(date),
-      source            = "estimated",
       daily_cost_usd    = as.numeric(est_cost),
-      n_sessions        = NA_integer_,
-      duration_min      = as.numeric(duration_min),
-      valid_from        = valid_from_ts
+      duration_min      = as.numeric(duration_min)
     ) |>
-    dplyr::distinct(cost_id, .keep_all = TRUE) |>
+    dplyr::group_by(canonical_project, date) |>
+    dplyr::summarise(
+      project        = dplyr::first(as.character(project)),
+      daily_cost_usd = sum(daily_cost_usd, na.rm = TRUE),
+      duration_min   = sum(duration_min, na.rm = TRUE),
+      .groups        = "drop"
+    ) |>
+    dplyr::mutate(
+      cost_id    = paste(canonical_project, as.character(date), "estimated", sep = "|"),
+      source     = "estimated",
+      n_sessions = NA_integer_,
+      valid_from = valid_from_ts
+    ) |>
+    dplyr::select(cost_id, project, canonical_project, date, source,
+                  daily_cost_usd, n_sessions, duration_min, valid_from) |>
     dplyr::collect()
 
   # --- 3. Atomic write via DuckDB COPY TO (no arrow dependency) --------------
