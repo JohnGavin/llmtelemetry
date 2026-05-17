@@ -185,6 +185,18 @@ append_costs_from_staging <- function(
     stringsAsFactors  = FALSE
   )
 
+  # --- 3b. Sanitize project: replace raw filesystem paths (#1750) --------------
+  # Raw project names from hooks use dash-form paths (e.g. "-Users-johngavin-…")
+  # which contain private filesystem paths. Replace with canonical form.
+  is_path <- grepl("^-|[/\\\\]", new_rows$project)
+  if (any(is_path)) {
+    new_rows$project[is_path] <- ifelse(
+      is.na(new_rows$canonical_project[is_path]),
+      "unknown",
+      new_rows$canonical_project[is_path]
+    )
+  }
+
   # --- 4. Dedup against existing parquet ------------------------------------
   dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
 

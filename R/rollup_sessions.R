@@ -182,6 +182,21 @@ append_sessions_from_staging <- function(
     stringsAsFactors  = FALSE
   )
 
+  # --- 3b. Sanitize session_id: replace raw filesystem paths (#1750) -----------
+  # Equivalent to sanitize_for_public() in export_dashboard_data.R (#936).
+  # Path-style ids (starting with "-" or containing "/") contain private
+  # filesystem paths and must be replaced before writing to Parquet.
+  is_path <- grepl("^-|[/\\\\]", new_rows$session_id)
+  if (any(is_path)) {
+    new_rows$session_id[is_path] <- paste0(
+      "sanitized@",
+      ifelse(is.na(new_rows$canonical_project[is_path]), "unknown",
+             new_rows$canonical_project[is_path]),
+      "@",
+      as.character(new_rows$started_at[is_path])
+    )
+  }
+
   # --- 4. Dedup against existing parquet ------------------------------------
   dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
 

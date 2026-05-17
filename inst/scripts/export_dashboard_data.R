@@ -77,7 +77,7 @@ canonicalize_project <- function(name) {
   #    e.g. "simulations/randomwalk" -> "randomwalk", "sport/footbet" -> "footbet"
   container_prefixes <- c(
     "worktree/", "simulations/", "sport/", "data/", "crypto/",
-    "subagents/", "knowledge/", "github/"
+    "subagents/", "knowledge/", "github/", "antigravity/", "hello/"
   )
   for (pfx in container_prefixes) {
     if (startsWith(name, pfx)) {
@@ -453,8 +453,8 @@ parse_git_log <- function(repo_path, project_name) {
     } else if (nzchar(trimws(line)) && !is.null(cur)) {
       fields <- strsplit(line, "\t")[[1]]
       if (length(fields) >= 3) {
-        a <- as.integer(fields[1])
-        d <- as.integer(fields[2])
+        a <- suppressWarnings(as.integer(fields[1]))
+        d <- suppressWarnings(as.integer(fields[2]))
         if (!is.na(a)) cur$lines_added   <- cur$lines_added   + a
         if (!is.na(d)) cur$lines_deleted <- cur$lines_deleted + d
         cur$files_changed <- cur$files_changed + 1L
@@ -640,8 +640,8 @@ parse_git_numstat_files <- function(repo_path, project_name, since = "1 year ago
     } else if (nzchar(trimws(line))) {
       fields <- strsplit(line, "\t")[[1]]
       if (length(fields) >= 3) {
-        added   <- as.integer(fields[1])
-        deleted <- as.integer(fields[2])
+        added   <- suppressWarnings(as.integer(fields[1]))
+        deleted <- suppressWarnings(as.integer(fields[2]))
         fname   <- fields[3]
         if (!is.na(added) && !is.na(deleted) && nzchar(fname)) {
           key <- fname
@@ -986,7 +986,7 @@ if (file.exists(unified_db)) {
       # to character so both fields stay monotonic.
       ended_at = as.character(pmax(ended_at, started_at)),
       started_at = as.character(started_at),
-      duration_min = pmax(0, round(duration_min, 1), na.rm = TRUE)
+      duration_min = ifelse(is.na(duration_min), NA_real_, pmax(0, round(duration_min, 1)))
     ) |>
     select(session_id, project, started_at, ended_at, duration_min) |>
     arrange(desc(started_at)) |>
@@ -1555,11 +1555,12 @@ if (length(parquet_files) > 0 && requireNamespace("arrow", quietly = TRUE)) {
 # as the stable universe of projects regardless of the selected date window.
 cat("Building projects_master.json...\n")
 
-# Helper to extract (canonical_project, date) rows from a committed JSON,
+# Helper to extract (canonical_project, date, source) rows from a committed JSON,
 # reading canonical_project if present, otherwise deriving from 'project'.
+# source_id is a short label for this data source (e.g. "unified_sessions").
 extract_cp_dates <- function(json_path, date_col, proj_col = "project",
                               cp_col = "canonical_project",
-                              dash_form = FALSE) {
+                              dash_form = FALSE, source_id = basename(json_path)) {
   if (!file.exists(json_path)) return(NULL)
   df <- tryCatch(
     fromJSON(json_path, simplifyDataFrame = TRUE),
@@ -1582,6 +1583,7 @@ extract_cp_dates <- function(json_path, date_col, proj_col = "project",
   data.frame(
     canonical_project = cp,
     date              = dates_chr,
+    source            = source_id,
     stringsAsFactors  = FALSE
   )
 }
@@ -1589,21 +1591,21 @@ extract_cp_dates <- function(json_path, date_col, proj_col = "project",
 pm_sources <- list(
   extract_cp_dates(file.path(extdata, "unified_sessions.json"),
                    date_col = "started_at", proj_col = "project",
-                   dash_form = TRUE),
+                   dash_form = TRUE, source_id = "unified_sessions"),
   extract_cp_dates(file.path(extdata, "cost_by_project_estimated.json"),
                    date_col = "date", proj_col = "project",
-                   dash_form = TRUE),
+                   dash_form = TRUE, source_id = "cost_by_project_estimated"),
   extract_cp_dates(file.path(extdata, "git_commits_by_project.json"),
-                   date_col = "date"),
+                   date_col = "date", source_id = "git_commits_by_project"),
   extract_cp_dates(file.path(extdata, "weekly_commits_by_project.json"),
-                   date_col = "week_start_date"),
+                   date_col = "week_start_date", source_id = "weekly_commits_by_project"),
   extract_cp_dates(file.path(extdata, "cost_per_commit.json"),
-                   date_col = "date"),
+                   date_col = "date", source_id = "cost_per_commit"),
   extract_cp_dates(file.path(extdata, "file_churn.json"),
-                   date_col = "last_changed_date"),
+                   date_col = "last_changed_date", source_id = "file_churn"),
   extract_cp_dates(file.path(extdata, "change_coupling.json"),
                    date_col = NA_character_,  # no date column; omit
-                   proj_col = "project")
+                   proj_col = "project", source_id = "change_coupling")
 )
 # Remove the change_coupling call (no date column); handle separately
 pm_cp_only <- if (!is.null(pm_sources[[7L]])) {
@@ -1615,6 +1617,7 @@ pm_cp_only <- if (!is.null(pm_sources[[7L]])) {
     )
   )
   data.frame(canonical_project = cp_vec, date = NA_character_,
+             source = "change_coupling",
              stringsAsFactors = FALSE)
 } else {
   NULL
@@ -1627,11 +1630,11 @@ if (!is.null(pm_all) && nrow(pm_all) > 0L) {
   pm_all <- pm_all[!is.na(pm_all$canonical_project) &
                      nzchar(pm_all$canonical_project), ]
 
-  # Count distinct sources per canonical_project
+  # Count distinct data sources per canonical_project (#903)
   source_counts <- tapply(
-    seq_len(nrow(pm_all)),
+    pm_all$source,
     pm_all$canonical_project,
-    length
+    function(srcs) length(unique(srcs))
   )
 
   # Date range (ignoring NA dates)

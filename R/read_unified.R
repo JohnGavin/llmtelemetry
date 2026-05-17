@@ -51,7 +51,7 @@ read_unified_agent_runs <- function(db_path = file.path(Sys.getenv("HOME"), ".cl
 #' Summary of unified.duckdb contents
 #'
 #' @inheritParams read_unified_sessions
-#' @return tibble with table name, row count, and date range
+#' @return tibble with table name and row count
 #' @export
 unified_summary <- function(db_path = file.path(Sys.getenv("HOME"), ".claude", "logs", "unified.duckdb")) {
   checkmate::assert_file_exists(db_path)
