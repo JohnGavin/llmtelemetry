@@ -9,23 +9,26 @@ Issue [#83](https://github.com/JohnGavin/llmtelemetry/issues/83) — centralised
 | `generate_test_data.R` | Writes `test.parquet` — 20 rows, schema matching the planned `costs`/`sessions` table |
 | `test.parquet` | 20-row Parquet (1.7 KB, ZSTD-compressed) |
 | `step3_js_only.qmd` | Step 3: DuckDB-WASM loads and queries `test.parquet`, JS only, no WebR |
-| `step3_js_only.html` | Rendered output of step 3 |
 | `step4_with_webr.qmd` | Step 4: same DuckDB-WASM block + Shinylive iframe to test coexistence |
-| `step4_with_webr.html` | Rendered output of step 4 |
 | `_extensions/` | Shinylive Quarto extension (copied from main checkout — not used by step 4 due to missing R package, kept for reference) |
+
+> **Note:** Rendered HTML files (`*.html`, `*_files/`) are excluded by `.gitignore` and must be built locally with `quarto render`.
 
 ## Local Test Commands
 
 Serve the prototype directory over HTTP (DuckDB-WASM requires HTTP, not `file://`):
 
 ```bash
-python3 -m http.server 8888 --directory /Users/johngavin/docs_gh/llmtelemetry-proto83/prototypes/duckdb-wasm
+# From the repo root:
+quarto render prototypes/duckdb-wasm/step3_js_only.qmd
+quarto render prototypes/duckdb-wasm/step4_with_webr.qmd
+python3 -m http.server 8888 --bind 127.0.0.1 --directory prototypes/duckdb-wasm
 ```
 
 Then open in Chrome:
 
-- **Step 3 (JS only):** http://localhost:8888/step3_js_only.html
-- **Step 4 (WebR + DuckDB-WASM):** http://localhost:8888/step4_with_webr.html
+- **Step 3 (JS only):** http://127.0.0.1:8888/step3_js_only.html
+- **Step 4 (WebR + DuckDB-WASM):** http://127.0.0.1:8888/step4_with_webr.html
 
 ## What Success Looks Like
 
