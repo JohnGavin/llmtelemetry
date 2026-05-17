@@ -270,7 +270,8 @@ jobs:
             fi
           done
           if [ "$FAIL" = "1" ]; then
-            echo "::warning::Some deployment health checks failed — inspect logs"
+            echo "::error::Some deployment health checks failed — inspect logs"
+            exit 1
           else
             echo "All deployment checks passed"
           fi
