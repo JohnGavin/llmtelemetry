@@ -12,6 +12,8 @@ full refresh history.
 
 ## [Unreleased]
 
+> **Session 2026-05-17 (PR merge + cleanup):** Merged all 12 roborev-backlog PRs (#93–#104) into main via sequential local integration merge with 4 manual conflict resolutions. Cleaned up 3 agent worktrees (199MB), deleted 12 remote branches. Key conflict resolutions: (1) `poll_github_events.R` — combined #94 exit-status fallback with #100 per-repo `load_previous()` filter; (2) extdata JSONs — took PR #101 privacy-sanitized versions; (3) dashboard ECharts graph — kept `name=f` (full path) from #103 to match edge keys. CI triggered (run 25996149508). Epic #83 Phase 2B (DuckDB-WASM chart integration) is next.
+
 > **Session 2026-05-16 evening (telemetry epic Phase 1 complete):** Phase 1A-F + Phase 2A landed across 6 merged PRs (#85, #86, #87, #88, #90, #91). Push pipeline closed for all 3 v1 tables (sessions, costs, git_commits). DuckDB-WASM pilot proved end-to-end browser query against real parquet in 539 ms cold (Q3 from Phase 0 verified). Privacy fix PR #91 closes roborev #936. Roborev #905 closed (verified PR #62 fix). Issue #58 closed with synthesis. Filed #92 (ccusage_daily.json contains stderr text instead of JSON — likely root cause of roborev #948's reported symptom). Tests: 28 → 543 (+515). DESCRIPTION: 0.1.0 → 0.5.1.
 
 ### Privacy fix — closes roborev #936 (PR #N)
