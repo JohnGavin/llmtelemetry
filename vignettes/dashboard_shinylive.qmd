@@ -1702,8 +1702,28 @@ server <- function(input, output, session) {
       ec_line(xs, series, h = "350px", y_name = "Cost per Commit ($)",
               aria_label = "Cost per commit monthly trend by project",
               default_window_days = 0)  # monthly labels, skip date calc
+    } else if (gran == "weekly") {
+      d$week <- format(as.Date(d$date), "%Y-W%V")
+      agg_c <- aggregate(daily_cost_usd ~ project + week, data = d, FUN = sum, na.rm = TRUE)
+      agg_n <- aggregate(n_commits ~ project + week, data = d, FUN = sum, na.rm = TRUE)
+      d2 <- merge(agg_c, agg_n, by = c("project", "week"))
+      d2$cost_per_commit_usd <- ifelse(d2$n_commits > 0,
+        d2$daily_cost_usd / d2$n_commits, NA_real_)
+      d2 <- d2[!is.na(d2$cost_per_commit_usd), ]
+      d2 <- d2[order(d2$week), ]
+      xs <- sort(unique(d2$week))
+      projects <- sort(unique(d2$project))
+      series <- lapply(projects, function(p) {
+        pd <- d2[d2$project == p, ]
+        vals <- rep(NA_real_, length(xs))
+        vals[match(pd$week, xs)] <- round(pd$cost_per_commit_usd, 2)
+        list(name = p, type = "line", data = I(vals), connectNulls = TRUE)
+      })
+      ec_line(xs, series, h = "350px", y_name = "Cost per Commit ($)",
+              aria_label = "Cost per commit weekly trend by project",
+              default_window_days = 0)
     } else {
-      # daily or weekly: use data as-is (it is already daily)
+      # daily: use data as-is
       d <- d[order(d$date), ]
       d <- d[!is.na(d$cost_per_commit_usd) & is.finite(d$cost_per_commit_usd), ]
       xs <- sort(unique(d$date))
@@ -1775,15 +1795,17 @@ server <- function(input, output, session) {
       } else {
         2L
       }
-      list(name = basename(f), value = 1,
+      # Use full path as name (edge key) to avoid basename collisions (#2098)
+      list(name = f, value = 1,
            symbolSize = 10,
-           category = cat_idx)
+           category = cat_idx,
+           label = list(formatter = basename(f)))
     })
 
     edges <- lapply(seq_len(nrow(d)), function(i) {
       w <- d$weight_normalised[i]
-      list(source = basename(d$file_a[i]),
-           target = basename(d$file_b[i]),
+      list(source = d$file_a[i],
+           target = d$file_b[i],
            n_cochanges = d$n_cochanges[i],
            lineStyle = list(width = max(1, round(w * 5)),
                             opacity = max(0.3, w)))
@@ -1938,9 +1960,8 @@ server <- function(input, output, session) {
   })
 
   output$commits_by_proj <- renderDT({
-    d <- if (has_rows(git_commits_proj)) git_commits_proj else git_commits
+    d <- commits_filt()  # already filtered by cutoff() + commit_project (#815/#816)
     if (!has_rows(d)) return(DT::datatable(data.frame()))
-    d <- d[!is.na(d$date) & d$date >= cutoff(), ]
     if (nrow(d) == 0) return(DT::datatable(data.frame()))
     proj_col <- if ("project" %in% names(d)) d$project else rep("llmtelemetry", nrow(d))
     splits   <- split(d, proj_col)
