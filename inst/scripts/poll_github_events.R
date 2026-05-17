@@ -17,8 +17,20 @@ projects <- c(
   "JohnGavin/footbet"
 )
 
-poll_issue_events <- function(owner_repo, since_days = 30,
-                              output_path = NULL) {
+load_previous <- function(owner_repo) {
+  pkg_root <- here::here()
+  out_path <- file.path(pkg_root, "inst", "extdata", "github_issue_events.json")
+  if (!file.exists(out_path)) return(NULL)
+  tryCatch({
+    all_rows <- fromJSON(out_path, simplifyDataFrame = TRUE)
+    if (is.null(all_rows) || nrow(all_rows) == 0) return(NULL)
+    repo_rows <- all_rows[all_rows$project == owner_repo, ]
+    if (nrow(repo_rows) == 0) return(NULL)
+    repo_rows
+  }, error = function(e) NULL)
+}
+
+poll_issue_events <- function(owner_repo, since_days = 30) {
   cat(sprintf("Polling %s...\n", owner_repo))
 
   # Use gh CLI via system2 for GitHub API access
@@ -26,22 +38,7 @@ poll_issue_events <- function(owner_repo, since_days = 30,
   owner <- parts[1]
   repo <- parts[2]
 
-  # Helper: load previous output file contents so we can preserve them on
-  # auth/rate-limit failure rather than overwriting with empty data (#774).
-  load_previous <- function() {
-    if (!is.null(output_path) && file.exists(output_path)) {
-      tryCatch(
-        fromJSON(output_path, simplifyDataFrame = TRUE),
-        error = function(e) NULL
-      )
-    } else {
-      NULL
-    }
-  }
-
-  # Fetch issue events via gh api with pagination handled page-by-page to
-  # avoid the multi-doc JSON problem caused by --paginate (#775).
-  # Each page returns one valid JSON array; we collect all pages manually.
+  # Fetch issue events via gh api with pagination handled page-by-page (#789/#775).
   result <- tryCatch({
     all_events_list <- list()
     page <- 1L
@@ -57,19 +54,17 @@ poll_issue_events <- function(owner_repo, since_days = 30,
         stderr = FALSE
       )
 
-      # Check exit status: non-zero means auth failure or rate-limit (#774).
+      # Non-zero exit = auth failure or rate-limit; preserve previous data (#774).
       exit_status <- attr(events_json, "status")
       if (!is.null(exit_status) && exit_status != 0L) {
         warning(sprintf(
           "  gh api exited with status %d for %s (page %d) — preserving previous data",
           exit_status, owner_repo, page
         ))
-        return(load_previous())
+        return(load_previous(owner_repo))
       }
 
-      if (length(events_json) == 0 || identical(events_json, "")) {
-        break
-      }
+      if (length(events_json) == 0 || identical(events_json, "")) break
 
       page_text <- paste(events_json, collapse = "")
       if (!nzchar(trimws(page_text)) || page_text == "[]") break
@@ -86,8 +81,6 @@ poll_issue_events <- function(owner_repo, since_days = 30,
           nrow(page_events) == 0L) break
 
       all_events_list[[page]] <- page_events
-
-      # If this page was a full page, fetch the next; otherwise we're done.
       if (nrow(page_events) < 100L) break
       page <- page + 1L
     }
@@ -122,11 +115,11 @@ poll_issue_events <- function(owner_repo, since_days = 30,
                                            tz = "UTC")
     events_clean <- events_clean[events_clean$created_at >= cutoff, ]
 
-    cat(sprintf("  Found %d events (last %d days)\n", nrow(events_clean), since_days))
+    cat(sprintf("  Found %d events across %d page(s) (last %d days)\n", nrow(events_clean), page, since_days))
     events_clean
   }, error = function(e) {
-    message(sprintf("  Error fetching %s: %s", owner_repo, e$message))
-    NULL
+    message(sprintf("  Error fetching %s: %s — using previous data for this repo", owner_repo, e$message))
+    load_previous(owner_repo)
   })
 
   result
@@ -136,10 +129,7 @@ poll_issue_events <- function(owner_repo, since_days = 30,
 pkg_root <- here::here()
 out_path <- file.path(pkg_root, "inst", "extdata", "github_issue_events.json")
 
-# Poll all projects; pass out_path so each poller can preserve previous data
-# on auth or rate-limit failure rather than returning NULL (#774).
-all_events <- lapply(projects, poll_issue_events,
-                     output_path = out_path) |>
+all_events <- lapply(projects, poll_issue_events) |>
   bind_rows()
 
 if (nrow(all_events) == 0) {
