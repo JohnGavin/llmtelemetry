@@ -18,9 +18,18 @@ same browser tab without OOM or Worker conflicts. Part of llmtelemetry issue
 
 **Render approach:** This step uses the native `{shinylive-r}` Quarto chunk. The `shinylive`
 R package was added to the project nix shell on 2026-05-16, so the filter renders at build
-time and bundles WebR inline. Unlike the earlier iframe approach (which only proved
-*isolation* across browsing contexts), this native chunk runs WebR in the **same browsing
-context** as the DuckDB-WASM `<script>` above — a true coexistence test.
+time and bundles WebR inline.
+
+**Architecture note (corrected):** The `{shinylive-r}` chunk always renders the Shiny app
+inside a Shinylive-managed `<iframe>`. This is how the Shinylive runtime works — regardless
+of YAML options, the R/Shiny app runs in a separate browsing context (the iframe) with its
+own origin and JS heap. DuckDB-WASM runs in the **parent page's** JS context. They are in
+**different browsing contexts**, not the same one.
+
+This prototype therefore tests *coexistence* (both runtimes load in the same browser tab
+without OOM or Worker conflicts) rather than *same-context integration*. Cross-context
+communication between the DuckDB-WASM parent and the Shinylive iframe requires the
+`postMessage` API (cross-origin messaging). See issue #83 for the follow-on design.
 
 ## What to check in DevTools
 
@@ -28,10 +37,12 @@ context** as the DuckDB-WASM `<script>` above — a true coexistence test.
   Alarm if above 2 GB.
 - **Console**: no `SharedArrayBuffer` conflicts, no Worker registration errors from either
   DuckDB-WASM or WebR/Shinylive.
-- **Network**: DuckDB-WASM fetches from `cdn.jsdelivr.net`; Shinylive iframe fetches from
-  `shinylive.io`. Both should load independently without blocking.
+- **Network**: DuckDB-WASM fetches from `cdn.jsdelivr.net`; the Shinylive `<iframe>`
+  fetches from `shinylive.io`. Both should load independently without blocking each other.
 - **Performance**: note when the Shinylive iframe shows "WebR alive" — this is WebR cold
-  load time.
+  load time. The iframe is a separate browsing context; its load does not block DuckDB-WASM.
+- **Context separation**: DuckDB runs in the parent page; WebR/Shiny runs in the Shinylive
+  iframe. They share the same browser tab but NOT the same JS heap or origin.
 
 ## DuckDB-WASM block (identical to step 3)
 
@@ -95,7 +106,7 @@ context** as the DuckDB-WASM `<script>` above — a true coexistence test.
 
     await conn.close();
     out.textContent += `\n\n✅ DuckDB-WASM PASSED in ${Math.round(performance.now() - t0)}ms`;
-    out.textContent += `\n   WebR/Shinylive loading in iframe below — check DevTools Memory…`;
+    out.textContent += `\n   WebR/Shinylive loading in Shinylive iframe below (separate browsing context) — check DevTools Memory…`;
     out.style.color = '#0f0';
 
   } catch (e) {
@@ -104,12 +115,16 @@ context** as the DuckDB-WASM `<script>` above — a true coexistence test.
   }
 </script>
 
-## Shinylive / WebR block (native chunk — same browsing context as DuckDB-WASM)
+## Shinylive / WebR block (native chunk — Shinylive iframe, parent page runs DuckDB-WASM)
 
-The Shiny app below is bundled at render time via the `shinylive` Quarto filter. WebR
-loads in this same page and tab — not in an iframe. If the DuckDB-WASM block above shows
-✅ AND this app reports "WebR alive" with an R version, then both runtimes coexist in a
-single browsing context. That answers Q3 from epic #83 conclusively.
+The Shiny app below is bundled at render time via the `shinylive` Quarto filter and
+rendered by the Shinylive runtime inside a managed `<iframe>`. WebR runs inside that
+iframe's browsing context — separate from the parent page where DuckDB-WASM runs. If the
+DuckDB-WASM block above shows ✅ AND this app reports "WebR alive" with an R version, then
+both runtimes coexist in the same browser tab without OOM or Worker conflicts. That answers
+the tab-coexistence question from epic #83. Full same-context integration (sharing data
+without postMessage) would require a different architecture (e.g., plumber2 + DuckDB-WASM
+with the Shiny app making fetch() calls to a local plumber endpoint).
 
 ```{shinylive-r}
 #| standalone: true
@@ -125,7 +140,7 @@ server <- function(input, output) {
     list(
       r_version    = R.version.string,
       session_time = Sys.time(),
-      message      = "WebR is running in the SAME browser tab as DuckDB-WASM."
+      message      = "WebR is running in a Shinylive iframe (separate browsing context from DuckDB-WASM parent page)."
     )
   })
 }
