@@ -132,22 +132,28 @@ sanitize_for_public <- function(df) {
     df$project <- df$canonical_project
   }
   # Sanitize session_id: path-style ids contain private filesystem paths.
-  # Replace with a synthetic id built from canonical_project + started_at so
-  # that deduplication in rollup functions still works across re-exports (#936).
+  # Replace with a collision-resistant synthetic id built from
+  # canonical_project + started_at + row_index so that two sessions from the
+  # same project on the same date produce distinct ids (#936, #1749).
   if ("session_id" %in% names(df)) {
     ids <- df$session_id
     is_path <- grepl("^-|[/\\\\]", ids)
     if (any(is_path)) {
       has_started_at <- "started_at" %in% names(df)
       has_cp <- "canonical_project" %in% names(df)
+      path_indices <- which(is_path)
       df$session_id[is_path] <- vapply(
-        which(is_path),
-        function(i) {
-          # Deterministic synthetic id: "sanitized@{canonical_project}@{started_at}"
-          # This is unique per session and stable across re-exports.
+        seq_along(path_indices),
+        function(k) {
+          i <- path_indices[k]
+          # Collision-resistant synthetic id:
+          # "sanitized@{canonical_project}@{started_at}@{k}"
+          # The counter k (1-based position within the set of sanitized rows)
+          # ensures uniqueness when two sessions share identical
+          # canonical_project and started_at values (#1749).
           cp  <- if (has_cp) df$canonical_project[i] else "unknown"
           sat <- if (has_started_at) df$started_at[i] else as.character(i)
-          paste0("sanitized@", cp, "@", sat)
+          paste0("sanitized@", cp, "@", sat, "@", k)
         },
         character(1L)
       )
