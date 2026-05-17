@@ -1848,7 +1848,7 @@ server <- function(input, output, session) {
             "function(data, type, row) { return '<span style=\"white-space:nowrap\">' + data + '</span>'; }"
           ))
         ),
-        order = list(list(0, "desc"))
+        order = list()  # preserve server-side sort (d$startTime decreasing) — #896
       ),
       rownames = FALSE)
   })
