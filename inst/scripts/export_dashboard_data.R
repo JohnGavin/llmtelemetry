@@ -266,9 +266,11 @@ if (has_cmonitor) {
 } else {
   # CI fallback: read existing ccusage JSON files from inst/extdata/
   blocks_all <- list()
-  # Map source files to expected output names (dashboard expects these exact names)
+  # ccusage_daily.json is the flat daily array the dashboard expects (updated by local
+  # cmonitor-rs runs). ccusage_daily_all.json is the old nested {projects, totals}
+  # format — NOT the same schema. Always use the flat version for CI fallback.
   fallback_map <- list(
-    "ccusage_daily_all.json"   = "ccusage_daily.json",
+    "ccusage_daily.json"       = "ccusage_daily.json",
     "ccusage_session_all.json" = "ccusage_sessions.json",
     "ccusage_blocks_all.json"  = "ccusage_blocks.json"
   )
