@@ -14,7 +14,7 @@ cp "${REPO_ROOT}/inst/extdata/telemetry/v1/sessions.parquet" \
    "${REPO_ROOT}/vignettes/data/v1/sessions.parquet"
 echo "[serve_pilot] Copied sessions.parquet ($(du -sh "${REPO_ROOT}/vignettes/data/v1/sessions.parquet" | cut -f1))"
 
-echo "[serve_pilot] Serving ${REPO_ROOT}/vignettes/ on http://localhost:${PORT}"
-echo "[serve_pilot] Open: http://localhost:${PORT}/dashboard_v1_pilot.html"
+echo "[serve_pilot] Serving ${REPO_ROOT}/vignettes/ on http://127.0.0.1:${PORT}"
+echo "[serve_pilot] Open: http://127.0.0.1:${PORT}/dashboard_v1_pilot.html"
 echo "[serve_pilot] Press Ctrl-C to stop."
-python3 -m http.server "${PORT}" --directory "${REPO_ROOT}/vignettes"
+python3 -m http.server "${PORT}" --bind 127.0.0.1 --directory "${REPO_ROOT}/vignettes"

@@ -986,7 +986,7 @@ ui <- page_navbar(
           tags$dt("Underconfidence"), tags$dd("Predictions below diagonal — actual accuracy exceeds stated confidence.")
         )
       ),
-      card_footer(class = "text-muted small", "Hover over charts for tooltips; click chart to fullscreen; click card to expand")
+      card_footer(class = "text-muted small", "Hover over charts for tooltips; click chart to fullscreen")
     )
   ),
 
@@ -1452,7 +1452,9 @@ server <- function(input, output, session) {
 
   output$sess_gemini <- renderDT({
     if (!has_rows(gem_sess)) return(datatable(data.frame()))
-    d <- gem_sess[order(gem_sess$total_cost, decreasing = TRUE), ]
+    d <- gem_sess[!is.na(gem_sess$date) & gem_sess$date >= cutoff(), ]
+    if (nrow(d) == 0) return(datatable(data.frame(Message = "No Gemini sessions in selected time horizon")))
+    d <- d[order(d$total_cost, decreasing = TRUE), ]
     d <- head(d, input$top_n)
     out <- data.frame(
       Session = d$sessionId,

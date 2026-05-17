@@ -210,10 +210,11 @@ test_that("change_coupling.json file_a < file_b (no duplicate reversed pairs)", 
   path <- extdata_path("change_coupling.json")
   skip_if(!nzchar(path), "change_coupling.json not installed")
   result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
-  # R's < is locale-aware; both creation and check use the same comparison
+  # Use xtfrm() for bytewise ordering consistent with sort(..., method = "radix")
+  # used in the export script. R's bare < is locale-dependent and may disagree.
   expect_true(
-    all(result$file_a < result$file_b),
-    info = "file_a should always be lexicographically less than file_b within R's locale"
+    all(xtfrm(result$file_a) < xtfrm(result$file_b)),
+    info = "file_a should always be bytewise-less than file_b (radix-sort order)"
   )
 })
 
@@ -359,4 +360,39 @@ test_that("projects_master.json n_sources is a positive integer for all rows", {
   result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
   expect_true(all(result$n_sources >= 1L),
               info = "n_sources should be >= 1 for every project")
+})
+
+# ── 7. ccusage_daily.json CI fallback regression (#2080) ─────────────────────
+
+test_that("ccusage_daily.json is valid JSON and a flat array (data.frame)", {
+  path <- extdata_path("ccusage_daily.json")
+  skip_if(!nzchar(path), "ccusage_daily.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_s3_class(result, "data.frame",
+    info = "ccusage_daily.json must be a flat JSON array, not a nested object")
+})
+
+test_that("export_dashboard_data.R CI fallback uses ccusage_daily.json not ccusage_daily_all.json", {
+  script_path <- system.file("scripts", "export_dashboard_data.R",
+                             package = "llmtelemetry")
+  skip_if(!nzchar(script_path), "export_dashboard_data.R not installed")
+  lines <- readLines(script_path)
+  fallback_block <- grep("fallback_map", lines)
+  skip_if(length(fallback_block) == 0, "fallback_map not found in export script")
+  # The CI fallback must copy ccusage_daily.json (not ccusage_daily_all.json)
+  # to avoid serving a stale/renamed source file.
+  block_lines <- lines[seq(max(1, min(fallback_block) - 2),
+                           min(length(lines), max(fallback_block) + 10))]
+  expect_false(
+    any(grepl('"ccusage_daily_all\\.json"\\s*=\\s*"ccusage_daily\\.json"',
+              block_lines)),
+    info = paste("fallback_map still maps ccusage_daily_all.json -> ccusage_daily.json.",
+                 "PR #93 changed the source key to ccusage_daily.json directly.",
+                 "Revert to ccusage_daily_all.json = 'ccusage_daily.json' is a regression.")
+  )
+  expect_true(
+    any(grepl('"ccusage_daily\\.json"\\s*=\\s*"ccusage_daily\\.json"', block_lines)),
+    info = paste("fallback_map must map 'ccusage_daily.json' -> 'ccusage_daily.json'",
+                 "so the committed extdata file is used directly as the CI fallback.")
+  )
 })

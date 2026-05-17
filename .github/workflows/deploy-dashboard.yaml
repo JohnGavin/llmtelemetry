@@ -175,6 +175,25 @@ jobs:
         with:
           path: _site
 
+      - name: Check rendered HTML for error patterns (pre-deploy)
+        run: |
+          echo "=== Checking rendered HTML for error patterns ==="
+          HTML=$(cat _site/index.html)
+          DASH_HTML=$(cat _site/index.html)
+          FAIL=0
+          for pat in "no method" "S3 class:" "could not find function"; do
+            if echo "$HTML" | grep -iqE "$pat"; then
+              MATCH=$(echo "$HTML" | grep -inE "$pat" | head -1)
+              echo "::error::Dashboard HTML contains error pattern '$pat': $MATCH"
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" = "1" ]; then
+            echo "::error::Pre-deploy HTML check failed — aborting deployment"
+            exit 1
+          fi
+          echo "Pre-deploy HTML check passed"
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
