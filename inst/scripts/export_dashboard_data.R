@@ -40,6 +40,13 @@ shorten_project <- function(x) {
 canonicalize_project <- function(name) {
   if (is.null(name) || is.na(name) || !nzchar(name)) return(NA_character_)
 
+  # 0. Reject worktree-suffixed names (e.g. "roborev-worktree-3047898692",
+  #    "llm-worktree-1234567890", or paths containing "/worktree/").
+  #    These are ephemeral agent checkout directories, not real projects.
+  if (grepl("-worktree-\\d+", name) || grepl("/worktree/\\d+", name)) {
+    return(NA_character_)
+  }
+
   # 1. Drop pure meta-names (agent dirs, generic worktree marker, and
   #    top-level container directories that are not real projects).
   meta_only <- c(

@@ -1,6 +1,13 @@
 -- Unified log store schema
 -- Location: ~/.claude/logs/unified.duckdb
 
+-- Sequences must be created BEFORE the tables that reference them via nextval()
+
+CREATE SEQUENCE IF NOT EXISTS agent_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS hook_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS error_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS braindump_seq START 1;
+
 -- Sessions: one row per Claude Code session
 CREATE TABLE IF NOT EXISTS sessions (
   session_id VARCHAR PRIMARY KEY,
@@ -26,7 +33,6 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   prompt_preview VARCHAR,
   status VARCHAR DEFAULT 'running'  -- running/completed/failed
 );
-CREATE SEQUENCE IF NOT EXISTS agent_seq START 1;
 
 -- Hook events: every hook firing
 CREATE TABLE IF NOT EXISTS hook_events (
@@ -38,7 +44,6 @@ CREATE TABLE IF NOT EXISTS hook_events (
   duration_ms INTEGER,
   output_preview VARCHAR
 );
-CREATE SEQUENCE IF NOT EXISTS hook_seq START 1;
 
 -- Errors: any error caught by hooks or agents
 CREATE TABLE IF NOT EXISTS errors (
@@ -49,7 +54,6 @@ CREATE TABLE IF NOT EXISTS errors (
   context VARCHAR,
   logged_at TIMESTAMP DEFAULT current_timestamp
 );
-CREATE SEQUENCE IF NOT EXISTS error_seq START 1;
 
 -- Costs: daily cost tracking (from ccusage + model_mix)
 CREATE TABLE IF NOT EXISTS costs (
@@ -72,4 +76,3 @@ CREATE TABLE IF NOT EXISTS braindumps (
   processed_prompt VARCHAR,
   processed_at TIMESTAMP
 );
-CREATE SEQUENCE IF NOT EXISTS braindump_seq START 1;

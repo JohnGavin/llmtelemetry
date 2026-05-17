@@ -172,6 +172,11 @@ append_sessions_from_staging <- function(
   # --- 4. Dedup against existing parquet ------------------------------------
   dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
 
+  # Deduplicate within the incoming batch first: if the same session_id appears
+  # more than once in the staging files (e.g. a hook fired twice), keep only the
+  # last row so the append remains idempotent regardless of staging content.
+  new_rows <- dplyr::distinct(new_rows, session_id, .keep_all = TRUE)
+
   con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
 
