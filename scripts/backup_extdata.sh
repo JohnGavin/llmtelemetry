@@ -18,9 +18,14 @@ if [ ! -d "$BACKUP_DIR/.git" ]; then
     mkdir -p "$BACKUP_DIR"
     git -C "$BACKUP_DIR" init -b main
     git -C "$BACKUP_DIR" remote add origin "$DATA_REMOTE"
-    # Try to pull existing history; ignore error if repo is empty
-    git -C "$BACKUP_DIR" fetch origin main 2>/dev/null && \
-        git -C "$BACKUP_DIR" checkout main || true
+    # Fetch existing history from remote (may be empty on first ever use)
+    git -C "$BACKUP_DIR" fetch origin 2>/dev/null || true
+    # If origin/main already exists, reset local branch to it before adding
+    # new content — avoids an unrelated root commit that would be rejected as
+    # a non-fast-forward push (#877).
+    if git -C "$BACKUP_DIR" rev-parse --verify origin/main >/dev/null 2>&1; then
+        git -C "$BACKUP_DIR" checkout -B main origin/main
+    fi
 fi
 
 # ------------------------------------------------------------------
