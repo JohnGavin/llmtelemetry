@@ -17,6 +17,20 @@ projects <- c(
   "JohnGavin/footbet"
 )
 
+load_previous <- function(owner_repo) {
+  pkg_root <- here::here()
+  out_path <- file.path(pkg_root, "inst", "extdata", "github_issue_events.json")
+  if (!file.exists(out_path)) return(NULL)
+  tryCatch({
+    all_rows <- fromJSON(out_path, simplifyDataFrame = TRUE)
+    if (is.null(all_rows) || nrow(all_rows) == 0) return(NULL)
+    # Filter to only rows for this repo — avoids duplicating other projects' history
+    repo_rows <- all_rows[all_rows$project == owner_repo, ]
+    if (nrow(repo_rows) == 0) return(NULL)
+    repo_rows
+  }, error = function(e) NULL)
+}
+
 poll_issue_events <- function(owner_repo, since_days = 30) {
   cat(sprintf("Polling %s...\n", owner_repo))
 
@@ -25,26 +39,43 @@ poll_issue_events <- function(owner_repo, since_days = 30) {
   owner <- parts[1]
   repo <- parts[2]
 
-  # Fetch issue events via gh api (no pagination to avoid JSON concat issues)
+  # Fetch issue events via gh api with multi-page iteration (#789)
   result <- tryCatch({
-    events_json <- system2(
-      "gh",
-      args = c(
-        "api",
-        sprintf("/repos/%s/%s/issues/events?per_page=100", owner, repo)
-      ),
-      stdout = TRUE,
-      stderr = FALSE
-    )
+    page <- 1
+    all_events_raw <- list()
+    repeat {
+      url <- sprintf("repos/%s/%s/issues/events?per_page=100&page=%d", owner, repo, page)
+      page_json <- system2(
+        "gh",
+        args = c("api", url),
+        stdout = TRUE,
+        stderr = FALSE
+      )
+      status <- attr(page_json, "status")
+      if (!is.null(status) && status != 0) break
+      if (length(page_json) == 0 || identical(page_json[1], "")) break
+      parsed <- tryCatch(
+        fromJSON(paste(page_json, collapse = ""), simplifyDataFrame = FALSE),
+        error = function(e) NULL
+      )
+      if (is.null(parsed) || length(parsed) == 0) break
+      all_events_raw <- c(all_events_raw, parsed)
+      if (length(parsed) < 100) break
+      page <- page + 1
+    }
 
-    if (length(events_json) == 0 || events_json[1] == "") {
+    if (length(all_events_raw) == 0) {
       message(sprintf("  No events found for %s", owner_repo))
       return(NULL)
     }
 
-    events <- fromJSON(paste(events_json, collapse = ""), simplifyDataFrame = TRUE)
+    # Convert list-of-lists to data frame
+    events <- fromJSON(
+      jsonlite::toJSON(all_events_raw, auto_unbox = TRUE),
+      simplifyDataFrame = TRUE
+    )
 
-    if (nrow(events) == 0) {
+    if (is.null(events) || nrow(events) == 0) {
       message(sprintf("  Empty events for %s", owner_repo))
       return(NULL)
     }
@@ -65,11 +96,11 @@ poll_issue_events <- function(owner_repo, since_days = 30) {
     events_clean$created_at <- as.POSIXct(events_clean$created_at, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
     events_clean <- events_clean[events_clean$created_at >= cutoff, ]
 
-    cat(sprintf("  Found %d events (last %d days)\n", nrow(events_clean), since_days))
+    cat(sprintf("  Found %d events across %d page(s) (last %d days)\n", nrow(events_clean), page, since_days))
     events_clean
   }, error = function(e) {
-    message(sprintf("  Error fetching %s: %s", owner_repo, e$message))
-    NULL
+    message(sprintf("  Error fetching %s: %s — using previous data for this repo", owner_repo, e$message))
+    load_previous(owner_repo)
   })
 
   result

@@ -18,9 +18,9 @@ if [ ! -d "$BACKUP_DIR/.git" ]; then
     mkdir -p "$BACKUP_DIR"
     git -C "$BACKUP_DIR" init -b main
     git -C "$BACKUP_DIR" remote add origin "$DATA_REMOTE"
-    # Try to pull existing history; ignore error if repo is empty
-    git -C "$BACKUP_DIR" fetch origin main 2>/dev/null && \
-        git -C "$BACKUP_DIR" checkout main || true
+    # Try to pull existing history; ignore error only if the remote repo is truly empty
+    git -C "$BACKUP_DIR" fetch origin || { echo "ERROR: git fetch origin failed — aborting backup"; exit 1; }
+    git -C "$BACKUP_DIR" checkout main 2>/dev/null || true
 fi
 
 # ------------------------------------------------------------------
