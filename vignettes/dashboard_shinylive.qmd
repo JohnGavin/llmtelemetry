@@ -1012,13 +1012,13 @@ server <- function(input, output, session) {
     if (!has_rows(gem_daily)) return(data.frame())
     gem_daily[gem_daily$date >= cutoff(), ]
   })
+  # cc_daily is a global aggregate (project == "all" for every row).
+  # It has no per-project breakdown, so the shared project selector cannot
+  # meaningfully filter it — doing so silently empties Cost Trends and
+  # Token Analysis whenever anything other than "All projects" is selected.
+  # (#746) Use the time-filtered data directly without applying the project filter.
   cc_d_proj <- reactive({
-    d <- cc_d()
-    if (nrow(d) == 0) return(d)
-    sel <- resolve_sel(input$selected_projects)
-    if (!is.null(sel) && "project" %in% names(d))
-      d <- d[d$project %in% sel, ]
-    d
+    cc_d()
   })
 
   # --- Phase B: one-shot sidebar population from projects_master.json ----------
@@ -1777,21 +1777,26 @@ server <- function(input, output, session) {
       proj_lookup[f] <- c(rows_a, rows_b)[1]
     }
     cat_map <- c("llm" = 0L, "llmtelemetry" = 1L)
+    # (#888) Use full repo-relative path as node id to avoid collisions when
+    # two files share the same basename (e.g. R/utils.R and tests/utils.R).
+    # basename() is kept only as the human-readable display label.
+    # ECharts graph series matches edge source/target to node id when id is
+    # provided, so edges also use full paths as identifiers.
     nodes <- lapply(all_files, function(f) {
       cat_idx <- if (!is.na(proj_lookup[f]) && proj_lookup[f] %in% names(cat_map)) {
         cat_map[[proj_lookup[f]]]
       } else {
         2L
       }
-      list(name = basename(f), value = 1,
+      list(id = f, name = basename(f), value = 1,
            symbolSize = 10,
            category = cat_idx)
     })
 
     edges <- lapply(seq_len(nrow(d)), function(i) {
       w <- d$weight_normalised[i]
-      list(source = basename(d$file_a[i]),
-           target = basename(d$file_b[i]),
+      list(source = d$file_a[i],
+           target = d$file_b[i],
            n_cochanges = d$n_cochanges[i],
            lineStyle = list(width = max(1, round(w * 5)),
                             opacity = max(0.3, w)))
