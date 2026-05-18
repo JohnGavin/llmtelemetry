@@ -1400,7 +1400,7 @@ server <- function(input, output, session) {
   })
 
   output$cost_by_model <- renderUI({
-    d <- cc_d_proj()
+    d <- cc_d()
     if (nrow(d) == 0 || is.null(d$modelsUsed)) return(ec_empty())
     # Expand rows by model
     models_split <- strsplit(as.character(d$modelsUsed), ",\\s*")
