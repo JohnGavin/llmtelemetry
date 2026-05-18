@@ -1008,7 +1008,7 @@ ui <- page_navbar(
       card(card_header("Accuracy by Task Type"), uiOutput("cal_by_type"),
         card_footer(class = "text-muted small", "Success rate per task category")),
       card(card_header("Accuracy by Project"), uiOutput("cal_by_project"),
-        card_footer(class = "text-muted small", "Success rate per project (estimated cost allocation)"))
+        card_footer(class = "text-muted small", "Success rate per project · sparse data expected (only resolved predictions logged)"))
     ),
     layout_columns(col_widths = c(12),
       card(card_header("Prediction Log"), DTOutput("cal_log"),
@@ -1743,7 +1743,8 @@ server <- function(input, output, session) {
     sel <- resolve_sel(input$selected_projects)
     if (!is.null(sel) && "project" %in% names(d))
       d <- d[d$project %in% sel, ]
-    if (nrow(d) == 0) return(ec_empty("No data for selected projects"))
+    if (!is.null(cutoff())) d <- d[d$date >= cutoff(), ]
+    if (nrow(d) == 0) return(ec_empty("No data for selected projects / period"))
     gran <- input$granularity
     if (is.null(gran)) gran <- "weekly"
 
@@ -2288,8 +2289,22 @@ server <- function(input, output, session) {
 
   # --- Calibration ------------------------------------------------------------
   output$cal_reliability <- renderUI({
-    if (!has_rows(cal_buckets)) return(ec_empty())
-    d <- cal_buckets
+    if (!has_rows(preds_raw)) return(ec_empty())
+    # Recompute reliability buckets from preds_raw filtered by cutoff (#82)
+    d <- preds_raw[!is.na(preds_raw$outcome) & !is.na(preds_raw$p_success), ]
+    if (!is.null(cutoff()) && "recorded_at" %in% names(d)) {
+      rat <- tryCatch(as.Date(as.character(d$recorded_at)), error = function(e) NULL)
+      if (!is.null(rat)) d <- d[!is.na(rat) & rat >= cutoff(), ]
+    }
+    if (nrow(d) == 0) return(ec_empty("No predictions in this period"))
+    d$outcome_num <- ifelse(d$outcome == TRUE | d$outcome == "true", 1,
+                    ifelse(d$outcome == "partial", 0.5, 0))
+    d$bucket_cut <- cut(d$p_success, breaks = seq(0, 1, 0.2), include.lowest = TRUE)
+    agg_p <- aggregate(p_success  ~ bucket_cut, data = d, FUN = mean, na.rm = TRUE)
+    agg_a <- aggregate(outcome_num ~ bucket_cut, data = d, FUN = mean, na.rm = TRUE)
+    agg_n <- aggregate(outcome_num ~ bucket_cut, data = d, FUN = length)
+    d <- merge(merge(agg_p, agg_a, by = "bucket_cut"), agg_n, by = "bucket_cut")
+    names(d) <- c("bucket_cut", "mean_predicted", "actual_accuracy", "n")
     # Scatter: predicted (x) vs actual (y) + diagonal reference line
     pts <- lapply(seq_len(nrow(d)), function(i)
       list(d$mean_predicted[i], d$actual_accuracy[i], d$n[i]))
@@ -2332,23 +2347,39 @@ server <- function(input, output, session) {
 
   output$cal_brier <- renderUI({
     if (!has_rows(preds_raw) || !"brier" %in% names(preds_raw)) return(ec_empty())
-    d <- preds_raw[!is.na(preds_raw$outcome_recorded_at), ]
-    if (nrow(d) == 0) return(ec_empty())
-    d <- d[order(d$outcome_recorded_at), ]
-    # Cumulative rolling Brier
-    d$cum_brier <- cumsum(d$brier) / seq_len(nrow(d))
-    ec_line(d$outcome_recorded_at, list(
-      list(name = "Brier (rolling)", type = "line", data = I(round(d$cum_brier, 4)),
+    d <- preds_raw[!is.na(preds_raw$outcome_recorded_at) & !is.na(preds_raw$brier), ]
+    if (!is.null(cutoff())) {
+      orat <- tryCatch(as.Date(as.character(d$outcome_recorded_at)), error = function(e) NULL)
+      if (!is.null(orat)) d <- d[!is.na(orat) & orat >= cutoff(), ]
+    }
+    if (nrow(d) == 0) return(ec_empty("No resolved predictions in this period"))
+    d$orat_date <- tryCatch(as.Date(as.character(d$outcome_recorded_at)), error = function(e) as.Date(NA))
+    gran <- if (!is.null(input$granularity)) input$granularity else "daily"
+    if (gran == "monthly") {
+      d$period <- format(d$orat_date, "%Y-%m")
+    } else if (gran == "weekly") {
+      d$period <- format(d$orat_date, "%Y-W%V")
+    } else {
+      d$period <- as.character(d$orat_date)
+    }
+    agg <- aggregate(brier ~ period, data = d, FUN = mean, na.rm = TRUE)
+    agg <- agg[order(agg$period), ]
+    ec_line(agg$period, list(
+      list(name = "Mean Brier", type = "line", data = I(round(agg$brier, 4)),
            itemStyle = list(color = pal$claude),
            markLine = list(data = list(list(yAxis = 0.25, name = "Uninformative")),
              lineStyle = list(color = "#666", type = "dashed")))
-    ))
+    ), default_window_days = 0)
   })
 
   output$cal_by_type <- renderUI({
     if (!has_rows(preds_raw) || !"task_type" %in% names(preds_raw)) return(ec_empty())
     d <- preds_raw[!is.na(preds_raw$outcome), ]
-    if (nrow(d) == 0) return(ec_empty())
+    if (!is.null(cutoff()) && "outcome_recorded_at" %in% names(d)) {
+      orat <- tryCatch(as.Date(as.character(d$outcome_recorded_at)), error = function(e) NULL)
+      if (!is.null(orat)) d <- d[!is.na(orat) & orat >= cutoff(), ]
+    }
+    if (nrow(d) == 0) return(ec_empty("No resolved predictions in this period"))
     d$outcome_num <- ifelse(d$outcome == TRUE | d$outcome == "true", 1,
                      ifelse(d$outcome == "partial", 0.5, 0))
     agg <- aggregate(cbind(accuracy = outcome_num, n = outcome_num) ~ task_type,
@@ -2387,7 +2418,11 @@ server <- function(input, output, session) {
   output$cal_by_project <- renderUI({
     if (!has_rows(preds_raw) || !"project_name" %in% names(preds_raw)) return(ec_empty("No project data"))
     d <- preds_raw[!is.na(preds_raw$outcome), ]
-    if (nrow(d) == 0) return(ec_empty("No resolved predictions"))
+    if (!is.null(cutoff()) && "outcome_recorded_at" %in% names(d)) {
+      orat <- tryCatch(as.Date(as.character(d$outcome_recorded_at)), error = function(e) NULL)
+      if (!is.null(orat)) d <- d[!is.na(orat) & orat >= cutoff(), ]
+    }
+    if (nrow(d) == 0) return(ec_empty("No resolved predictions in this period"))
 
     # Convert outcome to numeric
     d$outcome_num <- ifelse(d$outcome == TRUE | d$outcome == "true", 1,
