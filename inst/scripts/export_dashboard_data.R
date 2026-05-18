@@ -66,7 +66,8 @@ canonicalize_project <- function(name) {
   # 3. Explicit prefix overrides — sub-paths mapped to canonical parent project.
   #    Checked BEFORE the container-prefix strip so named overrides win.
   overrides <- list(
-    "buoy/network" = "irish_buoy_network"
+    "buoy/network" = "irish_buoy_network",
+    "irishbuoys"   = "irish_buoy_network"
   )
   for (pat in names(overrides)) {
     if (startsWith(name, pat)) return(overrides[[pat]])
@@ -426,6 +427,7 @@ tracked_repos <- list(
   llmtelemetry = path.expand("~/docs_gh/llmtelemetry"),
   irishbuoys   = path.expand(
     "~/docs_gh/proj/data/weather/irish_buoy_network/irishbuoys"),
+  mycare       = path.expand("~/docs_gh/mycare"),
   footbet      = path.expand("~/docs_gh/proj/stats/sport/footbet")
 )
 
