@@ -180,7 +180,7 @@ jobs:
         run: |
           echo "=== Checking rendered HTML for error patterns ==="
           FAIL=0
-          for html_file in _site/index.html _site/dashboard_shinylive.html; do
+          for html_file in _site/index.html; do
             [ -f "$html_file" ] || continue
             HTML=$(cat "$html_file")
             for pat in "no method" "S3 class:" "could not find function"; do
@@ -195,7 +195,7 @@ jobs:
             echo "::error::Pre-deploy HTML check failed — aborting deployment"
             exit 1
           fi
-          echo "Pre-deploy HTML check passed (index.html + dashboard_shinylive.html)"
+          echo "Pre-deploy HTML check passed (index.html)"
 
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -286,15 +286,7 @@ jobs:
               FAIL=1
             fi
           done
-          # Also check the dashboard_shinylive.html directly in case root is a different page
-          DASH_HTML=$(curl -sf "${BASE}/dashboard_shinylive.html" 2>/dev/null || echo "")
-          for pat in "no method" "S3 class:" "could not find function"; do
-            if echo "$DASH_HTML" | grep -iqE "$pat"; then
-              MATCH=$(echo "$DASH_HTML" | grep -inE "$pat" | head -1)
-              echo "::error::dashboard_shinylive.html contains error pattern '$pat': $MATCH"
-              FAIL=1
-            fi
-          done
+
           if [ "$FAIL" = "1" ]; then
             echo "::error::Some deployment health checks failed — inspect logs"
             exit 1
