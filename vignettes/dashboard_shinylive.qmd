@@ -576,7 +576,7 @@ ui <- page_navbar(
       window.queryAndRenderSessions = async function(projects, min_date) {
         const filters = ["canonical_project IS NOT NULL"];
         if (Array.isArray(projects) && projects.length > 0)
-          filters.push("canonical_project IN (" + projects.map(p => JSON.stringify(p)).join(",") + ")");
+          filters.push("canonical_project IN (" + projects.map(p => "'" + p.replace(/'/g, "''") + "'").join(",") + ")");
         if (min_date) filters.push("started_at >= \'" + min_date + "\'");
         const r = await conn.query(
           "SELECT canonical_project, COUNT(*)::INTEGER AS n " +
