@@ -29,6 +29,7 @@ format:
       - data/unified_sessions.json
       - data/unified_costs.json
       - data/cost_by_project_estimated.json
+      - data/tokens_by_project.json
       - data/projects_master.json
       - data/predictions.json
       - data/calibration_buckets.json
@@ -315,6 +316,7 @@ git_commits_proj <- load_json("git_commits_by_project.json")
 u_sessions  <- load_json("unified_sessions.json")
 u_costs     <- load_json("unified_costs.json")
 cost_proj   <- load_json("cost_by_project_estimated.json")
+tok_proj    <- load_json("tokens_by_project.json")
 preds_raw   <- load_json("predictions.json")
 cal_buckets <- load_json("calibration_buckets.json")
 git_bus     <- load_json("git_bus_factor.json")
@@ -1125,13 +1127,29 @@ server <- function(input, output, session) {
     if (!has_rows(gem_daily)) return(data.frame())
     gem_daily[gem_daily$date >= cutoff(), ]
   })
-  # cc_daily is a global aggregate (project == "all" for every row).
-  # It has no per-project breakdown, so the shared project selector cannot
-  # meaningfully filter it — doing so silently empties Cost Trends and
-  # Token Analysis whenever anything other than "All projects" is selected.
-  # (#746) Use the time-filtered data directly without applying the project filter.
+  # cc_d_proj: when a project is selected, weight tokens from tok_proj
+  # (tokens_by_project.json) instead of the aggregate cc_daily. This lets
+  # Token Analysis charts filter by project. When "All projects" is selected,
+  # fall back to the aggregate cc_d() so the charts keep working even if
+  # tok_proj has no data.
   cc_d_proj <- reactive({
-    cc_d()
+    sel <- resolve_sel(input$selected_projects)
+    if (is.null(sel) || !has_rows(tok_proj)) return(cc_d())
+    d <- tok_proj
+    if (!is.null(cutoff())) d <- d[as.Date(d$date) >= cutoff(), ]
+    d <- d[d$project %in% sel, , drop = FALSE]
+    if (nrow(d) == 0) return(data.frame())
+    # Rename to match cc_daily column names so token charts need no changes
+    names(d)[names(d) == "est_total_tokens"]   <- "totalTokens"
+    names(d)[names(d) == "est_input_tokens"]   <- "inputTokens"
+    names(d)[names(d) == "est_output_tokens"]  <- "outputTokens"
+    names(d)[names(d) == "est_cache_creation"] <- "cacheCreation"
+    names(d)[names(d) == "est_cache_read"]     <- "cacheRead"
+    # Aggregate across selected projects -> one row per date
+    aggregate(
+      cbind(totalTokens, inputTokens, outputTokens, cacheCreation, cacheRead) ~ date,
+      data = d, FUN = sum, na.rm = TRUE
+    )
   })
 
   # --- Phase B: one-shot sidebar population from projects_master.json ----------

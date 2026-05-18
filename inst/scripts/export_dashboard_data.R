@@ -1052,6 +1052,29 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
   write_json(out_data, file.path(out_dir, "cost_by_project_estimated.json"), auto_unbox = TRUE)
   write_json(out_data, file.path(extdata, "cost_by_project_estimated.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d project-day cost estimates (written to inst/extdata + vignettes/data)\n", nrow(out_data)))
+
+  # --- Tokens by project (same duration-weight approach as cost estimates) ------
+  if (exists("daily_rows") && nrow(daily_rows) > 0) {
+    cat("Estimating per-project tokens using session duration weights...\n")
+    tok_proj <- merge(cost_proj,
+                      daily_rows[, c("date", "totalTokens", "inputTokens",
+                                     "outputTokens", "cacheCreation", "cacheRead")],
+                      by = "date")
+    tok_proj <- tok_proj[!is.na(tok_proj$totalTokens) & tok_proj$total_min > 0, ]
+    tok_proj$est_total_tokens   <- round(tok_proj$totalTokens   * tok_proj$share, 0)
+    tok_proj$est_input_tokens   <- round(tok_proj$inputTokens   * tok_proj$share, 0)
+    tok_proj$est_output_tokens  <- round(tok_proj$outputTokens  * tok_proj$share, 0)
+    tok_proj$est_cache_creation <- round(tok_proj$cacheCreation * tok_proj$share, 0)
+    tok_proj$est_cache_read     <- round(tok_proj$cacheRead     * tok_proj$share, 0)
+    out_tok <- tok_proj[, c("date", "project", "est_total_tokens", "est_input_tokens",
+                             "est_output_tokens", "est_cache_creation", "est_cache_read")]
+    out_tok$canonical_project <- canonicalize_session_project(out_tok$project)
+    out_tok <- sanitize_for_public(out_tok)
+    write_json(out_tok, file.path(out_dir, "tokens_by_project.json"), auto_unbox = TRUE)
+    write_json(out_tok, file.path(extdata, "tokens_by_project.json"), auto_unbox = TRUE)
+    cat(sprintf("  -> %d project-day token estimates (written to inst/extdata + vignettes/data)\n",
+                nrow(out_tok)))
+  }
 } else {
   # CI fallback: copy from inst/extdata/ or write empty
   f <- "cost_by_project_estimated.json"
@@ -1065,6 +1088,11 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
     cat(sprintf("  -> %s: wrote empty (no source anywhere)\n", f))
   } else {
     cat(sprintf("  -> %s: preserved existing\n", f))
+  }
+  for (f in c("tokens_by_project.json")) {
+    src <- file.path(extdata, f); dst <- file.path(out_dir, f)
+    if (file.exists(src)) { file.copy(src, dst, overwrite = TRUE)
+    } else { write_json(list(), dst) }
   }
 }
 
