@@ -424,9 +424,9 @@ cat("Exporting multi-project commits...\n")
 tracked_repos <- list(
   llm          = path.expand("~/docs_gh/llm"),
   llmtelemetry = path.expand("~/docs_gh/llmtelemetry"),
-  irishbuoys   = path.expand("~/docs_gh/irishbuoys"),
-  mycare       = path.expand("~/docs_gh/mycare"),
-  footbet      = path.expand("~/docs_gh/footbet")
+  irishbuoys   = path.expand(
+    "~/docs_gh/proj/data/weather/irish_buoy_network/irishbuoys"),
+  footbet      = path.expand("~/docs_gh/proj/stats/sport/footbet")
 )
 
 parse_git_log <- function(repo_path, project_name) {
