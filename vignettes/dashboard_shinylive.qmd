@@ -36,6 +36,7 @@ format:
       - data/cost_per_commit.json
       - data/file_churn.json
       - data/change_coupling.json
+      - data/v1/sessions.parquet
 filters:
   - shinylive
 ---
@@ -547,6 +548,77 @@ ui <- page_navbar(
   ),
   header = tagList(
     tags$script(src = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"),
+    # Phase 2B: DuckDB-WASM — initialise once, expose queryAndRenderSessions() globally.
+    # Type module gives us top-level await; the Shiny message handler is registered
+    # after shiny:connected fires so the message bus is ready.
+    tags$script(type = "module", HTML('
+      const PARQUET_URL = new URL("data/v1/sessions.parquet", window.location.href).href;
+      const duckdb = await import("https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/+esm");
+      const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+      const worker = new Worker(
+        URL.createObjectURL(new Blob(
+          ["importScripts(\"" + bundle.mainWorker + "\");"],
+          {type:"text/javascript"}
+        ))
+      );
+      const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
+      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      await db.registerFileURL(
+        "sessions.parquet", PARQUET_URL,
+        duckdb.DuckDBDataProtocol.HTTP, false
+      );
+      const conn = await db.connect();
+
+      let _chart = null;
+
+      window.queryAndRenderSessions = async function(projects) {
+        const filterSQL = (Array.isArray(projects) && projects.length > 0)
+          ? "AND canonical_project IN (" + projects.map(p => JSON.stringify(p)).join(",") + ")"
+          : "";
+        const r = await conn.query(
+          "SELECT canonical_project, COUNT(*)::INTEGER AS n " +
+          "FROM \'sessions.parquet\' " +
+          "WHERE canonical_project IS NOT NULL " + filterSQL + " " +
+          "GROUP BY canonical_project ORDER BY n DESC"
+        );
+        const rows = r.toArray().map(row => ({
+          p: String(row.canonical_project),
+          n: typeof row.n === "bigint" ? Number(row.n) : row.n
+        }));
+        const el = document.getElementById("proj_sessions_ec");
+        if (!el) return;
+        if (!_chart) {
+          _chart = echarts.init(el, "dark");
+          new ResizeObserver(function() { _chart.resize(); }).observe(el);
+        }
+        const projs = rows.map(function(r){return r.p;}).reverse();
+        const ns    = rows.map(function(r){return r.n;}).reverse();
+        _chart.setOption({
+          backgroundColor:"#1a1a1a",
+          tooltip:{trigger:"axis"},
+          grid:{left:120,containLabel:false},
+          xAxis:{type:"value",name:"Sessions",nameLocation:"middle",nameGap:25,
+                 axisLabel:{color:"#ccc"},nameTextStyle:{color:"#ccc"}},
+          yAxis:{type:"category",data:projs,axisLabel:{color:"#ccc",fontSize:11}},
+          series:[{type:"scatter",data:ns,symbolSize:12,itemStyle:{color:"#e41a1c"},
+                   label:{show:true,position:"right",color:"#ccc",formatter:"{c}"}}]
+        }, true);
+      };
+
+      // Shiny bridge: re-query whenever the server sends updated project list
+      function registerHandler() {
+        Shiny.addCustomMessageHandler("duckdb_sessions", function(msg) {
+          var projs = (msg.projects && msg.projects.length > 0) ? msg.projects : null;
+          window.queryAndRenderSessions(projs);
+        });
+        window.queryAndRenderSessions(null);  // initial render (all projects)
+      }
+      if (window.Shiny && window.Shiny.addCustomMessageHandler) {
+        registerHandler();
+      } else {
+        document.addEventListener("shiny:connected", registerHandler);
+      }
+    ')),
     tags$style(HTML("
       .bslib-value-box .value-box-value { font-size: 1.4rem !important; white-space: nowrap; }
       .bslib-value-box .value-box-title { font-size: 0.75rem !important; white-space: nowrap; }
@@ -812,8 +884,9 @@ ui <- page_navbar(
     layout_columns(col_widths = c(6, 6),
       card(card_header("Estimated Cost by Project"), uiOutput("proj_cost_total"),
         card_footer(class = "text-muted small", "Session-weighted cost estimate (⚠ approximate)")),
-      card(card_header("Sessions by Project"), uiOutput("proj_sessions"),
-        card_footer(class = "text-muted small", "Session count per project"))
+      card(card_header("Sessions by Project"),
+        tags$div(id="proj_sessions_ec", class="echart-div", style="width:100%;height:300px;"),
+        card_footer(class = "text-muted small", "Session count per project · powered by DuckDB-WASM"))
     ),
     layout_columns(col_widths = c(12),
       card(card_header("Daily Cost Trend by Project"), uiOutput("proj_cost_daily"),
@@ -1547,26 +1620,11 @@ server <- function(input, output, session) {
     ), h = "300px", aria_label = "Cleveland dot chart: estimated cost by project")
   })
 
-  output$proj_sessions <- renderUI({
-    d <- sess_filtered()
-    if (nrow(d) == 0) return(ec_empty())
-    # Count sessions per project
-    agg <- aggregate(session_id ~ project_short, data = d, FUN = length)
-    names(agg)[2] <- "n"
-    agg <- agg[order(agg$n, decreasing = FALSE), ]
-    # Cleveland dot chart
-    ec(list(
-      tooltip = list(trigger = "axis", axisPointer = list(type = "shadow")),
-      grid = list(left = 120, containLabel = FALSE),
-      xAxis = list(type = "value", name = "Sessions"),
-      yAxis = list(type = "category", data = I(agg$project_short)),
-      series = list(list(
-        type = "scatter",
-        data = I(agg$n),
-        symbolSize = 12,
-        itemStyle = list(color = pal$gemini)
-      ))
-    ), h = "300px", aria_label = "Cleveland dot chart: session count by project")
+  observe({
+    req(input$tabs == "By Project")
+    sel <- resolve_sel(input$selected_projects)
+    projects_json <- if (is.null(sel) || length(sel) == length(all_projects)) list() else as.list(sel)
+    session$sendCustomMessage("duckdb_sessions", list(projects = projects_json))
   })
 
   output$proj_cost_daily <- renderUI({

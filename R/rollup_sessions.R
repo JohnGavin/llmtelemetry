@@ -188,13 +188,18 @@ append_sessions_from_staging <- function(
   # filesystem paths and must be replaced before writing to Parquet.
   is_path <- grepl("^-|[/\\\\]", new_rows$session_id)
   if (any(is_path)) {
+    # Stable hash derived from the raw path — order-independent, matches
+    # sanitize_for_public() in export_dashboard_data.R (#2205).
+    path_hash <- function(p) sprintf("%06d",
+      abs(sum(utf8ToInt(p) * seq_along(utf8ToInt(p)))) %% 1000000L)
+    raw_paths <- new_rows$session_id[is_path]
     new_rows$session_id[is_path] <- paste0(
       "sanitized@",
       ifelse(is.na(new_rows$canonical_project[is_path]), "unknown",
              new_rows$canonical_project[is_path]),
       "@",
       as.character(new_rows$started_at[is_path]),
-      "@k", seq_len(sum(is_path))
+      "@h", vapply(raw_paths, path_hash, character(1L))
     )
   }
 

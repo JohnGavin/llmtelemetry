@@ -110,6 +110,11 @@ jobs:
         working-directory: vignettes
         run: quarto render dashboard_shinylive.qmd
 
+      - name: Stage parquet assets for Shinylive DuckDB-WASM
+        run: |
+          mkdir -p vignettes/data/v1
+          cp inst/extdata/telemetry/v1/sessions.parquet vignettes/data/v1/ 2>/dev/null || echo "sessions.parquet not found — skipping"
+
       - name: Prepare pages artifact
         run: |
           mkdir -p _site
@@ -174,20 +179,23 @@ jobs:
       - name: Check rendered HTML for error patterns (pre-deploy)
         run: |
           echo "=== Checking rendered HTML for error patterns ==="
-          HTML=$(cat _site/index.html)
           FAIL=0
-          for pat in "no method" "S3 class:" "could not find function"; do
-            if echo "$HTML" | grep -iqE "$pat"; then
-              MATCH=$(echo "$HTML" | grep -inE "$pat" | head -1)
-              echo "::error::Dashboard HTML contains error pattern '$pat': $MATCH"
-              FAIL=1
-            fi
+          for html_file in _site/index.html _site/dashboard_shinylive.html; do
+            [ -f "$html_file" ] || continue
+            HTML=$(cat "$html_file")
+            for pat in "no method" "S3 class:" "could not find function"; do
+              if echo "$HTML" | grep -iqE "$pat"; then
+                MATCH=$(echo "$HTML" | grep -inE "$pat" | head -1)
+                echo "::error::$html_file contains error pattern '$pat': $MATCH"
+                FAIL=1
+              fi
+            done
           done
           if [ "$FAIL" = "1" ]; then
             echo "::error::Pre-deploy HTML check failed — aborting deployment"
             exit 1
           fi
-          echo "Pre-deploy HTML check passed"
+          echo "Pre-deploy HTML check passed (index.html + dashboard_shinylive.html)"
 
       - uses: actions/upload-pages-artifact@v3
         with:
