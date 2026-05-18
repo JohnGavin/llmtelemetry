@@ -573,14 +573,15 @@ ui <- page_navbar(
 
       let _chart = null;
 
-      window.queryAndRenderSessions = async function(projects) {
-        const filterSQL = (Array.isArray(projects) && projects.length > 0)
-          ? "AND canonical_project IN (" + projects.map(p => JSON.stringify(p)).join(",") + ")"
-          : "";
+      window.queryAndRenderSessions = async function(projects, min_date) {
+        const filters = ["canonical_project IS NOT NULL"];
+        if (Array.isArray(projects) && projects.length > 0)
+          filters.push("canonical_project IN (" + projects.map(p => JSON.stringify(p)).join(",") + ")");
+        if (min_date) filters.push("started_at >= \'" + min_date + "\'");
         const r = await conn.query(
           "SELECT canonical_project, COUNT(*)::INTEGER AS n " +
           "FROM \'sessions.parquet\' " +
-          "WHERE canonical_project IS NOT NULL " + filterSQL + " " +
+          "WHERE " + filters.join(" AND ") + " " +
           "GROUP BY canonical_project ORDER BY n DESC"
         );
         const rows = r.toArray().map(row => ({
@@ -602,18 +603,18 @@ ui <- page_navbar(
           xAxis:{type:"value",name:"Sessions",nameLocation:"middle",nameGap:25,
                  axisLabel:{color:"#ccc"},nameTextStyle:{color:"#ccc"}},
           yAxis:{type:"category",data:projs,axisLabel:{color:"#ccc",fontSize:11}},
-          series:[{type:"scatter",data:ns,symbolSize:12,itemStyle:{color:"#e41a1c"},
+          series:[{type:"scatter",data:ns,symbolSize:12,itemStyle:{color:"#377eb8"},
                    label:{show:true,position:"right",color:"#ccc",formatter:"{c}"}}]
         }, true);
       };
 
-      // Shiny bridge: re-query whenever the server sends updated project list
+      // Shiny bridge: re-query when project filter or date horizon changes
       function registerHandler() {
         Shiny.addCustomMessageHandler("duckdb_sessions", function(msg) {
           var projs = (msg.projects && msg.projects.length > 0) ? msg.projects : null;
-          window.queryAndRenderSessions(projs);
+          window.queryAndRenderSessions(projs, msg.min_date || null);
         });
-        window.queryAndRenderSessions(null);  // initial render (all projects)
+        window.queryAndRenderSessions(null, null);  // initial render (all projects, all dates)
       }
       if (window.Shiny && window.Shiny.addCustomMessageHandler) {
         registerHandler();
@@ -1660,7 +1661,11 @@ server <- function(input, output, session) {
     req(input$tabs == "By Project")
     sel <- resolve_sel(input$selected_projects)
     projects_json <- if (is.null(sel) || length(sel) == length(all_projects)) list() else as.list(sel)
-    session$sendCustomMessage("duckdb_sessions", list(projects = projects_json))
+    cutoff_str <- if (!is.null(cutoff())) format(cutoff(), "%Y-%m-%d") else NULL
+    session$sendCustomMessage("duckdb_sessions", list(
+      projects = projects_json,
+      min_date = cutoff_str
+    ))
   })
 
   output$proj_cost_daily <- renderUI({
