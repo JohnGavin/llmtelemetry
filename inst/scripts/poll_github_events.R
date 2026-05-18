@@ -69,14 +69,18 @@ poll_issue_events <- function(owner_repo, since_days = 30) {
       page_text <- paste(events_json, collapse = "")
       if (!nzchar(trimws(page_text)) || page_text == "[]") break
 
+      parse_failed <- FALSE
       page_events <- tryCatch(
         fromJSON(page_text, simplifyDataFrame = TRUE),
         error = function(e) {
-          warning(sprintf("  JSON parse error for %s page %d: %s",
+          warning(sprintf("  JSON parse error for %s page %d: %s — preserving previous data",
                           owner_repo, page, conditionMessage(e)))
+          parse_failed <<- TRUE
           NULL
         }
       )
+      # Parse error: discard partial pages and return last good snapshot (#109)
+      if (parse_failed) return(load_previous(owner_repo))
       if (is.null(page_events) || !is.data.frame(page_events) ||
           nrow(page_events) == 0L) break
 
