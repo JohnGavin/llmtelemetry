@@ -977,8 +977,12 @@ if (file.exists(unified_db)) {
   ucon <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
   on.exit(dbDisconnect(ucon, shutdown = TRUE), add = TRUE)
 
-  u_sess <- dbReadTable(ucon, "sessions") |>
-    as_tibble() |>
+  raw_sess <- dbReadTable(ucon, "sessions") |> as_tibble()
+  n_inv <- sum(!is.na(raw_sess$ended_at) & raw_sess$ended_at < raw_sess$started_at,
+               na.rm = TRUE)
+  if (n_inv > 0L)
+    message(sprintf("  WARN: %d session(s) have ended_at < started_at — clamping to started_at (#111)", n_inv))
+  u_sess <- raw_sess |>
     mutate(
       # Normalize ended_at: ccusage occasionally exports ended_at < started_at
       # (UTC vs local timezone mismatch). Clamp to started_at before converting
@@ -1047,6 +1051,14 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
   out_data <- cost_proj[, c("date", "project", "est_cost", "duration_min", "share")]
   # project here comes from unified_sessions which is in dash-form
   out_data$canonical_project <- canonicalize_session_project(out_data$project)
+  # Re-aggregate after canonicalization: multiple raw aliases may collapse to same
+  # canonical name on the same date, creating duplicate (canonical_project, date) rows (#108)
+  out_data <- aggregate(
+    cbind(est_cost, duration_min, share) ~ date + canonical_project,
+    data = out_data[!is.na(out_data$canonical_project), ],
+    FUN = sum
+  )
+  out_data$project <- out_data$canonical_project
   # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
   out_data <- sanitize_for_public(out_data)
   write_json(out_data, file.path(out_dir, "cost_by_project_estimated.json"), auto_unbox = TRUE)
@@ -1069,6 +1081,15 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
     out_tok <- tok_proj[, c("date", "project", "est_total_tokens", "est_input_tokens",
                              "est_output_tokens", "est_cache_creation", "est_cache_read")]
     out_tok$canonical_project <- canonicalize_session_project(out_tok$project)
+    # Re-aggregate after canonicalization: multiple raw aliases may collapse to same
+    # canonical name on the same date, creating duplicate (canonical_project, date) rows (#108)
+    out_tok <- aggregate(
+      cbind(est_total_tokens, est_input_tokens, est_output_tokens,
+            est_cache_creation, est_cache_read) ~ date + canonical_project,
+      data = out_tok[!is.na(out_tok$canonical_project), ],
+      FUN = sum
+    )
+    out_tok$project <- out_tok$canonical_project
     out_tok <- sanitize_for_public(out_tok)
     write_json(out_tok, file.path(out_dir, "tokens_by_project.json"), auto_unbox = TRUE)
     write_json(out_tok, file.path(extdata, "tokens_by_project.json"), auto_unbox = TRUE)
