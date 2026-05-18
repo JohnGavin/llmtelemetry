@@ -892,6 +892,10 @@ ui <- page_navbar(
       card(card_header("Daily Cost Trend by Project"), uiOutput("proj_cost_daily"),
         card_footer(class = "text-muted small", "Stacked area chart of estimated daily costs"))
     ),
+    layout_columns(col_widths = c(12),
+      card(card_header("Cumulative Daily Cost Trend by Project"), uiOutput("proj_cost_cumulative"),
+        card_footer(class = "text-muted small", "Running total of estimated daily costs by project"))
+    ),
     layout_columns(col_widths = c(6, 6),
       card(card_header("Session Duration by Project"), uiOutput("proj_duration"),
         card_footer(class = "text-muted small", "Total session minutes per project")),
@@ -1288,46 +1292,24 @@ server <- function(input, output, session) {
   })
 
   output$cost_cumulative <- renderUI({
-    has_cc <- nrow(cc_d()) > 0
-    has_gem <- nrow(gem_d()) > 0
-    if (!has_cc && !has_gem) return(ec_empty())
+    d <- cost_proj
+    if (!is.data.frame(d) || nrow(d) == 0)
+      return(ec_empty("No project cost estimates available"))
+    if (!is.null(cutoff())) d <- d[d$date >= cutoff(), ]
+    sel <- resolve_sel(input$selected_projects)
+    if (!is.null(sel)) d <- d[d$project %in% sel, ]
+    if (nrow(d) == 0) return(ec_empty("No data for selected projects / period"))
 
-    cc_cum <- gem_cum <- NULL
-    if (has_cc) {
-      a <- aggregate(totalCost ~ date, data = cc_d(), FUN = sum, na.rm = TRUE)
-      a <- a[order(a$date), ]
-      cc_cum <- data.frame(date = a$date, claude = cumsum(a$totalCost))
-    }
-    if (has_gem) {
-      g <- gem_d()[order(gem_d()$date), ]
-      gem_cum <- data.frame(date = g$date, gemini = cumsum(g$total_cost))
-    }
-
-    if (has_cc && has_gem) {
-      d <- merge(cc_cum, gem_cum, by = "date", all = TRUE)
-      d$claude[is.na(d$claude)] <- 0
-      d$gemini[is.na(d$gemini)] <- 0
-      d <- d[order(d$date), ]
-      # Forward-fill cumulative values after merge
-      for (i in seq_len(nrow(d))[-1]) {
-        if (d$claude[i] == 0 && d$claude[i-1] > 0) d$claude[i] <- d$claude[i-1]
-        if (d$gemini[i] == 0 && d$gemini[i-1] > 0) d$gemini[i] <- d$gemini[i-1]
-      }
-      series <- list(
-        list(name = "Claude", type = "line", data = I(round(d$claude, 2)),
-             itemStyle = list(color = pal$claude)),
-        list(name = "Gemini", type = "line", data = I(round(d$gemini, 2)),
-             itemStyle = list(color = pal$gemini)))
-      ec_line(d$date, series, y_name = "Cost ($)")
-    } else if (has_cc) {
-      ec_line(cc_cum$date, list(list(name = "Claude", type = "line",
-        data = I(round(cc_cum$claude, 2)), itemStyle = list(color = pal$claude))),
-        y_name = "Cost ($)")
-    } else {
-      ec_line(gem_cum$date, list(list(name = "Gemini", type = "line",
-        data = I(round(gem_cum$gemini, 2)), itemStyle = list(color = pal$gemini))),
-        y_name = "Cost ($)")
-    }
+    daily <- aggregate(est_cost ~ date, data = d, FUN = sum, na.rm = TRUE)
+    daily <- daily[order(daily$date), ]
+    series <- list(list(
+      name = "Total (filtered)", type = "line",
+      data = I(round(cumsum(daily$est_cost), 2)),
+      itemStyle = list(color = pal$claude),
+      areaStyle = list(opacity = 0.1)
+    ))
+    ec_line(daily$date, series, y_name = "Cumulative Cost ($)",
+            aria_label = "Cumulative cost for selected projects")
   })
 
   output$cost_weekly <- renderUI({
@@ -1648,6 +1630,24 @@ server <- function(input, output, session) {
     })
     ec_line(all_dates, series, h = "350px", y_name = "Cost ($)",
             aria_label = "Stacked area chart: daily estimated cost by project")
+  })
+
+  output$proj_cost_cumulative <- renderUI({
+    d <- proj_filtered()
+    if (nrow(d) == 0) return(ec_empty())
+    totals <- aggregate(est_cost ~ project_short, data = d, FUN = sum, na.rm = TRUE)
+    top_proj <- head(totals[order(totals$est_cost, decreasing = TRUE), "project_short"], 8)
+    d <- d[d$project_short %in% top_proj, ]
+    all_dates <- sort(unique(d$date))
+    series <- lapply(top_proj, function(p) {
+      p_data <- d[d$project_short == p, c("date", "est_cost")]
+      merged <- merge(data.frame(date = all_dates), p_data, by = "date", all.x = TRUE)
+      merged$est_cost[is.na(merged$est_cost)] <- 0
+      merged <- merged[order(merged$date), ]
+      list(name = p, type = "line", data = I(round(cumsum(merged$est_cost), 2)))
+    })
+    ec_line(all_dates, series, h = "350px", y_name = "Cumulative Cost ($)",
+            aria_label = "Cumulative estimated cost by project")
   })
 
   output$proj_duration <- renderUI({
