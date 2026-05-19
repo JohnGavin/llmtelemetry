@@ -18,13 +18,27 @@ if [ ! -d "$BACKUP_DIR/.git" ]; then
     mkdir -p "$BACKUP_DIR"
     git -C "$BACKUP_DIR" init -b main
     git -C "$BACKUP_DIR" remote add origin "$DATA_REMOTE"
-    # Fetch existing history from remote (may be empty on first ever use)
-    git -C "$BACKUP_DIR" fetch origin 2>/dev/null || true
-    # If origin/main already exists, reset local branch to it before adding
-    # new content — avoids an unrelated root commit that would be rejected as
-    # a non-fast-forward push (#877).
-    if git -C "$BACKUP_DIR" rev-parse --verify origin/main >/dev/null 2>&1; then
+    # Probe remote: distinguish genuinely empty remote from transport/auth errors.
+    # git ls-remote exit codes:
+    #   0  — remote responded and returned refs (history exists; must fetch)
+    #   2  — remote responded but has no matching refs (empty repo; safe to init)
+    #   other (1, 128, …) — network/auth/config error; abort to avoid creating an
+    #                        unrelated root commit that would fail as non-fast-forward.
+    ls_remote_rc=0
+    git -C "$BACKUP_DIR" ls-remote --exit-code --heads origin >/dev/null 2>&1 || ls_remote_rc=$?
+    if [ "$ls_remote_rc" -eq 0 ]; then
+        log "backup_extdata.sh: remote has refs — fetching history"
+        if ! git -C "$BACKUP_DIR" fetch origin; then
+            log "backup_extdata.sh: ERROR — fetch failed after remote reported refs; aborting"
+            exit 1
+        fi
+        # Reset local branch to the fetched origin/main to avoid unrelated root commit (#877).
         git -C "$BACKUP_DIR" checkout -B main origin/main
+    elif [ "$ls_remote_rc" -eq 2 ]; then
+        log "backup_extdata.sh: remote is empty — proceeding with initial push"
+    else
+        log "backup_extdata.sh: ERROR — ls-remote exited $ls_remote_rc (network/auth failure); aborting"
+        exit 1
     fi
 fi
 
