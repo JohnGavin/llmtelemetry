@@ -210,11 +210,15 @@ test_that("change_coupling.json file_a < file_b (no duplicate reversed pairs)", 
   path <- extdata_path("change_coupling.json")
   skip_if(!nzchar(path), "change_coupling.json not installed")
   result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
-  # Use xtfrm() for bytewise ordering consistent with sort(..., method = "radix")
-  # used in the export script. R's bare < is locale-dependent and may disagree.
-  expect_true(
-    all(xtfrm(result$file_a) < xtfrm(result$file_b)),
-    info = "file_a should always be bytewise-less than file_b (radix-sort order)"
+  # Export uses sort(method = "radix") which is byte-order (C-locale). xtfrm()
+  # is locale-aware and disagrees in en_US.UTF-8. Force C-locale comparison so
+  # this test matches the export's invariant. #116
+  withr::with_locale(
+    c(LC_COLLATE = "C"),
+    expect_true(
+      all(result$file_a < result$file_b),
+      info = "file_a should always be bytewise-less than file_b (radix-sort order)"
+    )
   )
 })
 
@@ -368,8 +372,12 @@ test_that("ccusage_daily.json is valid JSON and a flat array (data.frame)", {
   path <- extdata_path("ccusage_daily.json")
   skip_if(!nzchar(path), "ccusage_daily.json not installed")
   result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
-  expect_s3_class(result, "data.frame",
-    info = "ccusage_daily.json must be a flat JSON array, not a nested object")
+  # expect_s3_class() does not accept info= in this testthat version; use
+  # expect_true(is.data.frame()) to keep the diagnostic message. #117
+  expect_true(
+    is.data.frame(result),
+    info = "ccusage_daily.json must be a flat JSON array, not a nested object"
+  )
 })
 
 test_that("export_dashboard_data.R CI fallback uses ccusage_daily.json not ccusage_daily_all.json", {
