@@ -277,6 +277,20 @@ else
     log "Rscript not in PATH, skipping Gemini refresh"
 fi
 
+# 3c. Sanitize path-derived identifiers in _all snapshots before commit.
+# Without this step, raw ccusage output containing local filesystem paths
+# (sessionId starting with -Users-, projectPath, path-derived project keys)
+# gets committed and pushed every 12 hours, re-introducing the leak fixed
+# in JohnGavin/llmtelemetry#131. Fail-closed: a sanitization failure aborts
+# the commit; we never push unsanitized output.
+log "--- Tier 3c: Sanitizing ccusage_*_all.json to remove path leaks ---"
+if nix-shell "$LLM_REPO/default.nix" --attr shell --run "Rscript $LLM_REPO/inst/scripts/sanitize_ccusage_all.R" >> "$LOG_FILE" 2>&1; then
+    log "✓ Sanitization completed"
+else
+    error_log "Sanitization failed — refusing to commit unsanitized output (JohnGavin/llmtelemetry#131)"
+    exit 1
+fi
+
 # 4. ALWAYS stage and commit changes (don't check if files changed)
 log "Staging changes..."
 # Split git add to handle missing file types gracefully
