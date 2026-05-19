@@ -574,6 +574,20 @@ ui <- page_navbar(
       let _chart = null;
 
       window.queryAndRenderSessions = async function(projects, min_date) {
+        // "__NONE__" sentinel: user selected "None" — render empty chart without DuckDB query.
+        // Apostrophes in project names are escaped by doubling: p.replace(/'/g, "''")
+        if (projects === "__NONE__") {
+          const el = document.getElementById("proj_sessions_ec");
+          if (!el) return;
+          if (!_chart) {
+            _chart = echarts.init(el, "dark");
+            new ResizeObserver(function() { _chart.resize(); }).observe(el);
+          }
+          _chart.setOption({ backgroundColor:"#1a1a1a", series:[{type:"bar",data:[]}] }, true);
+          return;
+        }
+        // projects is null (All — no IN filter, includes live projects absent from master)
+        // or a non-empty Array (specific project selection).
         const filters = ["canonical_project IS NOT NULL"];
         if (Array.isArray(projects) && projects.length > 0)
           filters.push("canonical_project IN (" + projects.map(p => "'" + p.replace(/'/g, "''") + "'").join(",") + ")");
@@ -611,8 +625,8 @@ ui <- page_navbar(
       // Shiny bridge: re-query when project filter or date horizon changes
       function registerHandler() {
         Shiny.addCustomMessageHandler("duckdb_sessions", function(msg) {
-          var projs = (msg.projects && msg.projects.length > 0) ? msg.projects : null;
-          window.queryAndRenderSessions(projs, msg.min_date || null);
+          // Pass msg.projects directly: null=All, "__NONE__"=None, Array=specific list
+          window.queryAndRenderSessions(msg.projects || null, msg.min_date || null);
         });
         window.queryAndRenderSessions(null, null);  // initial render (all projects, all dates)
       }
@@ -1128,11 +1142,12 @@ server <- function(input, output, session) {
     if (!has_rows(gem_daily)) return(data.frame())
     gem_daily[gem_daily$date >= cutoff(), ]
   })
-  # cc_d_proj: when a project is selected, weight tokens from tok_proj
-  # (tokens_by_project.json) instead of the aggregate cc_daily. This lets
-  # Token Analysis charts filter by project. When "All projects" is selected,
-  # fall back to the aggregate cc_d() so the charts keep working even if
-  # tok_proj has no data.
+  # cc_d_proj: when specific projects are selected, weight tokens from tok_proj
+  # (tokens_by_project.json). When "All projects" is selected, resolve_sel()
+  # returns NULL so is.null(sel) is TRUE, and we fall back to the authoritative
+  # cc_d() (ccusage_daily.json) — no dates or live projects dropped.
+  # When "None" is selected, resolve_sel() returns character(0) and
+  # d[d$project %in% sel, ] returns 0 rows (correct empty result).
   cc_d_proj <- reactive({
     sel <- resolve_sel(input$selected_projects)
     if (is.null(sel) || !has_rows(tok_proj)) return(cc_d())
@@ -1196,11 +1211,13 @@ server <- function(input, output, session) {
     updateSelectInput(session, "selected_projects", selected = new_sel)
   })
 
-  # Helper: resolve selected_projects input -> character vector of project names
-  # Returns all_projects (canonical list) when __ALL__ is selected so that
-  # orphan/worktree rows (NA project) are always excluded by the %in% filter.
+  # resolve_sel: translate selectInput sentinels to a project vector.
+  #   NULL or "__ALL__" -> return NULL  (All projects: callers skip the IN filter,
+  #                                       so live projects absent from master are included)
+  #   "__NONE__"        -> return character(0)  (None: callers filter to zero rows)
+  #   character vector  -> return as-is  (specific selection)
   resolve_sel <- function(sel) {
-    if (is.null(sel) || "__ALL__" %in% sel) return(all_projects)
+    if (is.null(sel) || "__ALL__" %in% sel) return(NULL)
     if ("__NONE__" %in% sel) return(character(0))
     sel
   }
@@ -1660,7 +1677,12 @@ server <- function(input, output, session) {
   observe({
     req(input$tabs == "By Project")
     sel <- resolve_sel(input$selected_projects)
-    projects_json <- if (is.null(sel) || length(sel) == length(all_projects)) list() else as.list(sel)
+    # NULL        => All projects: send null  (JS omits IN filter, includes live projects)
+    # character(0)=> None selected: send "__NONE__" sentinel (JS renders empty chart)
+    # character[] => specific selection: send as JSON array
+    projects_json <- if (is.null(sel)) list()
+                     else if (length(sel) == 0L) "__NONE__"
+                     else as.list(sel)
     cutoff_str <- if (!is.null(cutoff())) format(cutoff(), "%Y-%m-%d") else NULL
     session$sendCustomMessage("duckdb_sessions", list(
       projects = projects_json,
