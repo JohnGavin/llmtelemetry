@@ -8192,6 +8192,75 @@
       ],
       "burnRate": null,
       "projection": null
+    },
+    {
+      "id": "gap-2026-05-17T22:15:37.673Z",
+      "startTime": "2026-05-17T22:15:37.673Z",
+      "endTime": "2026-05-18T13:50:16.989Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-05-18T13:00:00.000Z",
+      "startTime": "2026-05-18T13:00:00.000Z",
+      "endTime": "2026-05-18T18:00:00.000Z",
+      "actualEndTime": "2026-05-18T16:22:16.243Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 1737,
+      "tokenCounts": {
+        "inputTokens": 14945,
+        "outputTokens": 528767,
+        "cacheCreationInputTokens": 4870558,
+        "cacheReadInputTokens": 255813160
+      },
+      "totalTokens": 261227430,
+      "costUSD": 134.6996774999998,
+      "models": [
+        "claude-opus-4-7",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-05-18T19:00:00.000Z",
+      "startTime": "2026-05-18T19:00:00.000Z",
+      "endTime": "2026-05-19T00:00:00.000Z",
+      "actualEndTime": "2026-05-18T22:19:40.029Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 1404,
+      "tokenCounts": {
+        "inputTokens": 3293,
+        "outputTokens": 527710,
+        "cacheCreationInputTokens": 5209325,
+        "cacheReadInputTokens": 286619456
+      },
+      "totalTokens": 292359784,
+      "costUSD": 162.21192555000042,
+      "models": [
+        "claude-sonnet-4-6",
+        "claude-opus-4-7",
+        "<synthetic>",
+        "claude-haiku-4-5-20251001"
+      ],
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
