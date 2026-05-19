@@ -28,6 +28,9 @@ parse_cmonitor_time <- function(t) {
 # Helper: shorten project path to last meaningful component (kept for legacy use)
 shorten_project <- function(x) {
   x |>
+    # NHS/personal path prefix (double-dash form):
+    # "-Users-johngavin-docs--pers-NHS-health-data-antigravity-<project>"
+    gsub("^-Users-johngavin-docs--pers-NHS-health-data-antigravity-", "", x = _) |>
     gsub("^-Users-johngavin-docs[-_]gh-", "", x = _) |>
     gsub("^llm-", "", x = _) |>
     gsub("^proj-", "", x = _) |>
@@ -66,8 +69,12 @@ canonicalize_project <- function(name) {
   # 3. Explicit prefix overrides — sub-paths mapped to canonical parent project.
   #    Checked BEFORE the container-prefix strip so named overrides win.
   overrides <- list(
-    "buoy/network" = "irish_buoy_network",
-    "irishbuoys"   = "irish_buoy_network"
+    "buoy/network"               = "irish_buoy_network",
+    "irishbuoys"                 = "irish_buoy_network",
+    # raw path proj-data-weather-irish-buoy-network -> data/weather/irish/buoy/network
+    "data/weather/irish/buoy/network" = "irish_buoy_network",
+    # after data/ strip: weather/irish/buoy/network
+    "weather/irish/buoy/network" = "irish_buoy_network"
   )
   for (pat in names(overrides)) {
     if (startsWith(name, pat)) return(overrides[[pat]])
@@ -77,8 +84,12 @@ canonicalize_project <- function(name) {
   #    a meta container and the SECOND segment is the actual project).
   #    e.g. "simulations/randomwalk" -> "randomwalk", "sport/footbet" -> "footbet"
   container_prefixes <- c(
+    # Multi-segment prefixes (must come before single-segment ones):
+    "stats/simulations/", "stats/sport/", "finance/data/",
+    # Single-segment container prefixes:
     "worktree/", "simulations/", "sport/", "data/", "crypto/",
-    "subagents/", "knowledge/", "github/", "antigravity/", "hello/"
+    "subagents/", "knowledge/", "github/", "antigravity/", "hello/",
+    "stats/", "pers/", "finance/"
   )
   for (pfx in container_prefixes) {
     if (startsWith(name, pfx)) {
@@ -285,23 +296,27 @@ if (has_cmonitor) {
   # ccusage_daily.json is the flat daily array the dashboard expects (updated by local
   # cmonitor-rs runs). ccusage_daily_all.json is the old nested {projects, totals}
   # format — NOT the same schema. Always use the flat version for CI fallback.
-  fallback_map <- list(
-    "ccusage_daily.json"       = "ccusage_daily.json",
-    "ccusage_session_all.json" = "ccusage_sessions.json",
-    "ccusage_blocks_all.json"  = "ccusage_blocks.json"
-  )
-  for (f in names(fallback_map)) {
-    src <- file.path(extdata, f)
-    dst <- file.path(out_dir, fallback_map[[f]])
-    if (file.exists(src)) {
-      file.copy(src, dst, overwrite = TRUE)
-      cat(sprintf("  -> copied %s\n", f))
-    } else if (!file.exists(dst)) {
-      write_json(list(), dst, auto_unbox = TRUE)
-      cat(sprintf("  -> %s not found, wrote empty\n", f))
-    } else {
-      cat(sprintf("  -> using existing %s\n", basename(dst)))
-    }
+  # CI fallback: ccusage_daily.json is already a public flat export (no paths).
+  # ccusage_session_all.json and ccusage_blocks_all.json contain raw sessionIds
+  # and MUST NOT be copied verbatim to the public vignettes/data/ directory.
+  # Write empty placeholders for the session/blocks public files instead.
+  # (privacy regression fix: Issue #1 in roborev audit)
+  fallback_daily_src <- file.path(extdata, "ccusage_daily.json")
+  fallback_daily_dst <- file.path(out_dir, "ccusage_daily.json")
+  if (file.exists(fallback_daily_src)) {
+    file.copy(fallback_daily_src, fallback_daily_dst, overwrite = TRUE)
+    cat("  -> copied ccusage_daily.json (CI fallback)\n")
+  } else if (!file.exists(fallback_daily_dst)) {
+    write_json(list(), fallback_daily_dst, auto_unbox = TRUE)
+    cat("  -> ccusage_daily.json not found, wrote empty (CI fallback)\n")
+  }
+  if (!file.exists(file.path(out_dir, "ccusage_sessions.json"))) {
+    write_json(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
+    cat("  -> wrote empty ccusage_sessions.json (CI fallback; cmonitor-rs not available)\n")
+  }
+  if (!file.exists(file.path(out_dir, "ccusage_blocks.json"))) {
+    write_json(list(), file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
+    cat("  -> wrote empty ccusage_blocks.json (CI fallback; cmonitor-rs not available)\n")
   }
 }
 
@@ -1652,27 +1667,35 @@ pm_sources <- list(
   extract_cp_dates(file.path(extdata, "cost_per_commit.json"),
                    date_col = "date", source_id = "cost_per_commit"),
   extract_cp_dates(file.path(extdata, "file_churn.json"),
-                   date_col = "last_changed_date", source_id = "file_churn"),
-  extract_cp_dates(file.path(extdata, "change_coupling.json"),
-                   date_col = NA_character_,  # no date column; omit
-                   proj_col = "project", source_id = "change_coupling")
+                   date_col = "last_changed_date", source_id = "file_churn")
 )
-# Remove the change_coupling call (no date column); handle separately
-pm_cp_only <- if (!is.null(pm_sources[[7L]])) {
-  cp_vec <- canonicalize_project(
-    tryCatch(
-      fromJSON(file.path(extdata, "change_coupling.json"),
-               simplifyDataFrame = TRUE)$project,
-      error = function(e) character(0)
-    )
+# change_coupling.json has no date column; extract_cp_dates cannot handle it.
+# Read it unconditionally (gated on file existence) so projects present ONLY
+# in change_coupling.json are included in projects_master with n_sources >= 1.
+# (fix for Issue #12 — dead branch via date_col = NA_character_)
+cp_json_path <- file.path(extdata, "change_coupling.json")
+pm_cp_only <- if (file.exists(cp_json_path)) {
+  cp_df <- tryCatch(
+    fromJSON(cp_json_path, simplifyDataFrame = TRUE),
+    error = function(e) NULL
   )
-  data.frame(canonical_project = cp_vec, date = NA_character_,
-             source = "change_coupling",
-             stringsAsFactors = FALSE)
+  if (!is.null(cp_df) && is.data.frame(cp_df) && nrow(cp_df) > 0L) {
+    # Prefer stored canonical_project column; fall back to deriving from project
+    cp_vec <- if ("canonical_project" %in% names(cp_df)) {
+      cp_df$canonical_project
+    } else {
+      canonicalize_project(cp_df$project)
+    }
+    data.frame(canonical_project = cp_vec, date = NA_character_,
+               source = "change_coupling",
+               stringsAsFactors = FALSE)
+  } else {
+    NULL
+  }
 } else {
   NULL
 }
-pm_sources[[7L]] <- pm_cp_only
+pm_sources <- c(pm_sources, list(pm_cp_only))
 
 pm_all <- do.call(rbind, Filter(Negate(is.null), pm_sources))
 

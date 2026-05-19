@@ -13,6 +13,9 @@
 #' @keywords internal
 .shorten_project_local <- function(x) {
   if (is.null(x) || is.na(x)) return(NA_character_)
+  # Special NHS/personal path prefix (double-dash form):
+  # "-Users-johngavin-docs--pers-NHS-health-data-antigravity-<project>"
+  x <- gsub("^-Users-johngavin-docs--pers-NHS-health-data-antigravity-", "", x)
   x <- gsub("^-Users-johngavin-docs[-_]gh-", "", x)
   x <- gsub("^docs[-_]gh[-_]",               "", x)
   x <- gsub("^llm-",                          "", x)
@@ -38,14 +41,26 @@
   name <- sub("^[A-Za-z0-9_]{8,}/repo/?", "", name)
   if (!nzchar(name)) return(NA_character_)
 
-  overrides <- list("buoy/network" = "irish_buoy_network")
+  # Explicit prefix overrides — checked before container-prefix strip.
+  overrides <- list(
+    "buoy/network"                   = "irish_buoy_network",
+    "irishbuoys"                     = "irish_buoy_network",
+    # raw path proj-data-weather-irish-buoy-network -> data/weather/irish/buoy/network
+    "data/weather/irish/buoy/network" = "irish_buoy_network",
+    # after data/ strip: weather/irish/buoy/network
+    "weather/irish/buoy/network"     = "irish_buoy_network"
+  )
   for (pat in names(overrides)) {
     if (startsWith(name, pat)) return(overrides[[pat]])
   }
 
   container_prefixes <- c(
+    # Multi-segment container prefixes (must come before single-segment ones):
+    "stats/simulations/", "stats/sport/", "finance/data/",
+    # Single-segment container prefixes:
     "worktree/", "simulations/", "sport/", "data/", "crypto/",
-    "subagents/", "knowledge/", "github/"
+    "subagents/", "knowledge/", "github/", "antigravity/", "hello/",
+    "stats/", "pers/", "finance/"
   )
   for (pfx in container_prefixes) {
     if (startsWith(name, pfx)) {
