@@ -5639,7 +5639,7 @@
       "actualEndTime": "2026-04-18T18:52:50.647Z",
       "isActive": false,
       "isGap": false,
-      "entries": 383,
+      "entries": 378,
       "tokenCounts": {
         "inputTokens": 449,
         "outputTokens": 32940,
@@ -8244,15 +8244,15 @@
       "actualEndTime": "2026-05-18T22:19:40.029Z",
       "isActive": false,
       "isGap": false,
-      "entries": 1404,
+      "entries": 1405,
       "tokenCounts": {
-        "inputTokens": 3293,
-        "outputTokens": 527710,
-        "cacheCreationInputTokens": 5209325,
-        "cacheReadInputTokens": 286619456
+        "inputTokens": 3298,
+        "outputTokens": 528213,
+        "cacheCreationInputTokens": 5210989,
+        "cacheReadInputTokens": 286728774
       },
-      "totalTokens": 292359784,
-      "costUSD": 162.21192555000042,
+      "totalTokens": 292471274,
+      "costUSD": 162.28958455000043,
       "models": [
         "claude-sonnet-4-6",
         "claude-opus-4-7",
@@ -8261,6 +8261,59 @@
       ],
       "burnRate": null,
       "projection": null
+    },
+    {
+      "id": "gap-2026-05-19T03:19:40.029Z",
+      "startTime": "2026-05-19T03:19:40.029Z",
+      "endTime": "2026-05-19T09:09:26.471Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-05-19T09:00:00.000Z",
+      "startTime": "2026-05-19T09:00:00.000Z",
+      "endTime": "2026-05-19T14:00:00.000Z",
+      "actualEndTime": "2026-05-19T10:56:24.969Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 1474,
+      "tokenCounts": {
+        "inputTokens": 6776,
+        "outputTokens": 513242,
+        "cacheCreationInputTokens": 6317825,
+        "cacheReadInputTokens": 152527858
+      },
+      "totalTokens": 159365701,
+      "costUSD": 99.77942825000002,
+      "models": [
+        "claude-sonnet-4-6",
+        "claude-opus-4-7",
+        "<synthetic>",
+        "claude-haiku-4-5-20251001"
+      ],
+      "burnRate": {
+        "tokensPerMinute": 1489747.6107338509,
+        "tokensPerMinuteForIndicator": 4861.11859815178,
+        "costPerHour": 55.96417443769557
+      },
+      "projection": {
+        "totalTokens": 210466179,
+        "totalCost": 131.77,
+        "remainingMinutes": 34
+      }
     }
   ]
 }
