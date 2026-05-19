@@ -23,10 +23,20 @@ rollup_sessions <- function(
   now = Sys.time()
 ) {
   if (is.null(input_path)) {
-    input_path <- system.file("extdata", "unified_sessions.json",
-                              package = "llmtelemetry")
-    if (!nzchar(input_path)) {
-      input_path <- here::here("inst", "extdata", "unified_sessions.json")
+    # Issue #10: prefer working-tree copy in dev checkout to avoid reading a
+    # stale snapshot from the installed package library.
+    wt_path <- here::here("inst", "extdata", "unified_sessions.json")
+    is_dev  <- file.exists(here::here("DESCRIPTION")) &&
+               file.exists(here::here("R")) &&
+               file.exists(wt_path)
+    if (is_dev) {
+      input_path <- wt_path
+    } else {
+      input_path <- system.file("extdata", "unified_sessions.json",
+                                package = "llmtelemetry")
+      if (!nzchar(input_path)) {
+        input_path <- wt_path
+      }
     }
   }
   if (is.null(output_path)) {
@@ -188,17 +198,33 @@ append_sessions_from_staging <- function(
   # filesystem paths and must be replaced before writing to Parquet.
   is_path <- grepl("^-|[/\\\\]", new_rows$session_id)
   if (any(is_path)) {
-    # Stable hash derived from the raw path — order-independent, matches
-    # sanitize_for_public() in export_dashboard_data.R (#2205).
-    path_hash <- function(p) sprintf("%06d",
-      abs(sum(utf8ToInt(p) * seq_along(utf8ToInt(p)))) %% 1000000L)
+    # Issue #9: widened from 6 to 12 hex chars (16^12 approx 2.8e14 space) to
+    # reduce birthday-paradox collision probability to <1e-7 for 10k sessions.
+    # Issue #8: use stable ISO 8601 UTC format for started_at component so the
+    # serialised session_id is identical regardless of R locale or timezone.
+    path_hash <- function(p) {
+      # Use digest::digest for a reproducible hex hash; fall back to the
+      # weighted-sum approach if digest is unavailable.
+      if (requireNamespace("digest", quietly = TRUE)) {
+        substr(digest::digest(p, algo = "md5", serialize = FALSE), 1L, 12L)
+      } else {
+        bytes <- utf8ToInt(p)
+        raw_val <- sum(as.numeric(bytes) * seq_along(bytes))
+        sprintf("%012x", bitwAnd(abs(as.integer(raw_val %% .Machine$integer.max)),
+                                 as.integer(.Machine$integer.max)))
+      }
+    }
     raw_paths <- new_rows$session_id[is_path]
+    # Use a stable ISO 8601 UTC timestamp (not as.character() which is locale-
+    # and platform-dependent) for the started_at component (#8).
+    started_at_iso <- format(new_rows$started_at[is_path],
+                             format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
     new_rows$session_id[is_path] <- paste0(
       "sanitized@",
       ifelse(is.na(new_rows$canonical_project[is_path]), "unknown",
              new_rows$canonical_project[is_path]),
       "@",
-      as.character(new_rows$started_at[is_path]),
+      started_at_iso,
       "@h", vapply(raw_paths, path_hash, character(1L))
     )
   }
@@ -226,7 +252,23 @@ append_sessions_from_staging <- function(
       sprintf("SELECT session_id FROM read_parquet('%s')",
               gsub("'", "\\'", parquet_path, fixed = TRUE))
     )$session_id
-    new_rows <- new_rows[!new_rows$session_id %in% existing_ids, , drop = FALSE]
+
+    # Issue #8: normalize legacy sanitized session_ids written with the old
+    # format "sanitized@{project}@{started_at}" (no hash suffix) so they
+    # match new-format ids and do not get appended as duplicates.
+    # Old format: sanitized@{proj}@{started_at}  (3 "@"-delimited fields)
+    # New format: sanitized@{proj}@{started_at}@h{hash12} (4 "@"-delimited fields)
+    old_fmt_mask <- grepl("^sanitized@[^@]+@[^@]+$", existing_ids)
+    if (any(old_fmt_mask)) {
+      # Strip the "@h{hash}" suffix from new_rows ids for comparison against
+      # old-format existing ids.
+      new_ids_stripped <- sub("@h[0-9a-f]{6,12}$", "", new_rows$session_id)
+      already_present  <- new_ids_stripped %in% existing_ids[old_fmt_mask] |
+                          new_rows$session_id %in% existing_ids
+      new_rows <- new_rows[!already_present, , drop = FALSE]
+    } else {
+      new_rows <- new_rows[!new_rows$session_id %in% existing_ids, , drop = FALSE]
+    }
   }
 
   if (nrow(new_rows) == 0L) return(invisible(0L))
