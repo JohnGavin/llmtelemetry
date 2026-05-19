@@ -112,8 +112,20 @@ jobs:
 
       - name: Stage parquet assets for Shinylive DuckDB-WASM
         run: |
+          PARQUET_SRC="inst/extdata/telemetry/v1/sessions.parquet"
+          PARQUET_DST="vignettes/data/v1/sessions.parquet"
           mkdir -p vignettes/data/v1
-          cp inst/extdata/telemetry/v1/sessions.parquet vignettes/data/v1/ 2>/dev/null || echo "sessions.parquet not found — skipping"
+          if [ ! -f "$PARQUET_SRC" ]; then
+            echo "::error::$PARQUET_SRC is missing — DuckDB-WASM 'Sessions by Project' panel will not load"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$PARQUET_SRC" 2>/dev/null || stat -f%z "$PARQUET_SRC" 2>/dev/null || echo "0")
+          if [ "$SIZE" -lt 1024 ]; then
+            echo "::error::$PARQUET_SRC is suspiciously small (${SIZE} bytes, expected >=1024)"
+            exit 1
+          fi
+          cp "$PARQUET_SRC" "$PARQUET_DST"
+          echo "Staged $PARQUET_SRC -> $PARQUET_DST (${SIZE} bytes)"
 
       - name: Prepare pages artifact
         run: |
@@ -204,6 +216,26 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verify deployed parquet (DuckDB-WASM guard)
+        run: |
+          BASE="https://johngavin.github.io/llmtelemetry"
+          PARQUET_PATH="/data/v1/sessions.parquet"
+          PARQUET_URL="${BASE}${PARQUET_PATH}"
+          echo "Verifying deployed parquet at ${PARQUET_URL}..."
+          # Allow up to 60s for Pages propagation before checking the parquet
+          sleep 60
+          HTTP_STATUS=$(curl -s -o /tmp/parquet_check -w "%{http_code}" "$PARQUET_URL")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::${PARQUET_URL} returned HTTP ${HTTP_STATUS} (expected 200)"
+            exit 1
+          fi
+          DEPLOYED_SIZE=$(stat -c%s /tmp/parquet_check 2>/dev/null || stat -f%z /tmp/parquet_check 2>/dev/null || echo "0")
+          if [ "$DEPLOYED_SIZE" -lt 1024 ]; then
+            echo "::error::Deployed parquet at ${PARQUET_URL} is too small (${DEPLOYED_SIZE} bytes, expected >=1024)"
+            exit 1
+          fi
+          echo "OK: ${PARQUET_URL} — HTTP 200, ${DEPLOYED_SIZE} bytes"
 
       - name: Verify deployment
         run: |
