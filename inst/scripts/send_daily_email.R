@@ -659,15 +659,32 @@ if (!has_data) {
   # --- Codex by automation type section ---
   codex_type_html <- ""
   if (has_codex && "source" %in% names(codex_d)) {
-    cx_by_type <- codex_d |>
-      group_by(source) |>
-      summarise(
-        sessions  = n(),
-        tokens    = sum(total_tokens, na.rm = TRUE),
-        est_cost  = sum(est_cost_usd, na.rm = TRUE),
-        .groups   = "drop"
-      ) |>
-      arrange(desc(est_cost))
+    # Build per-source summary from codex_s (per-thread detail) so that a single
+    # thread spanning multiple dates/models is counted exactly once in Sessions.
+    # Fall back to codex_d-derived n() if codex_s is unavailable or lacks source.
+    has_sessions_src <- !is.null(codex_s) && nrow(codex_s) > 0 &&
+      all(c("source", "thread_id") %in% names(codex_s))
+    cx_by_type <- if (has_sessions_src) {
+      codex_s |>
+        group_by(source) |>
+        summarise(
+          sessions  = dplyr::n_distinct(thread_id),
+          tokens    = sum(total_tokens,  na.rm = TRUE),
+          est_cost  = sum(est_cost_usd,  na.rm = TRUE),
+          .groups   = "drop"
+        ) |>
+        arrange(desc(est_cost))
+    } else {
+      codex_d |>
+        group_by(source) |>
+        summarise(
+          sessions  = n(),
+          tokens    = sum(total_tokens, na.rm = TRUE),
+          est_cost  = sum(est_cost_usd, na.rm = TRUE),
+          .groups   = "drop"
+        ) |>
+        arrange(desc(est_cost))
+    }
 
     codex_type_html <- sprintf(
       '\n<h3 style="color: %s; margin-top: 20px;">Codex by Automation Type</h3>

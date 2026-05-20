@@ -12,7 +12,7 @@ unified_summary(
 \item{db_path}{Path to unified.duckdb. Defaults to ~/.claude/logs/unified.duckdb.}
 }
 \value{
-tibble with table name, row count, and date range
+tibble with table name and row count
 }
 \description{
 Summary of unified.duckdb contents

@@ -1172,6 +1172,15 @@ server <- function(input, output, session) {
     if (!has_rows(codex_daily)) return(data.frame())
     codex_daily[codex_daily$date >= cutoff(), ]
   })
+  # codex_d_proj: when specific projects are selected, filter by canonical_project.
+  # When "All projects" is selected (resolve_sel returns NULL), returns codex_d() unchanged.
+  codex_d_proj <- reactive({
+    sel <- resolve_sel(input$selected_projects)
+    d   <- codex_d()
+    if (is.null(sel) || nrow(d) == 0) return(d)
+    if (!"canonical_project" %in% names(d)) return(d)
+    d[d$canonical_project %in% sel, , drop = FALSE]
+  })
   # cc_d_proj: when specific projects are selected, weight tokens from tok_proj
   # (tokens_by_project.json). When "All projects" is selected, resolve_sel()
   # returns NULL so is.null(sel) is TRUE, and we fall back to the authoritative
@@ -1285,6 +1294,10 @@ server <- function(input, output, session) {
     }
     if (has_rows(gem_sess)) {
       n <- n + nrow(gem_sess[gem_sess$date >= cutoff(), ])
+    }
+    # Include codex sessions (per-thread, not per-day-row) with the same cutoff
+    if (has_rows(codex_sess) && "date" %in% names(codex_sess)) {
+      n <- n + nrow(codex_sess[codex_sess$date >= cutoff(), ])
     }
     as.character(n)
   })
@@ -1461,8 +1474,8 @@ server <- function(input, output, session) {
       a$source <- "Gemini"
       rows[[length(rows) + 1]] <- a
     }
-    if (nrow(codex_d()) > 0 && "est_cost_usd" %in% names(codex_d())) {
-      d <- codex_d()
+    if (nrow(codex_d_proj()) > 0 && "est_cost_usd" %in% names(codex_d_proj())) {
+      d <- codex_d_proj()
       d$week <- floor_date(d$date, "week")
       a <- aggregate(est_cost_usd ~ week, data = d, FUN = sum, na.rm = TRUE)
       names(a)[2] <- "totalCost"
@@ -1599,8 +1612,8 @@ server <- function(input, output, session) {
       a$source <- "Gemini"
       rows[[length(rows) + 1]] <- a
     }
-    if (nrow(codex_d()) > 0 && "total_tokens" %in% names(codex_d())) {
-      d <- codex_d()
+    if (nrow(codex_d_proj()) > 0 && "total_tokens" %in% names(codex_d_proj())) {
+      d <- codex_d_proj()
       d$week <- floor_date(d$date, "week")
       a <- aggregate(total_tokens ~ week, data = d, FUN = sum, na.rm = TRUE)
       names(a)[2] <- "totalTokens"

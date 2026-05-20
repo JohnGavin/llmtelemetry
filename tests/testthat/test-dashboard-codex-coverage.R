@@ -123,3 +123,51 @@ test_that("codex_sessions.json snapshot — column names are stable", {
 
   expect_snapshot(sort(names(s)))
 })
+
+# ── Regression: codex_d_proj respects project selection (finding #6) ──────────
+
+# Simulated codex_d_proj filter logic (mirrors the Shiny reactive)
+codex_filter_by_projects <- function(codex_daily, cutoff_date, selected_projects) {
+  if (!is.data.frame(codex_daily) || nrow(codex_daily) == 0) return(data.frame())
+  d <- codex_daily[as.Date(codex_daily$date) >= cutoff_date, ]
+  if (is.null(selected_projects)) return(d)  # All projects
+  if (!"canonical_project" %in% names(d)) return(d)
+  d[d$canonical_project %in% selected_projects, , drop = FALSE]
+}
+
+test_that("codex_d_proj filters by selected_projects correctly", {
+  # Regression for finding #6: codex chart was using codex_d() without project filter
+  codex_daily <- tibble::tibble(
+    date              = c("2026-05-17", "2026-05-17", "2026-05-18"),
+    canonical_project = c("llmtelemetry", "llm", "llmtelemetry"),
+    model             = rep("gpt-5.4", 3L),
+    source            = rep("interactive", 3L),
+    total_tokens      = c(10000L, 5000L, 8000L),
+    est_cost_usd      = c(0.01, 0.005, 0.008)
+  )
+
+  # Select only "llmtelemetry"
+  filtered <- codex_filter_by_projects(
+    codex_daily,
+    cutoff_date       = as.Date("2026-05-16"),
+    selected_projects = "llmtelemetry"
+  )
+  expect_equal(nrow(filtered), 2L)
+  expect_true(all(filtered$canonical_project == "llmtelemetry"))
+
+  # All projects (NULL selection)
+  all_data <- codex_filter_by_projects(
+    codex_daily,
+    cutoff_date       = as.Date("2026-05-16"),
+    selected_projects = NULL
+  )
+  expect_equal(nrow(all_data), 3L)
+
+  # No projects (character(0))
+  no_data <- codex_filter_by_projects(
+    codex_daily,
+    cutoff_date       = as.Date("2026-05-16"),
+    selected_projects = character(0)
+  )
+  expect_equal(nrow(no_data), 0L)
+})

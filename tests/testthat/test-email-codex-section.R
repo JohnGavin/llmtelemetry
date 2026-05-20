@@ -33,19 +33,35 @@ safe_date <- function(x) {
 }
 
 # ── Helper: build codex type HTML (extracted logic from the script) ───────────
-build_codex_type_html <- function(codex_d, pricing_date = NULL) {
+build_codex_type_html <- function(codex_d, codex_s = NULL, pricing_date = NULL) {
   if (is.null(codex_d) || nrow(codex_d) == 0 || !"source" %in% names(codex_d)) {
     return("")
   }
-  cx_by_type <- codex_d |>
-    dplyr::group_by(source) |>
-    dplyr::summarise(
-      sessions = dplyr::n(),
-      tokens   = sum(total_tokens, na.rm = TRUE),
-      est_cost = sum(est_cost_usd, na.rm = TRUE),
-      .groups  = "drop"
-    ) |>
-    dplyr::arrange(dplyr::desc(est_cost))
+  # Use codex_s (per-thread) for sessions when available to avoid double-counting
+  # threads that span multiple dates.
+  has_sessions_src <- !is.null(codex_s) && nrow(codex_s) > 0 &&
+    all(c("source", "thread_id") %in% names(codex_s))
+  cx_by_type <- if (has_sessions_src) {
+    codex_s |>
+      dplyr::group_by(source) |>
+      dplyr::summarise(
+        sessions = dplyr::n_distinct(thread_id),
+        tokens   = sum(total_tokens, na.rm = TRUE),
+        est_cost = sum(est_cost_usd, na.rm = TRUE),
+        .groups  = "drop"
+      ) |>
+      dplyr::arrange(dplyr::desc(est_cost))
+  } else {
+    codex_d |>
+      dplyr::group_by(source) |>
+      dplyr::summarise(
+        sessions = dplyr::n(),
+        tokens   = sum(total_tokens, na.rm = TRUE),
+        est_cost = sum(est_cost_usd, na.rm = TRUE),
+        .groups  = "drop"
+      ) |>
+      dplyr::arrange(dplyr::desc(est_cost))
+  }
 
   html <- sprintf(
     '<h3 style="color: %s;">Codex by Automation Type</h3><table>
@@ -239,4 +255,51 @@ test_that("build_codex_row snapshot — column structure is stable", {
   stable <- gsub("\\$[0-9]+\\.[0-9]+", "$X.XX", html)
   stable <- gsub("[0-9]+ sessions", "N sessions", stable)
   expect_snapshot(stable)
+})
+
+# ── Regression: Sessions must not over-count threads spanning multiple days ───
+# Finding #4: n() over codex_d (daily) over-counted threads with multiple date rows.
+# Fix: use n_distinct(thread_id) from codex_s (per-thread).
+
+make_codex_s_multiday <- function() {
+  # One roborev thread that appears on 3 different days in codex_d
+  tibble::tibble(
+    thread_id    = "roborev-thread-001",
+    source       = "roborev",
+    total_tokens = 30000L,
+    est_cost_usd = 0.03
+  )
+}
+
+make_codex_d_multiday <- function() {
+  # Same thread produces 3 daily rows (aggregated across days)
+  tibble::tibble(
+    date             = c("2026-05-17", "2026-05-18", "2026-05-19"),
+    canonical_project = rep("llmtelemetry", 3L),
+    model            = rep("gpt-5.4", 3L),
+    source           = rep("roborev", 3L),
+    total_tokens     = c(10000L, 10000L, 10000L),
+    est_cost_usd     = c(0.01, 0.01, 0.01)
+  )
+}
+
+test_that("build_codex_type_html sessions=1 for thread spanning 3 days when codex_s provided", {
+  # Regression for finding #4: a single thread spanning 3 dates should count as 1 session
+  html <- build_codex_type_html(
+    codex_d = make_codex_d_multiday(),
+    codex_s = make_codex_s_multiday()
+  )
+  # Should show "1" session, not "3"
+  expect_match(html, ">1<")
+  expect_false(grepl(">3<", html))
+})
+
+test_that("build_codex_type_html sessions=3 without codex_s (legacy fallback)", {
+  # When codex_s is not available, falls back to n() over codex_d
+  html <- build_codex_type_html(
+    codex_d = make_codex_d_multiday(),
+    codex_s = NULL
+  )
+  # Legacy behaviour: 3 rows in codex_d -> 3 sessions (over-count, but stable fallback)
+  expect_match(html, ">3<")
 })

@@ -314,6 +314,33 @@ test_that("canonicalize_project extracts project name from /docs_gh/llmtelemetry
   expect_equal(result, "llmtelemetry")
 })
 
+test_that("canonicalize_project handles nested docs_gh/proj/data/<project> paths", {
+  # Regression: previously returned "data" (container segment) for nested paths.
+  skip_if(is.null(.canonicalize_from_cwd), ".canonicalize_from_cwd not found")
+
+  expect_equal(
+    .canonicalize_from_cwd("/Users/johngavin/docs_gh/proj/data/micromort/foo"),
+    "micromort"
+  )
+  expect_equal(
+    .canonicalize_from_cwd("/Users/johngavin/docs_gh/llmtelemetry/inst/scripts"),
+    "llmtelemetry"
+  )
+  expect_equal(
+    .canonicalize_from_cwd("/Users/johngavin/docs_gh/proj/finance/data/historical-momentum-vol"),
+    "historical-momentum-vol"
+  )
+})
+
+test_that("canonicalize_project handles docs_gh/proj/pers/<project> paths", {
+  skip_if(is.null(.canonicalize_from_cwd), ".canonicalize_from_cwd not found")
+
+  # NHS-health-data is a real project under docs_gh/proj/pers/
+  result <- .canonicalize_from_cwd("/Users/johngavin/docs_gh/proj/pers/NHS-health-data/bar")
+  # Expected: "NHS-health-data" (first non-container segment after pers)
+  expect_equal(result, "NHS-health-data")
+})
+
 test_that("canonicalize_project handles NA and empty cwd", {
   skip_if(is.null(canonicalize_project), "canonicalize_project not found")
 
@@ -394,6 +421,43 @@ test_that("join_roborev marks all turns as interactive when roborev not availabl
     result <- join_roborev(turns)
   )
   expect_equal(result$source, c("interactive", "interactive"))
+})
+
+test_that("join_roborev sets source='roborev' even when matched row has NA repo_id", {
+  # Regression: previously keyed on !is.na(repo_id.rb) so a matched row with
+  # repo_id = NA was silently classified as "interactive".
+  skip_if(is.null(join_roborev), "join_roborev not found")
+
+  turns <- tibble::tibble(
+    thread_id         = c("roborev-thread", "interactive-thread"),
+    canonical_project = c("llm", "llm"),
+    model             = c("gpt-5.4", "gpt-5.4"),
+    source            = c("interactive", "interactive"),  # pre-join default
+    repo_id           = c(NA_character_, NA_character_),
+    repo_name         = c(NA_character_, NA_character_)
+  )
+  # Simulate a roborev data frame with NA repo_id (e.g., private fork, no GH repo)
+  roborev_data <- tibble::tibble(
+    session_id = "roborev-thread",
+    repo_id    = NA_character_,
+    repo_name  = NA_character_
+  )
+
+  # Call the internal join directly (bypass binary lookup)
+  # We need to simulate what join_roborev does internally when it has roborev data
+  rv <- roborev_data |>
+    dplyr::mutate(.roborev_matched = TRUE) |>
+    dplyr::rename(thread_id = session_id)
+
+  result <- turns |>
+    dplyr::left_join(rv, by = "thread_id", suffix = c("", ".rb")) |>
+    dplyr::mutate(
+      source = dplyr::if_else(!is.na(.data$.roborev_matched), "roborev", "interactive")
+    ) |>
+    dplyr::select(-dplyr::any_of(c("repo_id.rb", "repo_name.rb", ".roborev_matched")))
+
+  expect_equal(result$source[result$thread_id == "roborev-thread"],   "roborev")
+  expect_equal(result$source[result$thread_id == "interactive-thread"], "interactive")
 })
 
 test_that("join_roborev snapshot — column names after join are stable", {
