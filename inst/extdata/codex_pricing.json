@@ -1,0 +1,10 @@
+{
+  "_comment": "TODO: verify prices at openai.com/api/pricing/ before depending on cost figures",
+  "updated_at": "2026-05-20",
+  "source": "https://openai.com/api/pricing/ — hand-curated; verify before relying on cost estimates",
+  "models": {
+    "gpt-5.1-codex-max": { "input_per_mtok": 1.25, "cached_input_per_mtok": 0.13, "output_per_mtok": 10.00 },
+    "gpt-5.4":           { "input_per_mtok": 0.40, "cached_input_per_mtok": 0.04, "output_per_mtok": 1.60 },
+    "gpt-5-codex":       { "input_per_mtok": 1.25, "cached_input_per_mtok": 0.13, "output_per_mtok": 10.00 }
+  }
+}

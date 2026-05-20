@@ -348,6 +348,59 @@ if (file.exists(gemini_db)) {
   write_json(list(), file.path(out_dir, "gemini_sessions.json"))
 }
 
+# --- 4.5. Refresh and export Codex usage data --------------------------------
+# Sources: ~/.codex/log/codex-tui.log (OTEL-structured per-turn token usage)
+# Writes:  inst/extdata/codex_daily.json
+#          inst/extdata/codex_sessions.json
+# Then copies codex_daily.json and codex_sessions.json to vignettes/data/.
+cat("Refreshing Codex usage data...\n")
+codex_refresh_ok <- FALSE
+tryCatch({
+  source(here::here("inst", "scripts", "refresh_codex_cache.R"))
+  codex_refresh_ok <- TRUE
+  cat("  -> refresh_codex_cache.R completed\n")
+}, error = function(e) {
+  cat(sprintf("  -> refresh_codex_cache.R error: %s\n", conditionMessage(e)))
+})
+
+codex_daily_src    <- file.path(extdata, "codex_daily.json")
+codex_sessions_src <- file.path(extdata, "codex_sessions.json")
+
+if (file.exists(codex_daily_src)) {
+  file.copy(codex_daily_src,    file.path(out_dir, "codex_daily.json"),    overwrite = TRUE)
+  cat(sprintf("  -> copied codex_daily.json (%d bytes)\n",
+              file.info(codex_daily_src)$size))
+} else {
+  write_json(list(), file.path(out_dir, "codex_daily.json"), auto_unbox = TRUE)
+  cat("  -> codex_daily.json not found, wrote empty placeholder\n")
+}
+
+if (file.exists(codex_sessions_src)) {
+  file.copy(codex_sessions_src, file.path(out_dir, "codex_sessions.json"), overwrite = TRUE)
+  cat(sprintf("  -> copied codex_sessions.json (%d bytes)\n",
+              file.info(codex_sessions_src)$size))
+} else {
+  write_json(list(), file.path(out_dir, "codex_sessions.json"), auto_unbox = TRUE)
+  cat("  -> codex_sessions.json not found, wrote empty placeholder\n")
+}
+
+# Read back for downstream integration (subsequent pipeline stages can
+# reference codex_daily_df and codex_sessions_df if needed).
+codex_daily_df <- if (file.exists(codex_daily_src)) {
+  tryCatch(
+    as_tibble(fromJSON(codex_daily_src, simplifyDataFrame = TRUE)),
+    error = function(e) tibble()
+  )
+} else tibble()
+codex_sessions_df <- if (file.exists(codex_sessions_src)) {
+  tryCatch(
+    as_tibble(fromJSON(codex_sessions_src, simplifyDataFrame = TRUE)),
+    error = function(e) tibble()
+  )
+} else tibble()
+cat(sprintf("  -> codex: %d daily rows, %d sessions\n",
+            nrow(codex_daily_df), nrow(codex_sessions_df)))
+
 # --- 5. Compute cmonitor summary from cmonitor-rs blocks ----------------------
 cat("Exporting cmonitor summary...\n")
 active_blocks <- if (has_cmonitor) Filter(function(b) !isTRUE(b$is_gap), blocks_all) else list()
