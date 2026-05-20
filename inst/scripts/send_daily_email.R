@@ -10,10 +10,11 @@ library(purrr)
 library(lubridate)
 library(DBI)
 library(duckdb)
+library(here)
 
 # Load cached ccusage data from inst/extdata/
 load_cached <- function(type) {
-  path <- sprintf("inst/extdata/ccusage_%s_all.json", type)
+  path <- here::here(sprintf("inst/extdata/ccusage_%s_all.json", type))
   if (!file.exists(path)) {
     message(sprintf("Cache file not found: %s", path))
     return(NULL)
@@ -29,6 +30,25 @@ load_cached <- function(type) {
 daily_raw <- load_cached("daily")
 session_raw <- load_cached("session")
 blocks_raw <- load_cached("blocks")
+
+# Load codex data (graceful: may be empty/missing initially)
+codex_d <- tryCatch(
+  jsonlite::fromJSON(here::here("inst/extdata/codex_daily.json")),
+  error = function(e) NULL
+)
+codex_s <- tryCatch(
+  jsonlite::fromJSON(here::here("inst/extdata/codex_sessions.json")),
+  error = function(e) NULL
+)
+# Normalise to tibble (fromJSON returns data.frame for arrays)
+if (!is.null(codex_d) && (is.data.frame(codex_d) || is.list(codex_d))) {
+  codex_d <- tryCatch(as_tibble(codex_d), error = function(e) NULL)
+}
+if (!is.null(codex_s) && (is.data.frame(codex_s) || is.list(codex_s))) {
+  codex_s <- tryCatch(as_tibble(codex_s), error = function(e) NULL)
+}
+# Empty tibbles count as no data
+has_codex <- !is.null(codex_d) && nrow(codex_d) > 0
 
 has_data <- !is.null(daily_raw) || !is.null(session_raw)
 
@@ -160,7 +180,7 @@ if (!has_data) {
   cm_cost <- NA; cm_tokens <- NA; cm_entries <- NA; cm_days <- NA; cm_start <- NA; cm_end <- NA
   cm_cost_day <- NA; cm_tok_day <- NA
   
-  cmonitor_path <- "inst/extdata/cmonitor_daily.txt"
+  cmonitor_path <- here::here("inst/extdata/cmonitor_daily.txt")
   if (file.exists(cmonitor_path)) {
     lines <- readLines(cmonitor_path, warn = FALSE)
     lines <- lines[!grepl("Setup complete|Terminal wrapper|RSTUDIO_TERM_EXEC|unpacking", lines)]
@@ -202,7 +222,7 @@ if (!has_data) {
   gm_cost_day <- NA; gm_tok_day <- NA
   gm_sessions_count <- 0
   
-  gm_db_path <- "inst/extdata/gemini_usage.duckdb"
+  gm_db_path <- here::here("inst/extdata/gemini_usage.duckdb")
   if (file.exists(gm_db_path)) {
     gm_con <- dbConnect(duckdb(), dbdir = gm_db_path, read_only = TRUE)
     gm_stats <- dbGetQuery(gm_con, "
@@ -337,7 +357,7 @@ if (!has_data) {
 
         # --- Daily Model Breakdown table ---
         # Read per-model daily data (exported by export_dashboard_data.R from cmonitor-rs model_stats)
-        model_daily_path <- file.path("inst", "extdata", "model_daily.json")
+        model_daily_path <- here::here("inst", "extdata", "model_daily.json")
         model_df <- NULL
         if (file.exists(model_daily_path)) {
           model_df <- tryCatch(
@@ -583,8 +603,7 @@ if (!has_data) {
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
-  </tr>
-</table>',
+  </tr>',
   dark_card, dark_border, dark_text,
   dark_border, accent_green, dollar(cm_cost),
   dark_border, dark_text, dollar(cm_cost_day),
@@ -596,7 +615,121 @@ if (!has_data) {
   dark_border, dark_muted, as.character(cm_start),
   dark_border, dark_muted, as.character(cm_end))
 
-  email_body <- paste0(email_header, row_ccusage, row_gemini, row_cmonitor)
+  # --- Codex row for summary table ---
+  row_codex <- ""
+  if (has_codex) {
+    cx_total_cost    <- sum(codex_d$est_cost_usd, na.rm = TRUE)
+    cx_total_tokens  <- sum(codex_d$total_tokens, na.rm = TRUE)
+    cx_sessions      <- if (!is.null(codex_s) && nrow(codex_s) > 0 &&
+                            "thread_id" %in% names(codex_s)) {
+      length(unique(codex_s$thread_id))
+    } else nrow(codex_d)
+    cx_start <- if ("date" %in% names(codex_d)) min(safe_date(codex_d$date), na.rm = TRUE) else NA
+    cx_end   <- if ("date" %in% names(codex_d)) max(safe_date(codex_d$date), na.rm = TRUE) else NA
+    cx_days  <- if (!is.na(cx_start) && !is.na(cx_end)) as.numeric(cx_end - cx_start) + 1 else 0
+    cx_cost_day <- if (cx_days > 0) cx_total_cost / cx_days else NA
+    cx_tok_day  <- if (cx_days > 0) cx_total_tokens / cx_days else NA
+
+    row_codex <- sprintf('
+  <!-- Codex Row -->
+  <tr style="background-color: %s;">
+    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>Codex</strong></td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s <em style="font-size:9px; color:%s;">(est)</em></td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">-</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
+  </tr>',
+      dark_row_alt, dark_border, dark_text,
+      dark_border, accent_green, dollar(cx_total_cost), dark_muted,
+      dark_border, dark_text, dollar(cx_cost_day),
+      dark_border, accent_blue, millions(cx_total_tokens),
+      dark_border, dark_text, millions(cx_tok_day),
+      dark_border, dark_text, cx_days,
+      dark_border, dark_text, cx_sessions,
+      dark_border, dark_text,
+      dark_border, dark_muted, as.character(cx_start),
+      dark_border, dark_muted, as.character(cx_end))
+  }
+
+  # --- Codex by automation type section ---
+  codex_type_html <- ""
+  if (has_codex && "source" %in% names(codex_d)) {
+    cx_by_type <- codex_d |>
+      group_by(source) |>
+      summarise(
+        sessions  = n(),
+        tokens    = sum(total_tokens, na.rm = TRUE),
+        est_cost  = sum(est_cost_usd, na.rm = TRUE),
+        .groups   = "drop"
+      ) |>
+      arrange(desc(est_cost))
+
+    codex_type_html <- sprintf(
+      '\n<h3 style="color: %s; margin-top: 20px;">Codex by Automation Type</h3>
+<table style="border-collapse: collapse; width: 100%%;">
+  <tr style="background-color: %s;">
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Type</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Sessions</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Total Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Est. Cost</th>
+  </tr>',
+      accent_orange, accent_orange,
+      dark_border, dark_border, dark_border, dark_border)
+
+    for (i in seq_len(nrow(cx_by_type))) {
+      bg <- if (i %% 2 == 0) dark_row_alt else dark_card
+      type_label <- switch(as.character(cx_by_type$source[i]),
+        "roborev"     = "Roborev jobs",
+        "interactive" = "Interactive",
+        as.character(cx_by_type$source[i]))
+      codex_type_html <- paste0(codex_type_html, sprintf(
+        '\n  <tr style="background-color: %s;">
+    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s <em style="font-size:9px;">(est)</em></td>
+  </tr>',
+        bg,
+        dark_border, dark_text, type_label,
+        dark_border, dark_text, comma(cx_by_type$sessions[i]),
+        dark_border, accent_blue, comma(cx_by_type$tokens[i]),
+        dark_border, accent_green, dollar(cx_by_type$est_cost[i])))
+    }
+    codex_type_html <- paste0(codex_type_html, "\n</table>",
+      "<!-- QA:codex_type_rows=", nrow(cx_by_type), " -->")
+
+    # Stale-pricing warning
+    pricing_path <- here::here("inst/extdata/codex_pricing.json")
+    if (file.exists(pricing_path)) {
+      pricing_meta <- tryCatch(
+        jsonlite::fromJSON(pricing_path),
+        error = function(e) NULL
+      )
+      if (!is.null(pricing_meta) && !is.null(pricing_meta$updated_at)) {
+        pricing_date <- tryCatch(as.Date(pricing_meta$updated_at), error = function(e) NA)
+        if (!is.na(pricing_date) &&
+            as.numeric(Sys.Date() - pricing_date) > 30) {
+          codex_type_html <- paste0(codex_type_html, sprintf(
+            '\n<p style="color: %s; font-size: 10px; font-style: italic; margin-top: 6px;">
+  Codex cost estimates use pricing from %s; verify
+  <a href="https://openai.com/api/pricing" style="color: %s;">openai.com/api/pricing</a>
+  if stale.
+</p>',
+            dark_muted,
+            format(pricing_date, "%Y-%m-%d"),
+            accent_blue))
+        }
+      }
+    }
+  }
+
+  email_body <- paste0(email_header, row_ccusage, row_gemini, row_cmonitor,
+                       row_codex, "\n</table>", codex_type_html)
 
   # Weekly Cost
   email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s;">Weekly Cost (Claude)</h3>
@@ -703,11 +836,11 @@ if (!has_data) {
 <!-- Footnotes -->
 <div style="margin-top: 30px; border-top: 1px solid %s; padding-top: 10px; color: %s; font-size: 10px;">
   <strong>Definitions:</strong><br>
-  <sup>1</sup> <strong>Cost:</strong> Total cost in USD.<br>
+  <sup>1</sup> <strong>Cost:</strong> Total cost in USD. Codex figures are estimates from <code>codex_pricing.json</code> and marked <em>(est)</em>.<br>
   <sup>2</sup> <strong>Days:</strong> Number of days in the reporting period.<br>
   <sup>3</sup> <strong>Sessions:</strong> Number of distinct interactive sessions recorded.<br>
   <sup>4</sup> <strong>Entries:</strong> Total number of logged interactions/blocks.<br>
-  <strong>Source:</strong> <em>ccusage/Gemini</em> (this R package) vs <em>cmonitor</em> (Rust-based system monitor).
+  <strong>Source:</strong> <em>ccusage/Gemini</em> (this R package) vs <em>cmonitor</em> (Rust-based system monitor) vs <em>Codex</em> (OpenAI Codex OTEL logs).
 </div>
 </div>
 ', dark_border, dark_muted, accent_blue, accent_blue, dark_card, dark_text, dark_border, dark_muted))
@@ -728,9 +861,12 @@ for (pat in neg_patterns) {
   }
 }
 # NaN/NULL in visible content (not inside HTML comments)
+# Note: use fixed=TRUE or perl word-boundary to avoid false positives from
+# words like "finance" matching case-insensitive "NaN".
 visible <- gsub("<!--.*?-->", "", email_body)
 for (pat in c("NaN", ">NULL<", "NA_real_")) {
-  if (grepl(pat, visible, ignore.case = TRUE)) {
+  # Case-sensitive exact match only (NaN is a specific R token)
+  if (grepl(pat, visible, fixed = TRUE)) {
     qa_errors <- c(qa_errors, sprintf("Bad value in visible content: '%s'", pat))
   }
 }
@@ -762,6 +898,19 @@ if (blocks_pos > 0 && summary_pos > 0 && blocks_pos > summary_pos) {
 for (marker in c("QA:blocks_grouped_by_day=", "QA:model_breakdown_days=", "QA:models_found=")) {
   if (!grepl(marker, email_body, fixed = TRUE)) {
     qa_errors <- c(qa_errors, sprintf("Missing QA marker: %s", marker))
+  }
+}
+
+# Codex QA: if codex data was loaded, the type-breakdown marker and row must appear
+if (has_codex) {
+  if (!grepl("QA:codex_type_rows=", email_body, fixed = TRUE)) {
+    qa_errors <- c(qa_errors, "Missing QA marker: QA:codex_type_rows= (codex data present but marker missing)")
+  }
+  if (!grepl("Codex by Automation Type", email_body)) {
+    qa_errors <- c(qa_errors, "Missing section: 'Codex by Automation Type'")
+  }
+  if (!grepl("(est)", email_body, fixed = TRUE)) {
+    qa_errors <- c(qa_errors, "Missing '(est)' suffix on Codex cost figures")
   }
 }
 
