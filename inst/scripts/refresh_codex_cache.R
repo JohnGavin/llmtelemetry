@@ -600,6 +600,26 @@ if (!interactive()) {
       left_join(repo_info, by = "thread_id")
   }
 
+  # ── Helper: atomic JSON write via temp-file rename ─────────────────────────
+  # Writes to a sibling .tmp file then renames atomically so that a SIGKILL /
+  # disk-full mid-write cannot truncate the production file.  Also asserts that
+  # the combined row count is monotone (>= existing) before writing so that an
+  # accidental upstream parse failure cannot silently truncate history.
+  write_json_atomic <- function(data, path, min_rows = 0L, label = basename(path)) {
+    n_rows <- nrow(data)
+    if (n_rows < min_rows) {
+      cli::cli_abort(c(
+        "x" = "Refusing to write {label}: row count would shrink.",
+        "i" = "Existing rows: {min_rows}; new combined rows: {n_rows}.",
+        "i" = "This indicates an upstream parse failure — aborting to protect history."
+      ))
+    }
+    tmp_path <- paste0(path, ".tmp")
+    jsonlite::write_json(data, tmp_path, auto_unbox = TRUE, digits = 6)
+    file.rename(tmp_path, path)
+    invisible(n_rows)
+  }
+
   # Read existing sessions and merge (incremental update)
   sessions_path <- file.path(extdata, "codex_sessions.json")
   existing_sessions <- if (file.exists(sessions_path)) {
@@ -607,6 +627,7 @@ if (!interactive()) {
              error = function(e) tibble())
   } else tibble()
 
+  n_existing_sessions <- if (is.data.frame(existing_sessions)) nrow(existing_sessions) else 0L
   if (is.data.frame(existing_sessions) && nrow(existing_sessions) > 0L) {
     existing_sessions <- as_tibble(existing_sessions)
     # Combine; new rows overwrite existing for same thread_id
@@ -618,7 +639,8 @@ if (!interactive()) {
     all_sessions <- sessions
   }
 
-  jsonlite::write_json(all_sessions, sessions_path, auto_unbox = TRUE, digits = 6)
+  write_json_atomic(all_sessions, sessions_path,
+                    min_rows = n_existing_sessions, label = "codex_sessions.json")
   cat(sprintf("Sessions  : %d total (%d new/updated)\n",
               nrow(all_sessions), nrow(sessions)))
 
@@ -632,6 +654,7 @@ if (!interactive()) {
              error = function(e) tibble())
   } else tibble()
 
+  n_existing_daily <- if (is.data.frame(existing_daily)) nrow(existing_daily) else 0L
   if (is.data.frame(existing_daily) && nrow(existing_daily) > 0L) {
     existing_daily <- as_tibble(existing_daily)
     # Remove rows that will be replaced by new data for same keys
@@ -647,7 +670,8 @@ if (!interactive()) {
     all_daily <- daily
   }
 
-  jsonlite::write_json(all_daily, daily_path, auto_unbox = TRUE, digits = 6)
+  write_json_atomic(all_daily, daily_path,
+                    min_rows = n_existing_daily, label = "codex_daily.json")
   cat(sprintf("Daily rows: %d total (%d new/updated)\n",
               nrow(all_daily), nrow(daily)))
 

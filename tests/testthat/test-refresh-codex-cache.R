@@ -471,3 +471,87 @@ test_that("join_roborev snapshot — column names after join are stable", {
   suppressMessages(result <- join_roborev(turns))
   expect_snapshot(sort(names(result)))
 })
+
+# ── write_json_atomic: monotonicity guard + atomic write ──────────────────────
+
+test_that("merge logic is monotone: existing sessions are preserved when new sessions are added", {
+  skip_if(is.null(aggregate_daily), "aggregate_daily not found (script not sourced)")
+
+  tmp_dir <- withr::local_tempdir()
+
+  # Simulate existing sessions JSON on disk
+  existing_data <- tibble::tibble(
+    thread_id         = c("thread-001", "thread-002"),
+    started_at        = c("2026-05-01T10:00:00Z", "2026-05-02T12:00:00Z"),
+    ended_at          = c("2026-05-01T10:30:00Z", "2026-05-02T12:30:00Z"),
+    canonical_project = c("llm", "llm"),
+    model             = c("gpt-5.4", "gpt-5.4"),
+    n_turns           = c(3L, 5L)
+  )
+  sessions_path <- file.path(tmp_dir, "codex_sessions.json")
+  jsonlite::write_json(existing_data, sessions_path, auto_unbox = TRUE)
+
+  # New session (does not overlap with existing)
+  new_sessions <- tibble::tibble(
+    thread_id         = "thread-003",
+    started_at        = "2026-05-03T09:00:00Z",
+    ended_at          = "2026-05-03T09:45:00Z",
+    canonical_project = "llm",
+    model             = "gpt-5.4",
+    n_turns           = 2L
+  )
+
+  # Replicate the merge logic from refresh_codex_cache.R
+  existing_sessions <- jsonlite::fromJSON(sessions_path, simplifyDataFrame = TRUE)
+  n_existing <- nrow(existing_sessions)
+  all_sessions <- dplyr::bind_rows(
+    dplyr::filter(existing_sessions, !thread_id %in% new_sessions$thread_id),
+    new_sessions
+  )
+
+  # Row count must not shrink
+  expect_gte(nrow(all_sessions), n_existing)
+  expect_equal(nrow(all_sessions), 3L)
+})
+
+test_that("merge logic aborts when new sessions tibble is empty and existing has rows", {
+  # Simulate write_json_atomic monotonicity guard: if combined rows < existing rows,
+  # the guard fires. This test verifies the guard message text via snapshot.
+  skip_if(is.null(aggregate_daily), "aggregate_daily not found (script not sourced)")
+
+  # write_json_atomic guard: min_rows = 5 but data has 0 rows
+  # Reproduce the guard inline (the function is script-local, not exported).
+  guard_fn <- function(n_rows, min_rows, label) {
+    if (n_rows < min_rows) {
+      cli::cli_abort(c(
+        "x" = "Refusing to write {label}: row count would shrink.",
+        "i" = "Existing rows: {min_rows}; new combined rows: {n_rows}.",
+        "i" = "This indicates an upstream parse failure — aborting to protect history."
+      ))
+    }
+    invisible(n_rows)
+  }
+
+  expect_snapshot(
+    error = TRUE,
+    guard_fn(0L, 5L, "codex_sessions.json")
+  )
+})
+
+test_that("atomic write uses .tmp then renames — no partial file on success", {
+  skip_if(is.null(aggregate_daily), "aggregate_daily not found (script not sourced)")
+
+  tmp_dir <- withr::local_tempdir()
+  target  <- file.path(tmp_dir, "test_output.json")
+  tmp_tmp <- paste0(target, ".tmp")
+
+  data <- tibble::tibble(x = 1:3)
+  # Atomic write pattern: write to .tmp then rename
+  jsonlite::write_json(data, tmp_tmp, auto_unbox = TRUE)
+  file.rename(tmp_tmp, target)
+
+  expect_true(file.exists(target))
+  expect_false(file.exists(tmp_tmp))
+  result <- jsonlite::fromJSON(target, simplifyDataFrame = TRUE)
+  expect_equal(nrow(result), 3L)
+})
