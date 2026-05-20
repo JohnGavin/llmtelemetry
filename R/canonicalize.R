@@ -20,7 +20,28 @@
   x <- gsub("^docs[-_]gh[-_]",               "", x)
   x <- gsub("^llm-",                          "", x)
   x <- gsub("^proj-",                         "", x)
+  # Convert dash separators to slash (dash-form hook output -> slash-form).
   x <- gsub("-", "/", x, fixed = TRUE)
+
+  # Handle underscore-form nested paths emitted by some sanitiser variants
+  # (e.g. "docs_gh_llmtelemetry", "-Users_johngavin_docs_gh_llm").
+  # IMPORTANT: apply BEFORE dash-to-slash conversion has altered leading "-",
+  # so we detect path-like prefixes on the ORIGINAL input.  Bare single-token
+  # underscore names that appear in meta_only (e.g. "urban_planning") must NOT
+  # be touched — the FIRST PATH SEGMENT check in the caller guards them later.
+  # Detection: the raw value starts with "-" or "docs_gh_" (before any
+  # conversion), which means we must re-test the pre-converted original here.
+  # Since dash-to-slash already ran, we check the post-slash form for the
+  # equivalent patterns: a leading "/" (was "-"), or literal "docs_gh_".
+  is_path_like <- startsWith(x, "/") || startsWith(x, "docs_gh_")
+  if (is_path_like) {
+    x <- gsub("^/Users_johngavin_docs_gh_", "", x)
+    x <- gsub("^/docs_gh_",                 "", x)
+    x <- gsub("^docs_gh_",                  "", x)
+    x <- gsub("^llm_",                       "", x)
+    x <- gsub("^proj_",                      "", x)
+    x <- gsub("_", "/", x, fixed = TRUE)
+  }
   x
 }
 
