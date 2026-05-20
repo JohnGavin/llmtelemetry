@@ -193,41 +193,15 @@ append_sessions_from_staging <- function(
   )
 
   # --- 3b. Sanitize session_id: replace raw filesystem paths (#1750) -----------
-  # Equivalent to sanitize_for_public() in export_dashboard_data.R (#936).
-  # Path-style ids (starting with "-" or containing "/") contain private
-  # filesystem paths and must be replaced before writing to Parquet.
-  is_path <- grepl("^-|[/\\\\]", new_rows$session_id)
-  if (any(is_path)) {
-    # Issue #9: widened from 6 to 12 hex chars (16^12 approx 2.8e14 space) to
-    # reduce birthday-paradox collision probability to <1e-7 for 10k sessions.
-    # Issue #8: use stable ISO 8601 UTC format for started_at component so the
-    # serialised session_id is identical regardless of R locale or timezone.
-    path_hash <- function(p) {
-      # Use digest::digest for a reproducible hex hash; fall back to the
-      # weighted-sum approach if digest is unavailable.
-      if (requireNamespace("digest", quietly = TRUE)) {
-        substr(digest::digest(p, algo = "md5", serialize = FALSE), 1L, 12L)
-      } else {
-        bytes <- utf8ToInt(p)
-        raw_val <- sum(as.numeric(bytes) * seq_along(bytes))
-        sprintf("%012x", bitwAnd(abs(as.integer(raw_val %% .Machine$integer.max)),
-                                 as.integer(.Machine$integer.max)))
-      }
-    }
-    raw_paths <- new_rows$session_id[is_path]
-    # Use a stable ISO 8601 UTC timestamp (not as.character() which is locale-
-    # and platform-dependent) for the started_at component (#8).
-    started_at_iso <- format(new_rows$started_at[is_path],
-                             format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-    new_rows$session_id[is_path] <- paste0(
-      "sanitized@",
-      ifelse(is.na(new_rows$canonical_project[is_path]), "unknown",
-             new_rows$canonical_project[is_path]),
-      "@",
-      started_at_iso,
-      "@h", vapply(raw_paths, path_hash, character(1L))
-    )
-  }
+  # Delegate to the shared helper in R/sanitize_session_id.R so that
+  # rollup_sessions.R and export_dashboard_data.R produce identical ids for
+  # the same (path, project, started_at) triple.  See finding (b) in roborev
+  # round V — previously the two paths used incompatible hash formats.
+  new_rows$session_id <- .sanitize_session_id_local(
+    session_ids        = new_rows$session_id,
+    canonical_projects = new_rows$canonical_project,
+    started_at         = new_rows$started_at
+  )
 
   # --- 4. Dedup against existing parquet ------------------------------------
   dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
