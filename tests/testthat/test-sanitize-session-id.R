@@ -7,8 +7,24 @@
 #      both the R/ helper AND the inline fallback in export_dashboard_data.R
 #      (roborev round V finding b — unified hash format)
 
-pkg_root <- normalizePath(file.path(test_path(), "..", ".."), mustWork = FALSE)
-source(file.path(pkg_root, "R", "sanitize_session_id.R"), local = TRUE)
+# Load sanitize_session_id helper: try source from development tree first
+# (devtools test workflow), fall back to package namespace (R CMD check workflow).
+local({
+  r_file <- tryCatch(
+    normalizePath(file.path(test_path(), "..", "..", "R", "sanitize_session_id.R"),
+                  mustWork = TRUE),
+    error = function(e) ""
+  )
+  if (nzchar(r_file) && file.exists(r_file)) {
+    source(r_file, local = FALSE)
+  } else {
+    # In R CMD check, functions are available via the package namespace.
+    assign(".path_hash12",
+           llmtelemetry:::.path_hash12, envir = .GlobalEnv)
+    assign(".sanitize_session_id_local",
+           llmtelemetry:::.sanitize_session_id_local, envir = .GlobalEnv)
+  }
+})
 
 # Fixed reference timestamp so snapshot output is deterministic
 # Use format= to ensure the time portion is parsed (plain as.POSIXct() without

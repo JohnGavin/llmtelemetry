@@ -59,7 +59,7 @@
   path_indices <- which(is_path)
   raw_paths    <- session_ids[is_path]
 
-  # Stable ISO 8601 UTC timestamps — never locale-dependent as.character().
+  # Stable ISO 8601 UTC timestamps; never locale-dependent as.character().
   started_at_iso <- vapply(
     seq_along(path_indices),
     function(k) {
