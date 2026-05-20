@@ -13,6 +13,8 @@ format:
       - data/ccusage_blocks.json
       - data/gemini_daily.json
       - data/gemini_sessions.json
+      - data/codex_daily.json
+      - data/codex_sessions.json
       - data/cmonitor_summary.json
       - data/git_commits.json
       - data/git_commits_by_project.json
@@ -283,8 +285,20 @@ ec_force_graph <- function(nodes, edges, h = "400px",
   )
 }
 
-pal <- list(claude = "#377eb8", gemini = "#e41a1c", accent = "#4daf4a",
-            purple = "#984ea3", orange = "#ff7f00", hist = "#377eb8")
+# Stable source palette — defined once, used in every "by source" chart.
+# Per narrative-colour-persistence rule: NEVER define inline palettes.
+SOURCE_PALETTE <- c(
+  claude = "#d97757",   # anthropic orange
+  gemini = "#4285f4",   # google blue
+  codex  = "#10a37f"    # openai green
+)
+pal <- list(
+  claude = SOURCE_PALETTE[["claude"]],
+  gemini = SOURCE_PALETTE[["gemini"]],
+  codex  = SOURCE_PALETTE[["codex"]],
+  accent = "#4daf4a",
+  purple = "#984ea3", orange = "#ff7f00", hist = "#377eb8"
+)
 
 # --- Data loading -------------------------------------------------------------
 # base_url is a relative prefix so fetches work from any host+path.
@@ -310,6 +324,8 @@ cc_sessions <- load_json("ccusage_sessions.json")
 cc_blocks   <- load_json("ccusage_blocks.json")
 gem_daily   <- load_json("gemini_daily.json")
 gem_sess    <- load_json("gemini_sessions.json")
+codex_d_raw <- load_json("codex_daily.json")
+codex_s_raw <- load_json("codex_sessions.json")
 cmon        <- load_json("cmonitor_summary.json")
 git_commits <- load_json("git_commits.json")
 git_commits_proj <- load_json("git_commits_by_project.json")
@@ -435,6 +451,9 @@ if (has_rows(cc_blocks)) {
 cc_sessions <- as_df(cc_sessions)
 gem_daily   <- as_df(gem_daily)
 gem_sess    <- as_df(gem_sess)
+# Codex data: normalise to data frames; handle empty JSON gracefully
+codex_daily  <- as_df(codex_d_raw)
+codex_sess   <- as_df(codex_s_raw)
 git_commits <- as_df(git_commits)
 u_sessions  <- as_df(u_sessions)
 u_costs     <- as_df(u_costs)
@@ -501,6 +520,13 @@ if (has_rows(file_churn_data) && "last_changed_date" %in% names(file_churn_data)
 if (has_rows(gem_sess)) {
   gem_sess$start_time <- as.POSIXct(gem_sess$start_time, tz = "UTC")
   gem_sess$date <- as.Date(gem_sess$start_time)
+}
+if (has_rows(codex_daily) && "date" %in% names(codex_daily)) {
+  codex_daily$date <- as.Date(codex_daily$date)
+}
+if (has_rows(codex_sess) && "started_at" %in% names(codex_sess)) {
+  codex_sess$started_at <- as.POSIXct(codex_sess$started_at, tz = "UTC")
+  codex_sess$date <- as.Date(codex_sess$started_at)
 }
 
 # Phase B: use canonical_project column where available; fall back to legacy derivation
@@ -800,11 +826,11 @@ ui <- page_navbar(
           tags$tbody(
             tooltip(
               tags$tr(tags$td("Total Cost"), tags$td(textOutput("vb_cost", inline = TRUE))),
-              "Sum of API charges for input, output, and cache tokens (Claude + Gemini)"
+              "Sum of API charges for input, output, and cache tokens (Claude + Gemini + Codex est.)"
             ),
             tooltip(
               tags$tr(tags$td("Total Tokens"), tags$td(textOutput("vb_tokens", inline = TRUE))),
-              "Sum of input + output + cache tokens across all providers"
+              "Sum of input + output + cache tokens across all providers (Claude + Gemini + Codex)"
             ),
             tooltip(
               tags$tr(tags$td("Active Days"), tags$td(textOutput("vb_days", inline = TRUE))),
@@ -817,7 +843,7 @@ ui <- page_navbar(
           )
         ),
         card_footer(class = "text-muted small",
-          "Key metrics for the selected time horizon. Costs from ccusage + Gemini billing API. Sessions from Claude Code hook telemetry.")
+          "Key metrics for the selected time horizon. Costs from ccusage + Gemini billing API + Codex est. Sessions from Claude Code hook telemetry.")
       )
     ),
     layout_columns(col_widths = c(12),
@@ -826,7 +852,7 @@ ui <- page_navbar(
     ),
     layout_columns(col_widths = c(12),
       card(card_header("Daily Cost (All Sources)"), uiOutput("overview_cost_ts"),
-        card_footer(class = "text-muted small", "Daily cost time series combining Claude and Gemini usage"))
+        card_footer(class = "text-muted small", "Daily cost time series combining Claude, Gemini, and Codex usage"))
     )
   ),
 
@@ -839,7 +865,7 @@ ui <- page_navbar(
     ),
     layout_columns(col_widths = c(6, 6),
       card(card_header("Weekly Cost by Source"), uiOutput("cost_weekly"),
-        card_footer(class = "text-muted small", "Weekly cost grouped by Claude vs Gemini")),
+        card_footer(class = "text-muted small", "Weekly cost grouped by Claude, Gemini, and Codex")),
       card(card_header("Weekly Cost by Model"), uiOutput("cost_by_model"),
         card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
     ),
@@ -858,7 +884,7 @@ ui <- page_navbar(
       card(card_header("Token Composition"), uiOutput("token_comp"),
         card_footer(class = "text-muted small", "Stacked bars: input, output, cache-create, and cache-read tokens")),
       card(card_header("Weekly Tokens by Source"), uiOutput("token_weekly"),
-        card_footer(class = "text-muted small", "Weekly token usage by source"))
+        card_footer(class = "text-muted small", "Weekly token usage by source — Claude, Gemini, and Codex"))
     )
   ),
 
@@ -1124,7 +1150,7 @@ ui <- page_navbar(
     class = "text-muted small text-center py-2",
     style = "background-color: #1a1a1a;",
     tags$a(href = "https://github.com/johngavin/llmtelemetry", style = "color: #7cb5ec;", "GitHub"),
-    " | Data: ccusage, Gemini, cmonitor, unified.duckdb, git-recon, predictions",
+    " | Data: ccusage, Gemini, Codex, cmonitor, unified.duckdb, git-recon, predictions",
     " | Built: ", format(Sys.Date(), "%Y-%m-%d")
   ),
   id = "tabs"
@@ -1141,6 +1167,10 @@ server <- function(input, output, session) {
   gem_d <- reactive({
     if (!has_rows(gem_daily)) return(data.frame())
     gem_daily[gem_daily$date >= cutoff(), ]
+  })
+  codex_d <- reactive({
+    if (!has_rows(codex_daily)) return(data.frame())
+    codex_daily[codex_daily$date >= cutoff(), ]
   })
   # cc_d_proj: when specific projects are selected, weight tokens from tok_proj
   # (tokens_by_project.json). When "All projects" is selected, resolve_sel()
@@ -1226,12 +1256,16 @@ server <- function(input, output, session) {
   output$vb_cost <- renderText({
     cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalCost, na.rm = TRUE) else 0
     gm <- if (nrow(gem_d()) > 0) sum(gem_d()$total_cost, na.rm = TRUE) else 0
-    sprintf("$%s", format(round(cc + gm), big.mark = ","))
+    cx <- if (nrow(codex_d()) > 0 && "est_cost_usd" %in% names(codex_d()))
+            sum(codex_d()$est_cost_usd, na.rm = TRUE) else 0
+    sprintf("$%s", format(round(cc + gm + cx), big.mark = ","))
   })
   output$vb_tokens <- renderText({
     cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalTokens, na.rm = TRUE) else 0
     gm <- if (nrow(gem_d()) > 0) sum(gem_d()$total_tokens, na.rm = TRUE) else 0
-    total <- cc + gm
+    cx <- if (nrow(codex_d()) > 0 && "total_tokens" %in% names(codex_d()))
+            sum(codex_d()$total_tokens, na.rm = TRUE) else 0
+    total <- cc + gm + cx
     if (total >= 1e9) sprintf("%.1fB", total / 1e9)
     else if (total >= 1e6) sprintf("%.1fM", total / 1e6)
     else format(total, big.mark = ",")
@@ -1239,7 +1273,8 @@ server <- function(input, output, session) {
   output$vb_days <- renderText({
     dates <- c(
       if (nrow(cc_d()) > 0) unique(cc_d()$date),
-      if (nrow(gem_d()) > 0) unique(gem_d()$date)
+      if (nrow(gem_d()) > 0) unique(gem_d()$date),
+      if (nrow(codex_d()) > 0) unique(codex_d()$date)
     )
     as.character(length(unique(dates)))
   })
@@ -1282,6 +1317,20 @@ server <- function(input, output, session) {
         check.names = FALSE, stringsAsFactors = FALSE
       )
     }
+    if (nrow(codex_d()) > 0 && "est_cost_usd" %in% names(codex_d())) {
+      d <- codex_d()
+      rows[[length(rows) + 1]] <- data.frame(
+        Source = "Codex (est.)",
+        Cost = sprintf("$%.2f", sum(d$est_cost_usd, na.rm = TRUE)),
+        `$/Day` = sprintf("$%.2f", sum(d$est_cost_usd, na.rm = TRUE) / max(length(unique(d$date)), 1)),
+        Tokens = format(sum(d$total_tokens, na.rm = TRUE), big.mark = ","),
+        Days = length(unique(d$date)),
+        Sessions = if (has_rows(codex_sess) && "date" %in% names(codex_sess))
+                     nrow(codex_sess[codex_sess$date >= cutoff(), ]) else 0L,
+        `Date Range` = paste(min(d$date), "to", max(d$date)),
+        check.names = FALSE, stringsAsFactors = FALSE
+      )
+    }
     if (!is.null(cmon) && !is.null(cmon$total_cost)) {
       rows[[length(rows) + 1]] <- data.frame(
         Source = "cmonitor",
@@ -1300,11 +1349,13 @@ server <- function(input, output, session) {
   })
 
   output$overview_cost_ts <- renderUI({
-    has_cc <- nrow(cc_d()) > 0
+    has_cc  <- nrow(cc_d()) > 0
     has_gem <- nrow(gem_d()) > 0
-    if (!has_cc && !has_gem) return(ec_empty(h = "350px"))
+    has_cx  <- nrow(codex_d()) > 0 && "est_cost_usd" %in% names(codex_d())
+    if (!has_cc && !has_gem && !has_cx) return(ec_empty(h = "350px"))
 
-    cc_agg <- gem_agg <- NULL
+    # Aggregate each source by date
+    cc_agg <- gem_agg <- cx_agg <- NULL
     if (has_cc) {
       cc_agg <- aggregate(totalCost ~ date, data = cc_d(), FUN = sum, na.rm = TRUE)
       names(cc_agg)[2] <- "claude"
@@ -1313,29 +1364,36 @@ server <- function(input, output, session) {
       gem_agg <- aggregate(total_cost ~ date, data = gem_d(), FUN = sum, na.rm = TRUE)
       names(gem_agg)[2] <- "gemini"
     }
-
-    if (has_cc && has_gem) {
-      d <- merge(cc_agg, gem_agg, by = "date", all = TRUE)
-      d$claude[is.na(d$claude)] <- 0
-      d$gemini[is.na(d$gemini)] <- 0
-      d <- d[order(d$date), ]
-      series <- list(
-        list(name = "Claude", type = "line", data = I(round(d$claude, 2)),
-             itemStyle = list(color = pal$claude)),
-        list(name = "Gemini", type = "line", data = I(round(d$gemini, 2)),
-             itemStyle = list(color = pal$gemini)))
-      ec_line(d$date, series, "350px", y_name = "Cost ($)")
-    } else if (has_cc) {
-      cc_agg <- cc_agg[order(cc_agg$date), ]
-      ec_line(cc_agg$date, list(
-        list(name = "Claude", type = "line", data = I(round(cc_agg$claude, 2)),
-             itemStyle = list(color = pal$claude))), "350px", y_name = "Cost ($)")
-    } else {
-      gem_agg <- gem_agg[order(gem_agg$date), ]
-      ec_line(gem_agg$date, list(
-        list(name = "Gemini", type = "line", data = I(round(gem_agg$gemini, 2)),
-             itemStyle = list(color = pal$gemini))), "350px", y_name = "Cost ($)")
+    if (has_cx) {
+      cx_agg <- aggregate(est_cost_usd ~ date, data = codex_d(), FUN = sum, na.rm = TRUE)
+      names(cx_agg)[2] <- "codex"
     }
+
+    # Merge all sources on date (full outer join chain)
+    d <- data.frame(date = sort(unique(c(
+      if (!is.null(cc_agg)) cc_agg$date,
+      if (!is.null(gem_agg)) gem_agg$date,
+      if (!is.null(cx_agg)) cx_agg$date
+    ))))
+    if (!is.null(cc_agg))  d <- merge(d, cc_agg,  by = "date", all.x = TRUE)
+    if (!is.null(gem_agg)) d <- merge(d, gem_agg, by = "date", all.x = TRUE)
+    if (!is.null(cx_agg))  d <- merge(d, cx_agg,  by = "date", all.x = TRUE)
+    for (col in c("claude", "gemini", "codex")) {
+      if (col %in% names(d)) d[[col]][is.na(d[[col]])] <- 0
+    }
+    d <- d[order(d$date), ]
+
+    series <- list()
+    if ("claude" %in% names(d))
+      series[[length(series) + 1]] <- list(name = "Claude", type = "line",
+        data = I(round(d$claude, 2)), itemStyle = list(color = pal$claude))
+    if ("gemini" %in% names(d))
+      series[[length(series) + 1]] <- list(name = "Gemini", type = "line",
+        data = I(round(d$gemini, 2)), itemStyle = list(color = pal$gemini))
+    if ("codex" %in% names(d))
+      series[[length(series) + 1]] <- list(name = "Codex", type = "line",
+        data = I(round(d$codex, 2)), itemStyle = list(color = pal$codex))
+    ec_line(d$date, series, "350px", y_name = "Cost ($)")
   })
 
   # --- Cost Trends ------------------------------------------------------------
@@ -1385,6 +1443,8 @@ server <- function(input, output, session) {
   })
 
   output$cost_weekly <- renderUI({
+    # W5 from #72: Weekly Cost by Source — Claude, Gemini, Codex
+    # SOURCE_PALETTE is used for all three series (narrative-colour-persistence rule)
     rows <- list()
     if (nrow(cc_d()) > 0) {
       d <- cc_d()
@@ -1401,17 +1461,28 @@ server <- function(input, output, session) {
       a$source <- "Gemini"
       rows[[length(rows) + 1]] <- a
     }
+    if (nrow(codex_d()) > 0 && "est_cost_usd" %in% names(codex_d())) {
+      d <- codex_d()
+      d$week <- floor_date(d$date, "week")
+      a <- aggregate(est_cost_usd ~ week, data = d, FUN = sum, na.rm = TRUE)
+      names(a)[2] <- "totalCost"
+      a$source <- "Codex"
+      rows[[length(rows) + 1]] <- a
+    }
     if (length(rows) == 0) return(ec_empty())
     d <- do.call(rbind, rows)
     all_weeks <- sort(unique(d$week))
     sources <- unique(d$source)
+    src_color <- c(Claude = SOURCE_PALETTE[["claude"]],
+                   Gemini = SOURCE_PALETTE[["gemini"]],
+                   Codex  = SOURCE_PALETTE[["codex"]])
     series <- lapply(sources, function(s) {
       sd <- d[d$source == s, ]
       vals <- rep(0, length(all_weeks))
       vals[match(sd$week, all_weeks)] <- sd$totalCost
       list(name = s, type = "scatter", symbol = "circle", symbolSize = 10,
            data = I(round(vals, 2)),
-           itemStyle = list(color = if (s == "Claude") pal$claude else pal$gemini))
+           itemStyle = list(color = unname(src_color[s])))
     })
     ec_bar(all_weeks, series)
   })
@@ -1511,6 +1582,7 @@ server <- function(input, output, session) {
   })
 
   output$token_weekly <- renderUI({
+    # W6 from #72: Weekly Tokens by Source — Claude, Gemini, Codex
     rows <- list()
     if (nrow(cc_d_proj()) > 0) {
       d <- cc_d_proj()
@@ -1527,17 +1599,28 @@ server <- function(input, output, session) {
       a$source <- "Gemini"
       rows[[length(rows) + 1]] <- a
     }
+    if (nrow(codex_d()) > 0 && "total_tokens" %in% names(codex_d())) {
+      d <- codex_d()
+      d$week <- floor_date(d$date, "week")
+      a <- aggregate(total_tokens ~ week, data = d, FUN = sum, na.rm = TRUE)
+      names(a)[2] <- "totalTokens"
+      a$source <- "Codex"
+      rows[[length(rows) + 1]] <- a
+    }
     if (length(rows) == 0) return(ec_empty())
     d <- do.call(rbind, rows)
     all_weeks <- sort(unique(d$week))
     sources <- unique(d$source)
+    src_color <- c(Claude = SOURCE_PALETTE[["claude"]],
+                   Gemini = SOURCE_PALETTE[["gemini"]],
+                   Codex  = SOURCE_PALETTE[["codex"]])
     series <- lapply(sources, function(s) {
       sd <- d[d$source == s, ]
       vals <- rep(0, length(all_weeks))
       vals[match(sd$week, all_weeks)] <- sd$totalTokens
       list(name = s, type = "scatter", symbol = "circle", symbolSize = 10,
            data = I(vals),
-           itemStyle = list(color = if (s == "Claude") pal$claude else pal$gemini))
+           itemStyle = list(color = unname(src_color[s])))
     })
     ec_bar(all_weeks, series)
   })
