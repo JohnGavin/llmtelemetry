@@ -48,3 +48,13 @@
       [1] "canonical_project" "model"             "repo_id"          
       [4] "repo_name"         "source"            "thread_id"        
 
+# merge logic aborts when new sessions tibble is empty and existing has rows
+
+    Code
+      guard_fn(0L, 5L, "codex_sessions.json")
+    Condition
+      Error in `guard_fn()`:
+      x Refusing to write codex_sessions.json: row count would shrink.
+      i Existing rows: 5; new combined rows: 0.
+      i This indicates an upstream parse failure — aborting to protect history.
+

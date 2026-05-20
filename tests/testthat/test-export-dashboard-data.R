@@ -380,27 +380,58 @@ test_that("ccusage_daily.json is valid JSON and a flat array (data.frame)", {
   )
 })
 
-test_that("export_dashboard_data.R CI fallback uses ccusage_daily.json not ccusage_daily_all.json", {
+test_that("export_dashboard_data.R CI fallback copies ccusage_daily.json (not ccusage_daily_all.json)", {
+  # Rewritten from the old fallback_map regex test (roborev round V/d).
+  # The script no longer has a fallback_map list — it copies files directly.
+  # We parse the CI fallback block to verify:
+  #   (i)  The source file is ccusage_daily.json (not ccusage_daily_all.json)
+  #   (ii) ccusage_daily_all.json does NOT appear as the source of any file.copy call
+  #
+  # Strategy: find the `fallback_daily_src <- ...` assignment line, extract the
+  # filename string, and assert it equals "ccusage_daily.json".
   script_path <- system.file("scripts", "export_dashboard_data.R",
                              package = "llmtelemetry")
   skip_if(!nzchar(script_path), "export_dashboard_data.R not installed")
   lines <- readLines(script_path)
-  fallback_block <- grep("fallback_map", lines)
-  skip_if(length(fallback_block) == 0, "fallback_map not found in export script")
-  # The CI fallback must copy ccusage_daily.json (not ccusage_daily_all.json)
-  # to avoid serving a stale/renamed source file.
-  block_lines <- lines[seq(max(1, min(fallback_block) - 2),
-                           min(length(lines), max(fallback_block) + 10))]
+
+  # Find the line that assigns the CI fallback source file
+  src_line_idx <- grep("fallback_daily_src\\s*<-", lines)
+  skip_if(length(src_line_idx) == 0L,
+          "fallback_daily_src assignment not found in export_dashboard_data.R")
+
+  # Extract the block: from src assignment to the matching dst copy, max 10 lines
+  block_start <- src_line_idx[1L]
+  block_end   <- min(length(lines), block_start + 15L)
+  block_lines <- lines[block_start:block_end]
+  block_text  <- paste(block_lines, collapse = "\n")
+
+  # Parse the block to extract the source filename
+  # The line looks like: fallback_daily_src <- file.path(extdata, "ccusage_daily.json")
+  # Extract the quoted filename from the file.path() call
+  src_match <- regmatches(block_text,
+    regexpr('"([^"]+\\.json)"', block_text, perl = TRUE))
+  src_filename <- if (length(src_match) > 0L) gsub('"', '', src_match[1L]) else NA_character_
+
+  # (i) Source must be ccusage_daily.json (not ccusage_daily_all.json)
+  expect_equal(
+    src_filename,
+    "ccusage_daily.json",
+    info = paste("CI fallback source must be 'ccusage_daily.json'.",
+                 "Using 'ccusage_daily_all.json' (old nested format) is a regression",
+                 "(PR #93 changed the schema). Found:", src_filename)
+  )
+
+  # (ii) ccusage_daily_all.json must not appear as a source for file.copy or
+  #       file.path() calls that copy data to the public output.
+  #       (Comments explaining why NOT to use it are acceptable.)
+  non_comment_lines <- grep("^\\s*#", lines, invert = TRUE, value = TRUE)
   expect_false(
-    any(grepl('"ccusage_daily_all\\.json"\\s*=\\s*"ccusage_daily\\.json"',
-              block_lines)),
-    info = paste("fallback_map still maps ccusage_daily_all.json -> ccusage_daily.json.",
-                 "PR #93 changed the source key to ccusage_daily.json directly.",
-                 "Revert to ccusage_daily_all.json = 'ccusage_daily.json' is a regression.")
+    any(grepl("ccusage_daily_all\\.json", non_comment_lines)),
+    info = paste("'ccusage_daily_all.json' must not appear in non-comment code.",
+                 "PR #93 renamed/removed this file to eliminate the nested-format schema.",
+                 "Any non-comment reference to it is a regression.")
   )
-  expect_true(
-    any(grepl('"ccusage_daily\\.json"\\s*=\\s*"ccusage_daily\\.json"', block_lines)),
-    info = paste("fallback_map must map 'ccusage_daily.json' -> 'ccusage_daily.json'",
-                 "so the committed extdata file is used directly as the CI fallback.")
-  )
+
+  # Snapshot the block so future changes to CI fallback logic surface explicitly
+  expect_snapshot(block_lines)
 })
