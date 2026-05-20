@@ -26,33 +26,39 @@ extdata  <- file.path(pkg_root, "inst", "extdata")
 
 .canonicalize_from_cwd <- function(cwd) {
   if (is.na(cwd) || !nzchar(cwd)) return(NA_character_)
-  # If the path contains docs_gh/ or docs-gh/, extract the project name as
-  # the first path segment immediately after that prefix.
+
+  # Known container/namespace segments that are NOT real project names.
+  # Must be kept in sync with the same list in the fallback below.
+  containers <- c(
+    "data", "proj", "pers", "NHS", "health", "antigravity", "finance",
+    "stats", "personal",
+    "worktrees", "worktree", "Users", "johngavin", "docs_gh", "docs-gh",
+    ".claude"
+  )
+
+  # If the path contains docs_gh/ or docs-gh/, walk the segments that follow
+  # until we find one that is not a container prefix.
   # e.g. /Users/johngavin/docs_gh/llmtelemetry/foo/bar -> "llmtelemetry"
-  # e.g. /Users/johngavin/docs_gh/proj/data/micromort/x -> "micromort" (via fallback)
+  # e.g. /Users/johngavin/docs_gh/proj/data/micromort/x -> "micromort"
+  # e.g. /Users/johngavin/docs_gh/proj/finance/data/historical-momentum-vol -> "historical-momentum-vol"
   docs_match <- regmatches(cwd,
-    regexpr("(?:docs_gh|docs-gh)/([^/]+)", cwd, perl = TRUE))
+    regexpr("(?:docs_gh|docs-gh)/.*", cwd, perl = TRUE))
   if (length(docs_match) > 0L && nzchar(docs_match)) {
-    seg <- sub("^(?:docs_gh|docs-gh)/", "", docs_match)
-    # Skip known top-level container directories under docs_gh
-    top_containers <- c("proj", "pers", "NHS", ".claude")
-    if (!seg %in% top_containers && !grepl("^[0-9]+$", seg)) {
-      return(seg)
+    # Strip the docs_gh/ prefix and split remaining path
+    after_root <- sub("^(?:docs_gh|docs-gh)/", "", docs_match, perl = TRUE)
+    sub_parts  <- strsplit(after_root, "/", fixed = TRUE)[[1L]]
+    sub_parts  <- sub_parts[nzchar(sub_parts)]
+    for (seg in sub_parts) {
+      if (!seg %in% containers && !grepl("^[0-9]+$", seg) && !startsWith(seg, ".")) {
+        return(seg)
+      }
     }
-    # For container dirs like docs_gh/proj/data/myproject, strip 2 extra segments
-    after_container <- sub(paste0(".*(?:docs_gh|docs-gh)/", seg, "/"), "", cwd,
-                           perl = TRUE)
-    sub_parts <- strsplit(after_container, "/", fixed = TRUE)[[1L]]
-    sub_parts <- sub_parts[nzchar(sub_parts)]
-    if (length(sub_parts) > 0L) return(sub_parts[1L])
   }
+
   # Fallback: walk parts from right, skip generic container names
   parts <- strsplit(cwd, "/", fixed = TRUE)[[1L]]
   parts <- parts[nzchar(parts)]
   if (length(parts) == 0L) return(NA_character_)
-  containers <- c("data", "proj", "pers", "NHS", "health", "antigravity",
-                  "worktrees", "worktree", "Users", "johngavin", "docs_gh",
-                  "docs-gh", ".claude")
   for (i in seq(length(parts), 1L)) {
     seg <- parts[i]
     if (!seg %in% containers && !grepl("^[0-9]+$", seg) && !startsWith(seg, ".")) {
@@ -449,17 +455,23 @@ join_roborev <- function(turns) {
     distinct(session_id, .keep_all = TRUE) |>
     rename(thread_id = session_id)
 
+  # Add a sentinel so we can detect join success independently of repo_id being NA.
+  # A matched row will have .roborev_matched = TRUE even if repo_id is NA.
+  rv_with_sentinel <- rv |>
+    mutate(.roborev_matched = TRUE)
+
   # Left join: matched rows get repo_id/repo_name from rv; source set accordingly
   turns_joined <- turns |>
-    left_join(rv, by = "thread_id", suffix = c("", ".rb"))
+    left_join(rv_with_sentinel, by = "thread_id", suffix = c("", ".rb"))
 
   has_rb_id   <- "repo_id.rb"   %in% names(turns_joined)
   has_rb_name <- "repo_name.rb" %in% names(turns_joined)
 
   turns_joined <- turns_joined |>
     mutate(
-      source    = if_else(!is.na(if (has_rb_id) .data$repo_id.rb else .data$repo_id),
-                          "roborev", "interactive"),
+      # Use join sentinel — source = "roborev" whenever the thread_id matched a
+      # roborev row, regardless of whether repo_id/repo_name are NA.
+      source    = if_else(!is.na(.data$.roborev_matched), "roborev", "interactive"),
       repo_id   = if (has_rb_id)
                     dplyr::coalesce(.data$repo_id.rb,   .data$repo_id)
                   else .data$repo_id,
@@ -467,7 +479,7 @@ join_roborev <- function(turns) {
                     dplyr::coalesce(.data$repo_name.rb, .data$repo_name)
                   else .data$repo_name
     ) |>
-    select(-any_of(c("repo_id.rb", "repo_name.rb")))
+    select(-any_of(c("repo_id.rb", "repo_name.rb", ".roborev_matched")))
 
   turns_joined
 }
