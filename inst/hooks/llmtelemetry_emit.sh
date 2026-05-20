@@ -1,33 +1,144 @@
 #!/usr/bin/env bash
-# llmtelemetry_emit.sh — Phase 1D push hook for epic #83.
-# Appends telemetry events to a staging JSONL file.
-# Symlink from ~/.claude/hooks/ to enable.
+# llmtelemetry_emit.sh — Template hook bundled with the llmtelemetry R package.
 #
-# Usage: stdin = JSON object, OR pass --event-type plus key=value pairs.
-# Writes to ~/.claude/logs/llmtelemetry-staging/events-YYYY-MM-DD.jsonl
+# Installation: copy (or symlink) to ~/.claude/hooks/llmtelemetry_emit.sh
+# then wire it in ~/.claude/settings.json:
+#
+#   "hooks": {
+#     "SessionStart": [{ "hooks": [{ "type": "command",
+#       "command": "~/.claude/hooks/llmtelemetry_emit.sh start" }] }],
+#     "Stop":         [{ "hooks": [{ "type": "command",
+#       "command": "~/.claude/hooks/llmtelemetry_emit.sh stop"  }] }]
+#   }
+#
+# Usage:
+#   llmtelemetry_emit.sh start   (SessionStart hook)
+#   llmtelemetry_emit.sh stop    (Stop hook)
+#
+# Opt-in (either flag suffices):
+#   Global:      touch ~/.claude/.llmtelemetry_emit
+#   Per-project: touch <project_dir>/.llmtelemetry_emit
+#
+# Staging output:
+#   ${LLMTELEMETRY_STAGING_DIR}/events-HOST-DATE.jsonl
+#   Default LLMTELEMETRY_STAGING_DIR: ~/.claude/logs/llmtelemetry-staging
+#
+# Format: {"ts":"...","host":"...","pid":"...","payload":{...}}
+#
+# Fire-and-forget: always exits 0. Never blocks session start/stop.
+#
+# Real-session-end gate: the Stop hook fires after EVERY Claude response,
+# not only at actual session end. To avoid spurious stop events on every
+# response, stop emission is gated behind ~/.claude/.bye-requested — the
+# sentinel written by /bye (the session-end skill) and consumed here
+# immediately. Mid-session Stop invocations skip emit entirely.
+#
+# Concurrent-session safety: state files are namespaced by SESSION_ID so
+# that two overlapping sessions don't overwrite each other's start time.
+#
+# To find the installed path after install.packages("llmtelemetry"):
+#   system.file("hooks", "llmtelemetry_emit.sh", package = "llmtelemetry")
 
-set -euo pipefail
+set -uo pipefail
 
-STAGING_DIR="${LLMTELEMETRY_STAGING_DIR:-$HOME/.claude/logs/llmtelemetry-staging}"
-mkdir -p "$STAGING_DIR"
+MODE="${1:-stop}"
+LOG_DIR="$HOME/.claude/logs"
+STAGING_DIR="${LLMTELEMETRY_STAGING_DIR:-$LOG_DIR/llmtelemetry-staging}"
+GLOBAL_FLAG="$HOME/.claude/.llmtelemetry_emit"
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd 2>/dev/null || echo "")}"
+PROJECT_FLAG="$PROJECT_DIR/.llmtelemetry_emit"
 
-TODAY=$(date -u +%Y-%m-%d)
-NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-STAGING_FILE="$STAGING_DIR/events-$TODAY.jsonl"
-
-# If stdin has data, treat it as the event payload (must be valid JSON object).
-# Else build a minimal event from arguments.
-if [ ! -t 0 ]; then
-  PAYLOAD=$(cat)
-else
-  PAYLOAD="{}"
+# Opt-in gate (fail-open: if gate check errors, skip emit silently)
+if [ ! -f "$GLOBAL_FLAG" ] && [ ! -f "$PROJECT_FLAG" ]; then
+  exit 0
 fi
 
-# Wrap in an envelope with timestamp + source
-ENVELOPE=$(printf '{"ts":"%s","host":"%s","pid":"%s","payload":%s}\n' \
-                  "$NOW" "$(hostname -s)" "$$" "$PAYLOAD")
+# Derive session ID: env var → state file → generate fallback
+SESSION_ID="${CLAUDE_SESSION_ID:-}"
+if [ -z "$SESSION_ID" ] && [ -f "$LOG_DIR/.current_session" ]; then
+  SESSION_ID=$(cat "$LOG_DIR/.current_session" 2>/dev/null || echo "")
+fi
+[ -n "$SESSION_ID" ] || SESSION_ID="hook-$(date -u '+%Y%m%dT%H%M%SZ')"
 
-# Atomic append: write to .tmp then concatenate (best-effort, lockless)
-echo "$ENVELOPE" >> "$STAGING_FILE"
+# Per-session state files — namespaced by SESSION_ID to avoid concurrent collisions
+STATE_START="$LOG_DIR/.llmtelemetry_started_at.${SESSION_ID}"
+STATE_SID="$LOG_DIR/.llmtelemetry_session_id.${SESSION_ID}"
+
+# Derive project name from project directory
+PROJECT=$(basename "${PROJECT_DIR:-$(pwd 2>/dev/null || echo unknown)}")
+
+# ── START mode: record UTC start time and session ID ─────────────────────────
+if [ "$MODE" = "start" ]; then
+  date -u '+%Y-%m-%dT%H:%M:%SZ' > "$STATE_START" 2>/dev/null || true
+  printf '%s' "$SESSION_ID" > "$STATE_SID" 2>/dev/null || true
+  exit 0
+fi
+
+# ── STOP mode: gate on /bye sentinel ─────────────────────────────────────────
+# The Stop hook fires after every Claude response. Only emit session_stop when
+# the user has explicitly ended the session via /bye, which writes the sentinel.
+_BYE_SENTINEL="${HOME}/.claude/.bye-requested"
+if [ ! -f "$_BYE_SENTINEL" ]; then
+  # Not a real session end — skip telemetry emit. State files are preserved
+  # so the eventual real /bye stop can compute accurate duration.
+  exit 0
+fi
+# Consume the sentinel (same one-shot pattern as session_stop.sh)
+rm -f "$_BYE_SENTINEL" 2>/dev/null || true
+
+# ── STOP mode: emit JSONL envelope ───────────────────────────────────────────
+mkdir -p "$STAGING_DIR" 2>/dev/null || exit 0
+
+HOST=$(hostname -s 2>/dev/null || echo "unknown")
+TS_END=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+DATE=$(date +%Y-%m-%d)
+
+# Read start time written by start mode (fall back to empty)
+TS_START=""
+if [ -f "$STATE_START" ]; then
+  TS_START=$(cat "$STATE_START" 2>/dev/null || echo "")
+fi
+# Restore session ID written at start (may differ from env var in some sessions)
+if [ -f "$STATE_SID" ]; then
+  SAVED_SID=$(cat "$STATE_SID" 2>/dev/null || echo "")
+  [ -n "$SAVED_SID" ] && SESSION_ID="$SAVED_SID"
+fi
+
+# Compute duration_min using python3 (portable: works with BSD and GNU date)
+DURATION_MIN="null"
+if [ -n "$TS_START" ]; then
+  DURATION_MIN=$(python3 - "$TS_START" 2>/dev/null <<'PYEOF'
+import sys, datetime
+try:
+    start = datetime.datetime.strptime(sys.argv[1], "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=datetime.timezone.utc)
+    now   = datetime.datetime.now(datetime.timezone.utc)
+    print(f"{(now - start).total_seconds() / 60:.2f}")
+except Exception:
+    print("null")
+PYEOF
+  ) || DURATION_MIN="null"
+fi
+
+# Minimal JSON escaping for string fields (backslash and double-quote)
+jsons() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+# Build and append the JSONL envelope
+JSONL=$(printf \
+  '{"ts":"%s","host":"%s","pid":"%s","payload":{"event_type":"session_stop","session_id":"%s","project":"%s","started_at":"%s","ended_at":"%s","duration_min":%s,"agent":"claude-code","source":"claude-code-hook","working_dir":"%s"}}' \
+  "$TS_END" \
+  "$(jsons "$HOST")" \
+  "$$" \
+  "$(jsons "$SESSION_ID")" \
+  "$(jsons "$PROJECT")" \
+  "$(jsons "${TS_START:-}")" \
+  "$TS_END" \
+  "$DURATION_MIN" \
+  "$(jsons "$PROJECT_DIR")")
+
+printf '%s\n' "$JSONL" >> "$STAGING_DIR/events-${HOST}-${DATE}.jsonl" 2>/dev/null || true
+
+# Clean up per-session state files (only on real session end)
+rm -f "$STATE_START" "$STATE_SID" 2>/dev/null || true
 
 exit 0
