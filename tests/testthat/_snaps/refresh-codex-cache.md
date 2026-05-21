@@ -48,3 +48,14 @@
       [1] "canonical_project" "model"             "repo_id"          
       [4] "repo_name"         "source"            "thread_id"        
 
+# write_json_atomic aborts when row count shrinks below min_rows
+
+    Code
+      write_json_atomic(empty_data, out_path, min_rows = 5L, label = "codex_sessions.json")
+    Condition
+      Error in `write_json_atomic()`:
+      x Refusing to write codex_sessions.json: row count would shrink.
+      i Existing rows: 5; new combined rows: 0.
+      i This indicates an upstream parse failure — aborting to protect history.
+      i Set ALLOW_SHRINK=1 to bypass the monotonicity guard.
+

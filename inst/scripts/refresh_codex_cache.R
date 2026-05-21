@@ -522,6 +522,33 @@ aggregate_daily <- function(turns) {
     arrange(date)
 }
 
+# ── Helper: atomic JSON write via temp-file rename ────────────────────────────
+# Writes to a sibling .<pid>.tmp file then renames atomically so that a SIGKILL /
+# disk-full mid-write cannot truncate the production file.  Also asserts that
+# the combined row count is monotone (>= existing) before writing so that an
+# accidental upstream parse failure cannot silently truncate history.
+# Defined at top level (not inside if (!interactive())) so tests can call it
+# directly without reproducing the logic inline.
+write_json_atomic <- function(data, path, min_rows = 0L, label = basename(path)) {
+  n_rows <- nrow(data)
+  if (n_rows < min_rows &&
+      !nzchar(Sys.getenv("ALLOW_SHRINK", ""))) {
+    cli::cli_abort(c(
+      "x" = "Refusing to write {label}: row count would shrink.",
+      "i" = "Existing rows: {min_rows}; new combined rows: {n_rows}.",
+      "i" = "This indicates an upstream parse failure — aborting to protect history.",
+      "i" = "Set ALLOW_SHRINK=1 to bypass the monotonicity guard."
+    ))
+  }
+  tmp_path <- paste0(path, ".", Sys.getpid(), ".tmp")
+  on.exit(if (file.exists(tmp_path)) unlink(tmp_path, force = TRUE), add = TRUE)
+  jsonlite::write_json(data, tmp_path, auto_unbox = TRUE, digits = 6)
+  if (!file.rename(tmp_path, path)) {
+    cli::cli_abort("Atomic rename failed: {tmp_path} -> {path}")
+  }
+  invisible(n_rows)
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 if (!interactive()) {
   log_path    <- path.expand("~/.codex/log/codex-tui.log")
@@ -607,6 +634,7 @@ if (!interactive()) {
              error = function(e) tibble())
   } else tibble()
 
+  n_existing_sessions <- if (is.data.frame(existing_sessions)) nrow(existing_sessions) else 0L
   if (is.data.frame(existing_sessions) && nrow(existing_sessions) > 0L) {
     existing_sessions <- as_tibble(existing_sessions)
     # Combine; new rows overwrite existing for same thread_id
@@ -618,7 +646,8 @@ if (!interactive()) {
     all_sessions <- sessions
   }
 
-  jsonlite::write_json(all_sessions, sessions_path, auto_unbox = TRUE, digits = 6)
+  write_json_atomic(all_sessions, sessions_path,
+                    min_rows = n_existing_sessions, label = "codex_sessions.json")
   cat(sprintf("Sessions  : %d total (%d new/updated)\n",
               nrow(all_sessions), nrow(sessions)))
 
@@ -632,6 +661,7 @@ if (!interactive()) {
              error = function(e) tibble())
   } else tibble()
 
+  n_existing_daily <- if (is.data.frame(existing_daily)) nrow(existing_daily) else 0L
   if (is.data.frame(existing_daily) && nrow(existing_daily) > 0L) {
     existing_daily <- as_tibble(existing_daily)
     # Remove rows that will be replaced by new data for same keys
@@ -647,7 +677,8 @@ if (!interactive()) {
     all_daily <- daily
   }
 
-  jsonlite::write_json(all_daily, daily_path, auto_unbox = TRUE, digits = 6)
+  write_json_atomic(all_daily, daily_path,
+                    min_rows = n_existing_daily, label = "codex_daily.json")
   cat(sprintf("Daily rows: %d total (%d new/updated)\n",
               nrow(all_daily), nrow(daily)))
 

@@ -471,3 +471,110 @@ test_that("join_roborev snapshot — column names after join are stable", {
   suppressMessages(result <- join_roborev(turns))
   expect_snapshot(sort(names(result)))
 })
+
+# ── write_json_atomic: monotonicity guard + atomic write ──────────────────────
+
+test_that("merge logic is monotone: existing sessions are preserved when new sessions are added", {
+  skip_if(is.null(aggregate_daily), "aggregate_daily not found (script not sourced — dplyr may not be available)")
+
+  tmp_dir <- withr::local_tempdir()
+
+  # Simulate existing sessions JSON on disk
+  existing_data <- tibble::tibble(
+    thread_id         = c("thread-001", "thread-002"),
+    started_at        = c("2026-05-01T10:00:00Z", "2026-05-02T12:00:00Z"),
+    ended_at          = c("2026-05-01T10:30:00Z", "2026-05-02T12:30:00Z"),
+    canonical_project = c("llm", "llm"),
+    model             = c("gpt-5.4", "gpt-5.4"),
+    n_turns           = c(3L, 5L)
+  )
+  sessions_path <- file.path(tmp_dir, "codex_sessions.json")
+  jsonlite::write_json(existing_data, sessions_path, auto_unbox = TRUE)
+
+  # New session (does not overlap with existing)
+  new_sessions <- tibble::tibble(
+    thread_id         = "thread-003",
+    started_at        = "2026-05-03T09:00:00Z",
+    ended_at          = "2026-05-03T09:45:00Z",
+    canonical_project = "llm",
+    model             = "gpt-5.4",
+    n_turns           = 2L
+  )
+
+  # Replicate the merge logic from refresh_codex_cache.R
+  existing_sessions <- jsonlite::fromJSON(sessions_path, simplifyDataFrame = TRUE)
+  n_existing <- nrow(existing_sessions)
+  all_sessions <- dplyr::bind_rows(
+    dplyr::filter(existing_sessions, !thread_id %in% new_sessions$thread_id),
+    new_sessions
+  )
+
+  # Row count must not shrink
+  expect_gte(nrow(all_sessions), n_existing)
+  expect_equal(nrow(all_sessions), 3L)
+})
+
+test_that("write_json_atomic aborts when row count shrinks below min_rows", {
+  # Verify the monotonicity guard in the real write_json_atomic function.
+  skip_if(is.null(write_json_atomic),
+          "write_json_atomic not found (script not sourced)")
+
+  tmp_dir  <- withr::local_tempdir()
+  out_path <- file.path(tmp_dir, "codex_sessions.json")
+
+  # Pre-populate the file so the rename target is valid
+  jsonlite::write_json(
+    tibble::tibble(x = 1:5), out_path, auto_unbox = TRUE
+  )
+
+  empty_data <- tibble::tibble(x = integer(0))
+  expect_snapshot(
+    error = TRUE,
+    write_json_atomic(empty_data, out_path, min_rows = 5L, label = "codex_sessions.json")
+  )
+})
+
+test_that("ALLOW_SHRINK=1 bypasses the monotonicity guard", {
+  # Regression for critic M6: escape hatch for deliberate shrinks
+  # (e.g. backfill from scratch, administrative reset).
+  skip_if(is.null(write_json_atomic),
+          "write_json_atomic not found (script not sourced)")
+
+  tmp_dir  <- withr::local_tempdir()
+  out_path <- file.path(tmp_dir, "codex_sessions.json")
+
+  # Pre-populate with 5 rows
+  jsonlite::write_json(
+    tibble::tibble(x = 1:5), out_path, auto_unbox = TRUE
+  )
+
+  # Write only 2 rows — would normally abort without ALLOW_SHRINK
+  small_data <- tibble::tibble(x = 1:2)
+  withr::with_envvar(
+    c(ALLOW_SHRINK = "1"),
+    expect_no_error(
+      write_json_atomic(small_data, out_path, min_rows = 5L,
+                        label = "codex_sessions.json")
+    )
+  )
+  result <- jsonlite::fromJSON(out_path, simplifyDataFrame = TRUE)
+  expect_equal(nrow(result), 2L)
+})
+
+test_that("write_json_atomic writes correctly and leaves no .tmp file on success", {
+  skip_if(is.null(write_json_atomic),
+          "write_json_atomic not found (script not sourced)")
+
+  tmp_dir <- withr::local_tempdir()
+  target  <- file.path(tmp_dir, "test_output.json")
+
+  data <- tibble::tibble(x = 1:3)
+  write_json_atomic(data, target)
+
+  expect_true(file.exists(target))
+  # No PID-suffixed .tmp files should remain
+  tmp_files <- list.files(tmp_dir, pattern = "\\.tmp$", full.names = TRUE)
+  expect_length(tmp_files, 0L)
+  result <- jsonlite::fromJSON(target, simplifyDataFrame = TRUE)
+  expect_equal(nrow(result), 3L)
+})
