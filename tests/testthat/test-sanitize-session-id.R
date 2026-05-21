@@ -3,9 +3,8 @@
 # Validates that:
 #   1. Path-style session_id values are replaced with a sanitized form
 #   2. Non-path IDs pass through unchanged
-#   3. The same (path, project, started_at) triple yields the same hash from
-#      both the R/ helper AND the inline fallback in export_dashboard_data.R
-#      (roborev round V finding b — unified hash format)
+#   3. .path_hash12() uses digest::digest() directly (no fallback; digest is
+#      in Imports — roborev round V finding b, critic m8)
 
 # Load sanitize_session_id helper: try source from development tree first
 # (devtools test workflow), fall back to package namespace (R CMD check workflow).
@@ -76,33 +75,16 @@ test_that("NA canonical_project falls back to 'unknown'", {
   expect_match(result, "^sanitized@unknown@")
 })
 
-# ── Identity across both code paths (rollup_sessions.R uses helper directly; ──
-# ── export_dashboard_data.R uses inline fallback when helper not loaded). ─────
+# ── digest is in Imports: the direct path is the only code path ───────────────
 
-test_that("helper and inline fallback produce identical hash for same inputs", {
-  # Compute via the shared helper
-  result_helper <- .sanitize_session_id_local(
-    session_ids        = REF_PATH,
-    canonical_projects = REF_PROJ,
-    started_at         = REF_TIME
-  )
-
-  # Reproduce the inline fallback logic from export_dashboard_data.R
-  path_hash12_fallback <- function(p) {
-    if (requireNamespace("digest", quietly = TRUE)) {
-      substr(digest::digest(p, algo = "md5", serialize = FALSE), 1L, 12L)
-    } else {
-      bytes   <- utf8ToInt(p)
-      raw_val <- sum(as.numeric(bytes) * seq_along(bytes))
-      sprintf("%012x", bitwAnd(abs(as.integer(raw_val %% .Machine$integer.max)),
-                               as.integer(.Machine$integer.max)))
-    }
-  }
-  sat_iso   <- format(REF_TIME, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-  result_fb <- paste0("sanitized@", REF_PROJ, "@", sat_iso,
-                      "@h", path_hash12_fallback(REF_PATH))
-
-  expect_equal(result_helper, result_fb)
+test_that(".path_hash12 produces a 12-hex MD5 substring (digest always available)", {
+  # digest is in DESCRIPTION Imports, so requireNamespace fallback is dead code.
+  # Verify the direct path: first 12 hex chars of MD5.
+  result <- .path_hash12(REF_PATH)
+  expect_match(result, "^[0-9a-f]{12}$")
+  # Must equal what digest::digest() produces directly
+  expected <- substr(digest::digest(REF_PATH, algo = "md5", serialize = FALSE), 1L, 12L)
+  expect_equal(result, expected)
 })
 
 # ── Snapshot: stable output for known inputs ──────────────────────────────────
