@@ -8,8 +8,26 @@
 # Finding (c) in roborev round V: underscore-form nested paths were not
 # converted and polluted canonical_project with tokens like "docs_gh_llm".
 
-pkg_root <- normalizePath(file.path(test_path(), "..", ".."), mustWork = FALSE)
-source(file.path(pkg_root, "R", "canonicalize.R"), local = TRUE)
+# Load canonicalize helpers: try source from development tree first (devtools
+# test workflow), fall back to package namespace (R CMD check workflow).
+local({
+  r_file <- tryCatch(
+    normalizePath(file.path(test_path(), "..", "..", "R", "canonicalize.R"),
+                  mustWork = TRUE),
+    error = function(e) ""
+  )
+  if (nzchar(r_file) && file.exists(r_file)) {
+    source(r_file, local = FALSE)
+  } else {
+    # In R CMD check, functions are available via the package namespace.
+    assign(".shorten_project_local",
+           llmtelemetry:::.shorten_project_local, envir = .GlobalEnv)
+    assign(".canonicalize_project_local",
+           llmtelemetry:::.canonicalize_project_local, envir = .GlobalEnv)
+    assign(".canonicalize_project_local_scalar",
+           llmtelemetry:::.canonicalize_project_local_scalar, envir = .GlobalEnv)
+  }
+})
 
 # ── Dash-form (existing behaviour, must not regress) ──────────────────────────
 

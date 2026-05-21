@@ -3,9 +3,25 @@
 # must produce identical canonical names for historically split project names.
 
 # ── Load both implementations ─────────────────────────────────────────────────
-# Local R package helper
-pkg_root <- normalizePath(file.path(test_path(), "..", ".."), mustWork = FALSE)
-source(file.path(pkg_root, "R", "canonicalize.R"), local = TRUE)
+# Local R package helper: try development tree first, fall back to package
+# namespace for R CMD check compatibility.
+local({
+  r_file <- tryCatch(
+    normalizePath(file.path(test_path(), "..", "..", "R", "canonicalize.R"),
+                  mustWork = TRUE),
+    error = function(e) ""
+  )
+  if (nzchar(r_file) && file.exists(r_file)) {
+    source(r_file, local = FALSE)
+  } else {
+    assign(".shorten_project_local",
+           llmtelemetry:::.shorten_project_local, envir = .GlobalEnv)
+    assign(".canonicalize_project_local",
+           llmtelemetry:::.canonicalize_project_local, envir = .GlobalEnv)
+    assign(".canonicalize_project_local_scalar",
+           llmtelemetry:::.canonicalize_project_local_scalar, envir = .GlobalEnv)
+  }
+})
 
 # Export script helper (extract scalar function + shorten_project)
 get_export_canonicalize_fn <- function() {
