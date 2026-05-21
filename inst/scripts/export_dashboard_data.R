@@ -155,7 +155,9 @@ sanitize_for_public <- function(df) {
   # top of this script) so that the hash format matches rollup_sessions.R.
   # Format: "sanitized@{canonical_project}@{iso8601_utc}@h{hash12}"
   # Previously used an incompatible polynomial-%%1e6 6-decimal hash (roborev V/b).
-  if ("session_id" %in% names(df) && exists(".sanitize_session_id_local")) {
+  if ("session_id" %in% names(df) &&
+      exists(".sanitize_session_id_local", envir = globalenv(),
+             mode = "function", inherits = FALSE)) {
     has_started_at <- "started_at" %in% names(df)
     has_cp         <- "canonical_project" %in% names(df)
     cp_col  <- if (has_cp)         df$canonical_project else rep(NA_character_, nrow(df))
