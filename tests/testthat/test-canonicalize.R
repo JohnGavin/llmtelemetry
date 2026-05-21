@@ -16,8 +16,14 @@ local({
                   mustWork = TRUE),
     error = function(e) ""
   )
+  # Names assigned to .GlobalEnv by either branch; cleaned up via teardown_env.
+  assigned_names <- character(0L)
   if (nzchar(r_file) && file.exists(r_file)) {
     source(r_file, local = FALSE)
+    # source() assigns all top-level names; schedule removal of the known ones.
+    assigned_names <- c(".shorten_project_local",
+                        ".canonicalize_project_local",
+                        ".canonicalize_project_local_scalar")
   } else {
     # In R CMD check, functions are available via the package namespace.
     assign(".shorten_project_local",
@@ -26,7 +32,16 @@ local({
            llmtelemetry:::.canonicalize_project_local, envir = .GlobalEnv)
     assign(".canonicalize_project_local_scalar",
            llmtelemetry:::.canonicalize_project_local_scalar, envir = .GlobalEnv)
+    assigned_names <- c(".shorten_project_local",
+                        ".canonicalize_project_local",
+                        ".canonicalize_project_local_scalar")
   }
+  # Restore .GlobalEnv when the test file finishes.
+  withr::defer(
+    rm(list = intersect(assigned_names, ls(envir = .GlobalEnv, all.names = TRUE)),
+       envir = .GlobalEnv),
+    envir = testthat::teardown_env()
+  )
 })
 
 # ── Dash-form (existing behaviour, must not regress) ──────────────────────────
