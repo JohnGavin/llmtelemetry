@@ -532,7 +532,7 @@ aggregate_daily <- function(turns) {
 write_json_atomic <- function(data, path, min_rows = 0L, label = basename(path)) {
   n_rows <- nrow(data)
   if (n_rows < min_rows &&
-      !isTRUE(as.logical(Sys.getenv("ALLOW_SHRINK", "false")))) {
+      !nzchar(Sys.getenv("ALLOW_SHRINK", ""))) {
     cli::cli_abort(c(
       "x" = "Refusing to write {label}: row count would shrink.",
       "i" = "Existing rows: {min_rows}; new combined rows: {n_rows}.",
