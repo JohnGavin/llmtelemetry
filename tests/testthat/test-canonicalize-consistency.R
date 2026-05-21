@@ -91,3 +91,37 @@ test_that("NHS path form canonicalizes to mycare via export canonicalize_session
   nhs_path <- "-Users-johngavin-docs--pers-NHS-health-data-antigravity-mycare"
   expect_equal(export_canonicalize_session(nhs_path), "mycare")
 })
+
+# ── Regression: Issue #142 — underscore-form irishbuoys path ─────────────────
+# data/weather/irish_buoy_network/irishbuoys (underscore form, used in tracked
+# repo paths) was falling through to "weather" before this fix.
+test_that("underscore-form irishbuoys nested path canonicalises to irish_buoy_network (#142)", {
+  # The primary bug case: underscore form with data/ prefix
+  expect_equal(
+    .canonicalize_project_local("data/weather/irish_buoy_network/irishbuoys"),
+    "irish_buoy_network"
+  )
+  # After data/ strip only
+  expect_equal(
+    .canonicalize_project_local("weather/irish_buoy_network/irishbuoys"),
+    "irish_buoy_network"
+  )
+  # Bare underscore-form prefix (no trailing segment)
+  expect_equal(
+    .canonicalize_project_local("data/weather/irish_buoy_network"),
+    "irish_buoy_network"
+  )
+  expect_equal(
+    .canonicalize_project_local("weather/irish_buoy_network"),
+    "irish_buoy_network"
+  )
+  # Dash form still works (regression guard)
+  expect_equal(
+    .canonicalize_project_local("data/weather/irish/buoy/network"),
+    "irish_buoy_network"
+  )
+  expect_equal(
+    .canonicalize_project_local("weather/irish/buoy/network"),
+    "irish_buoy_network"
+  )
+})
