@@ -11,21 +11,13 @@
 
 #' Compute a stable 12-hex hash for a raw path string.
 #'
-#' Uses `digest::digest()` with MD5 when available; falls back to a weighted
-#' integer sum approach so the function works without the `digest` package.
+#' Uses `digest::digest()` with MD5 (digest is in Imports so always available).
 #'
 #' @param p A single character string (the raw path).
 #' @return A 12-character lowercase hex string.
 #' @keywords internal
 .path_hash12 <- function(p) {
-  if (requireNamespace("digest", quietly = TRUE)) {
-    substr(digest::digest(p, algo = "md5", serialize = FALSE), 1L, 12L)
-  } else {
-    bytes   <- utf8ToInt(p)
-    raw_val <- sum(as.numeric(bytes) * seq_along(bytes))
-    sprintf("%012x", bitwAnd(abs(as.integer(raw_val %% .Machine$integer.max)),
-                             as.integer(.Machine$integer.max)))
-  }
+  substr(digest::digest(p, algo = "md5", serialize = FALSE), 1L, 12L)
 }
 
 #' Sanitize path-style session_id values.

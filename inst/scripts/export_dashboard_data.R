@@ -172,45 +172,6 @@ sanitize_for_public <- function(df) {
       canonical_projects = cp_col,
       started_at         = sat_col
     )
-  } else if ("session_id" %in% names(df)) {
-    # Fallback: shared helper not available (e.g. running outside pkg context).
-    # Use the helper-compatible 12-hex approach inline.
-    ids     <- df$session_id
-    is_path <- grepl("^-|[/\\\\]", ids)
-    if (any(is_path)) {
-      has_started_at <- "started_at" %in% names(df)
-      has_cp         <- "canonical_project" %in% names(df)
-      path_hash12 <- function(p) {
-        if (requireNamespace("digest", quietly = TRUE)) {
-          substr(digest::digest(p, algo = "md5", serialize = FALSE), 1L, 12L)
-        } else {
-          bytes   <- utf8ToInt(p)
-          raw_val <- sum(as.numeric(bytes) * seq_along(bytes))
-          sprintf("%012x", bitwAnd(abs(as.integer(raw_val %% .Machine$integer.max)),
-                                   as.integer(.Machine$integer.max)))
-        }
-      }
-      path_indices <- which(is_path)
-      df$session_id[is_path] <- vapply(
-        seq_along(path_indices),
-        function(k) {
-          i   <- path_indices[k]
-          cp  <- if (has_cp) df$canonical_project[i] else "unknown"
-          sat <- if (has_started_at) {
-            sa <- df$started_at[i]
-            if (inherits(sa, "POSIXct") && !is.na(sa)) {
-              format(sa, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-            } else {
-              as.character(sa)
-            }
-          } else {
-            as.character(i)
-          }
-          paste0("sanitized@", cp, "@", sat, "@h", path_hash12(ids[i]))
-        },
-        character(1L)
-      )
-    }
   }
   df
 }
