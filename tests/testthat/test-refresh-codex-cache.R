@@ -514,44 +514,40 @@ test_that("merge logic is monotone: existing sessions are preserved when new ses
   expect_equal(nrow(all_sessions), 3L)
 })
 
-test_that("merge logic aborts when new sessions tibble is empty and existing has rows", {
-  # Simulate write_json_atomic monotonicity guard: if combined rows < existing rows,
-  # the guard fires. This test verifies the guard message text via snapshot.
-  skip_if(is.null(aggregate_daily), "aggregate_daily not found (script not sourced)")
+test_that("write_json_atomic aborts when row count shrinks below min_rows", {
+  # Verify the monotonicity guard in the real write_json_atomic function.
+  skip_if(is.null(write_json_atomic),
+          "write_json_atomic not found (script not sourced)")
 
-  # write_json_atomic guard: min_rows = 5 but data has 0 rows
-  # Reproduce the guard inline (the function is script-local, not exported).
-  guard_fn <- function(n_rows, min_rows, label) {
-    if (n_rows < min_rows) {
-      cli::cli_abort(c(
-        "x" = "Refusing to write {label}: row count would shrink.",
-        "i" = "Existing rows: {min_rows}; new combined rows: {n_rows}.",
-        "i" = "This indicates an upstream parse failure — aborting to protect history."
-      ))
-    }
-    invisible(n_rows)
-  }
+  tmp_dir  <- withr::local_tempdir()
+  out_path <- file.path(tmp_dir, "codex_sessions.json")
 
+  # Pre-populate the file so the rename target is valid
+  jsonlite::write_json(
+    tibble::tibble(x = 1:5), out_path, auto_unbox = TRUE
+  )
+
+  empty_data <- tibble::tibble(x = integer(0))
   expect_snapshot(
     error = TRUE,
-    guard_fn(0L, 5L, "codex_sessions.json")
+    write_json_atomic(empty_data, out_path, min_rows = 5L, label = "codex_sessions.json")
   )
 })
 
-test_that("atomic write uses .tmp then renames — no partial file on success", {
-  skip_if(is.null(aggregate_daily), "aggregate_daily not found (script not sourced)")
+test_that("write_json_atomic writes correctly and leaves no .tmp file on success", {
+  skip_if(is.null(write_json_atomic),
+          "write_json_atomic not found (script not sourced)")
 
   tmp_dir <- withr::local_tempdir()
   target  <- file.path(tmp_dir, "test_output.json")
-  tmp_tmp <- paste0(target, ".tmp")
 
   data <- tibble::tibble(x = 1:3)
-  # Atomic write pattern: write to .tmp then rename
-  jsonlite::write_json(data, tmp_tmp, auto_unbox = TRUE)
-  file.rename(tmp_tmp, target)
+  write_json_atomic(data, target)
 
   expect_true(file.exists(target))
-  expect_false(file.exists(tmp_tmp))
+  # No PID-suffixed .tmp files should remain
+  tmp_files <- list.files(tmp_dir, pattern = "\\.tmp$", full.names = TRUE)
+  expect_length(tmp_files, 0L)
   result <- jsonlite::fromJSON(target, simplifyDataFrame = TRUE)
   expect_equal(nrow(result), 3L)
 })
