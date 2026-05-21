@@ -119,6 +119,19 @@ test_that("bare 'irish_buoy_network' is not converted by underscore logic", {
   expect_equal(result, "irish_buoy_network")
 })
 
+# ── Path-prefix + underscore meta_only names (critic m10) ────────────────────
+
+test_that("path-prefixed docs_gh_urban_planning resolves to NA (meta_only)", {
+  # docs_gh_urban_planning: the ^docs[-_]gh[-_] prefix is stripped first,
+  # yielding "urban_planning" which is in meta_only -> NA_character_.
+  expect_equal(.canonicalize_project_local("docs_gh_urban_planning"), NA_character_)
+})
+
+test_that("path-prefixed docs_gh_telemetry resolves to NA (meta_only)", {
+  # docs_gh_telemetry: strips to "telemetry" which is in meta_only -> NA_character_.
+  expect_equal(.canonicalize_project_local("docs_gh_telemetry"), NA_character_)
+})
+
 # ── Snapshot tests ────────────────────────────────────────────────────────────
 
 test_that("dash-form, slash-form, underscore-path, and bare-underscore snapshot", {
