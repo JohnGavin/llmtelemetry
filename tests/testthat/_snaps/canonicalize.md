@@ -1,3 +1,10 @@
+# mixed dash-underscore snapshot
+
+    Code
+      .canonicalize_project_local(inputs)
+    Output
+      [1] "llmtelemetry" "llmtelemetry"
+
 # dash-form, slash-form, underscore-path, and bare-underscore snapshot
 
     Code
