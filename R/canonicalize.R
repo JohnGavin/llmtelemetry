@@ -43,12 +43,16 @@
 
   # Explicit prefix overrides — checked before container-prefix strip.
   overrides <- list(
-    "buoy/network"                   = "irish_buoy_network",
-    "irishbuoys"                     = "irish_buoy_network",
+    "buoy/network"                    = "irish_buoy_network",
+    "irishbuoys"                      = "irish_buoy_network",
     # raw path proj-data-weather-irish-buoy-network -> data/weather/irish/buoy/network
     "data/weather/irish/buoy/network" = "irish_buoy_network",
-    # after data/ strip: weather/irish/buoy/network
-    "weather/irish/buoy/network"     = "irish_buoy_network"
+    # underscore form used in tracked repo paths: data/weather/irish_buoy_network/...
+    "data/weather/irish_buoy_network" = "irish_buoy_network",
+    # after data/ strip: weather/irish/buoy/network (dash form)
+    "weather/irish/buoy/network"      = "irish_buoy_network",
+    # after data/ strip: weather/irish_buoy_network/... (underscore form)
+    "weather/irish_buoy_network"      = "irish_buoy_network"
   )
   for (pat in names(overrides)) {
     if (startsWith(name, pat)) return(overrides[[pat]])
