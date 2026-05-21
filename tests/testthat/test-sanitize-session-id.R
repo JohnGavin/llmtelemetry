@@ -128,6 +128,22 @@ test_that("sanitize output format is stable (snapshot)", {
   expect_snapshot(result)
 })
 
+test_that("NA session_id does not cause paste0 recycling-length mismatch", {
+  # Regression for critic C4: NA in session_ids caused logical-subscript recycling
+  # when is_path subscript was used instead of which()-derived path_indices.
+  ids   <- c(NA_character_, REF_PATH, "plain-id")
+  projs <- c(NA_character_, REF_PROJ, "llm")
+  times <- c(REF_TIME, REF_TIME, REF_TIME)
+
+  expect_no_warning(
+    result <- .sanitize_session_id_local(ids, projs, times)
+  )
+  # NA session_id is not path-like — should pass through unchanged
+  expect_true(is.na(result[1L]))
+  expect_match(result[2L], "^sanitized@")
+  expect_equal(result[3L], "plain-id")
+})
+
 test_that("mixed path/non-path vector only sanitizes path entries", {
   ids    <- c("plain-id", REF_PATH, "another-plain")
   projs  <- c("llm", REF_PROJ, "footbet")
