@@ -534,6 +534,33 @@ test_that("write_json_atomic aborts when row count shrinks below min_rows", {
   )
 })
 
+test_that("ALLOW_SHRINK=1 bypasses the monotonicity guard", {
+  # Regression for critic M6: escape hatch for deliberate shrinks
+  # (e.g. backfill from scratch, administrative reset).
+  skip_if(is.null(write_json_atomic),
+          "write_json_atomic not found (script not sourced)")
+
+  tmp_dir  <- withr::local_tempdir()
+  out_path <- file.path(tmp_dir, "codex_sessions.json")
+
+  # Pre-populate with 5 rows
+  jsonlite::write_json(
+    tibble::tibble(x = 1:5), out_path, auto_unbox = TRUE
+  )
+
+  # Write only 2 rows — would normally abort without ALLOW_SHRINK
+  small_data <- tibble::tibble(x = 1:2)
+  withr::with_envvar(
+    c(ALLOW_SHRINK = "1"),
+    expect_no_error(
+      write_json_atomic(small_data, out_path, min_rows = 5L,
+                        label = "codex_sessions.json")
+    )
+  )
+  result <- jsonlite::fromJSON(out_path, simplifyDataFrame = TRUE)
+  expect_equal(nrow(result), 2L)
+})
+
 test_that("write_json_atomic writes correctly and leaves no .tmp file on success", {
   skip_if(is.null(write_json_atomic),
           "write_json_atomic not found (script not sourced)")
