@@ -615,6 +615,7 @@ if (!interactive()) {
       ))
     }
     tmp_path <- paste0(path, ".", Sys.getpid(), ".tmp")
+    on.exit(if (file.exists(tmp_path)) unlink(tmp_path, force = TRUE), add = TRUE)
     jsonlite::write_json(data, tmp_path, auto_unbox = TRUE, digits = 6)
     file.rename(tmp_path, path)
     invisible(n_rows)
