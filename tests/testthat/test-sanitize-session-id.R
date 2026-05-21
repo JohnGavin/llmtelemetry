@@ -15,15 +15,24 @@ local({
                   mustWork = TRUE),
     error = function(e) ""
   )
+  assigned_names <- character(0L)
   if (nzchar(r_file) && file.exists(r_file)) {
     source(r_file, local = FALSE)
+    assigned_names <- c(".path_hash12", ".sanitize_session_id_local")
   } else {
     # In R CMD check, functions are available via the package namespace.
     assign(".path_hash12",
            llmtelemetry:::.path_hash12, envir = .GlobalEnv)
     assign(".sanitize_session_id_local",
            llmtelemetry:::.sanitize_session_id_local, envir = .GlobalEnv)
+    assigned_names <- c(".path_hash12", ".sanitize_session_id_local")
   }
+  # Restore .GlobalEnv when the test file finishes.
+  withr::defer(
+    rm(list = intersect(assigned_names, ls(envir = .GlobalEnv, all.names = TRUE)),
+       envir = .GlobalEnv),
+    envir = testthat::teardown_env()
+  )
 })
 
 # Fixed reference timestamp so snapshot output is deterministic
