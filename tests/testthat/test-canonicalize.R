@@ -69,6 +69,20 @@ test_that("underscore-form -Users_ full prefix is stripped", {
   )
 })
 
+# ── Mixed dash-and-underscore separator forms (critic m9) ────────────────────
+
+test_that("mixed dash-underscore forms docs-gh_<project> and docs_gh-<project> normalise correctly", {
+  # "docs-gh_llmtelemetry": docs-gh_ prefix (dash then underscore)
+  expect_equal(.canonicalize_project_local("docs-gh_llmtelemetry"), "llmtelemetry")
+  # "docs_gh-llmtelemetry": docs_gh- prefix (underscore then dash)
+  expect_equal(.canonicalize_project_local("docs_gh-llmtelemetry"), "llmtelemetry")
+})
+
+test_that("mixed dash-underscore snapshot", {
+  inputs <- c("docs-gh_llmtelemetry", "docs_gh-llmtelemetry")
+  expect_snapshot(.canonicalize_project_local(inputs))
+})
+
 # ── Bare underscore names must pass through UNCHANGED (meta_only guard) ───────
 
 test_that("bare 'urban_planning' remains NA (meta_only)", {
