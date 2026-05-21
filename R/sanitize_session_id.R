@@ -57,7 +57,7 @@
   if (!any(is_path)) return(session_ids)
 
   path_indices <- which(is_path)
-  raw_paths    <- session_ids[is_path]
+  raw_paths    <- session_ids[path_indices]
 
   # Stable ISO 8601 UTC timestamps; never locale-dependent as.character().
   started_at_iso <- vapply(
@@ -74,12 +74,12 @@
   )
 
   cp_values <- ifelse(
-    is.na(canonical_projects[is_path]), "unknown",
-    canonical_projects[is_path]
+    is.na(canonical_projects[path_indices]), "unknown",
+    canonical_projects[path_indices]
   )
 
   result <- session_ids
-  result[is_path] <- paste0(
+  result[path_indices] <- paste0(
     "sanitized@",
     cp_values,
     "@",
