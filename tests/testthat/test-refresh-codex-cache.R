@@ -475,7 +475,7 @@ test_that("join_roborev snapshot — column names after join are stable", {
 # ── write_json_atomic: monotonicity guard + atomic write ──────────────────────
 
 test_that("merge logic is monotone: existing sessions are preserved when new sessions are added", {
-  skip_if(is.null(aggregate_daily), "aggregate_daily not found (script not sourced)")
+  skip_if(is.null(aggregate_daily), "aggregate_daily not found (script not sourced — dplyr may not be available)")
 
   tmp_dir <- withr::local_tempdir()
 
