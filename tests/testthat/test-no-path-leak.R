@@ -48,6 +48,10 @@ forbidden_patterns <- c(base_forbidden, structural_forbidden)
 #   - "johngavin"     — author name in e.g. "fix: check johngavin cache"
 #   - "JohnGavin"     — GitHub handle in PR merge messages
 #   - "worktree-agent-" — branch references in merge-commit messages
+#   - "-worktree-"    — PR branch name substring in merge messages, e.g.
+#                       "fix/cc-sh-worktree-safety"; NOT a filesystem path
+#                       (actual /private/tmp/roborev-worktree-... still caught
+#                       by path_shape_patterns() via the "/private/tmp/" entry)
 #   - "/Users/"       — when describing the concept (not a real path with username)
 # IMPORTANT: allowlisting a token removes it from the scan for bare occurrences,
 # but path_shape_patterns() patterns are ADDED BACK unconditionally so that a
@@ -56,6 +60,7 @@ commit_message_bare_allowlist <- c(
   "johngavin",        # bare username — OK in message context
   "JohnGavin",        # GitHub handle — OK in message context
   "worktree-agent-",  # branch reference — OK in message context
+  "-worktree-",       # PR branch name substring (e.g. fix/cc-sh-worktree-safety)
   "/Users/",          # abstract mention of the /Users/ directory concept
   "/private/",        # abstract mention (no username following = not a real path)
   "/tmp/"             # abstract mention
