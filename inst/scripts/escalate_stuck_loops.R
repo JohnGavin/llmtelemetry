@@ -24,6 +24,9 @@ suppressPackageStartupMessages({
   library(cli)
 })
 
+# ---- define %||% before first use --------------------------------------------
+`%||%` <- function(a, b) if (!is.null(a) && !is.na(a) && nchar(a) > 0) a else b
+
 # ---- argument parsing --------------------------------------------------------
 args     <- commandArgs(trailingOnly = TRUE)
 dry_run  <- "--dry-run" %in% args
@@ -44,8 +47,6 @@ cli::cli_alert_info("DB:   {DB_PATH}")
 if (dry_run) cli::cli_alert_warning("DRY RUN — no GitHub API calls will be made")
 
 # ---- helpers -----------------------------------------------------------------
-
-`%||%` <- function(a, b) if (!is.null(a) && !is.na(a) && nchar(a) > 0) a else b
 
 #' Sanitize a text string for inclusion in a GitHub issue body.
 #' Strips file system paths and truncates to max_chars.

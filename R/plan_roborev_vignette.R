@@ -4,7 +4,6 @@
 # Agent 1's plan_roborev.R and Agent 2's plan_roborev_loops.R respectively.
 # In test environments these are provided by the fixture loader.
 
-#' @importFrom targets tar_target
 NULL
 
 #' Roborev vignette targets plan
@@ -24,6 +23,12 @@ NULL
 #' @return A named list of tar_target() objects.
 #' @export
 plan_roborev_vignette <- function() {
+  if (!requireNamespace("targets", quietly = TRUE)) {
+    cli::cli_abort(c(
+      "x" = "Package {.pkg targets} is required for {.fn plan_roborev_vignette}.",
+      "i" = 'Install it with: {.run install.packages("targets")}'
+    ))
+  }
   list(
     targets::tar_target(
       vig_roborev_pulse,
