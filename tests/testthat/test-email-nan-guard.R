@@ -231,12 +231,14 @@ test_that("qa_email_output.sh skips HTML comment lines for NaN check", {
 # grep command(s) within that loop, and assert that neither contains the -i flag.
 
 test_that("qa_email_output.sh NaN grep section does not use -i flag (source assertion)", {
-  # Locate the script relative to package root (same pattern as helper sourcing above)
+  # Locate the script: system.file() is primary (works in installed/CHECK contexts);
+  # getwd()-relative paths are fallbacks for devtools::test() (#155).
   script_candidates <- c(
-    file.path(getwd(), "inst", "scripts", "qa_email_output.sh"),           # cwd = pkg root
-    file.path(getwd(), "..", "..", "inst", "scripts", "qa_email_output.sh") # cwd = tests/testthat
+    system.file("scripts", "qa_email_output.sh", package = "llmtelemetry"), # primary: installed
+    file.path(getwd(), "inst", "scripts", "qa_email_output.sh"),             # cwd = pkg root
+    file.path(getwd(), "..", "..", "inst", "scripts", "qa_email_output.sh")  # cwd = tests/testthat
   )
-  script_path <- Filter(file.exists, script_candidates)
+  script_path <- Filter(nzchar, Filter(file.exists, script_candidates))
   skip_if(length(script_path) == 0L, "qa_email_output.sh not found — skipping source assertion")
   script_path <- script_path[[1L]]
 
@@ -288,10 +290,11 @@ test_that("qa_email_output.sh NaN grep section does not use -i flag (source asse
 test_that("qa_email_output.sh exits 0 for valid HTML with 'nanum' (no false positive)", {
   skip_if(.Platform$OS.type != "unix", "bash tests require a Unix shell")
   script_candidates <- c(
+    system.file("scripts", "qa_email_output.sh", package = "llmtelemetry"), # primary: installed
     file.path(getwd(), "inst", "scripts", "qa_email_output.sh"),
     file.path(getwd(), "..", "..", "inst", "scripts", "qa_email_output.sh")
   )
-  script_path <- Filter(file.exists, script_candidates)
+  script_path <- Filter(nzchar, Filter(file.exists, script_candidates))
   skip_if(length(script_path) == 0L, "qa_email_output.sh not found")
   script_path <- script_path[[1L]]
 
@@ -342,10 +345,11 @@ test_that("qa_email_output.sh exits 0 for valid HTML with 'nanum' (no false posi
 test_that("qa_email_output.sh exits 1 for HTML containing literal 'NaN'", {
   skip_if(.Platform$OS.type != "unix", "bash tests require a Unix shell")
   script_candidates <- c(
+    system.file("scripts", "qa_email_output.sh", package = "llmtelemetry"), # primary: installed
     file.path(getwd(), "inst", "scripts", "qa_email_output.sh"),
     file.path(getwd(), "..", "..", "inst", "scripts", "qa_email_output.sh")
   )
-  script_path <- Filter(file.exists, script_candidates)
+  script_path <- Filter(nzchar, Filter(file.exists, script_candidates))
   skip_if(length(script_path) == 0L, "qa_email_output.sh not found")
   script_path <- script_path[[1L]]
 
@@ -369,8 +373,12 @@ test_that("qa_email_output.sh exits 1 for HTML containing literal 'NaN'", {
     "<!-- QA:models_found=claude-sonnet-4-6 -->"
   ), fixture)
 
-  result <- system2("bash", args = c(script_path, fixture),
-                    stdout = TRUE, stderr = TRUE)
+  # suppressWarnings: system2() emits a warning when the process exits non-zero
+  # while stdout/stderr are captured; we expect exit 1, so silence the warning.
+  result <- suppressWarnings(
+    system2("bash", args = c(script_path, fixture),
+            stdout = TRUE, stderr = TRUE)
+  )
   exit_code <- attr(result, "status")
   expect_equal(exit_code, 1L,
                label = paste(
