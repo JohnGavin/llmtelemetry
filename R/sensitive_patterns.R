@@ -22,6 +22,14 @@
 #' corresponding entry in `sensitive_verify_patterns()`.  If you add a class
 #' to the sanitizer, add the matching verify substring(s) here.
 #'
+#' **Message-field path-shape coverage (#157):** `path_shape_patterns()` uses
+#' generic PCRE regexes (`/Users/[^/[:space:]]+` and
+#' `/private/[^/[:space:]]+`) rather than johngavin-specific strings, so
+#' any-user paths (`/Users/alice`, `/Users/alice/...`) and non-tmp private
+#' paths (`/private/var`, `/private/var/folders/...`) in commit `message`
+#' fields are caught even when the bare `/Users/` and `/private/` tokens are
+#' allowlisted.  Trailing slash is NOT required (round-2 fix).
+#'
 #' @name sensitive_patterns
 NULL
 
@@ -108,26 +116,49 @@ sensitive_verify_patterns <- function() {
 #' field, including commit `message` fields that have a bare-token allowlist.
 #'
 #' Examples of what each catches:
-#' - `/Users/johngavin/docs_gh/...`  — actual home-dir path
+#' - `/Users/johngavin/docs_gh/...`  — actual home-dir path (johngavin user)
+#' - `/Users/alice/projects/...`     — actual home-dir path (any other user)
 #' - `/private/tmp/roborev-worktree-...` — actual macOS tmp path
+#' - `/private/var/folders/...`      — actual macOS sandbox path (non-tmp)
+#' - `/private/etc/resolver/...`     — actual macOS system path (non-tmp)
 #' - `/tmp/fixer-worktree-...` — actual Linux tmp path
 #' - `-private-tmp-roborev-worktree-...` — dashed form of macOS tmp
 #' - `-tmp-fixer-worktree-...` — dashed form of Linux tmp
 #' - `Users-johngavin` — dashed form of home-dir prefix in ID fields
 #'
 #' What these do NOT catch (intentional):
-#' - `"feat: add hardcoded /Users/ path check"` — describes the concept, not
-#'   a real path (no username following /Users/)
+#' - `"feat: add hardcoded /Users/ path check"` — bare `/Users/` concept mention
+#'   with no following username token (the generic pattern requires at least one
+#'   non-slash, non-space character after `/Users/`)
+#' - `"mention of /private/ in a design note"` — bare `/private/` with no
+#'   following directory token (the generic pattern requires at least one
+#'   non-slash, non-space character after `/private/`)
 #'
-#' @return character vector of path-shape substrings (no anchors)
+#' The generic regexes (`/Users/[^/[:space:]]+` and `/private/[^/[:space:]]+`)
+#' match any real path rooted at `/Users/` or `/private/` (requiring at least one
+#' non-slash, non-space character after the prefix).  The trailing slash is NOT
+#' required: `/Users/alice` (bare, no trailing slash) and `/Users/alice/docs` are
+#' both caught.  Bare mentions like `/Users/` alone (no username token) do not
+#' match.  This is the minimal change that closes the any-user gap (#157) without
+#' introducing false positives on conceptual references.
+#'
+#' Round-2 regression fix: the original patterns required a trailing slash
+#' (`/Users/[^/[:space:]]+/`), so bare forms like `/Users/alice` and
+#' `/Users/johngavin` (no trailing slash) bypassed the gate.  Dropping the
+#' mandatory trailing slash while keeping the username token requirement
+#' (`[^/[:space:]]+`) fixes this without introducing false positives.
+#'
+#' @return character vector of path-shape substrings / regexes (no anchors;
+#'   some entries are fixed strings, others are PCRE regexes — all used with
+#'   `grepl(..., perl = TRUE)`)
 #' @export
 path_shape_patterns <- function() {
   c(
-    "/Users/johngavin",   # actual home-dir path (username present — not just concept)
-    "/private/tmp/",      # actual macOS tmp absolute path
-    "/tmp/",              # actual Linux tmp absolute path
-    "-private-tmp-",      # dashed form of macOS tmp (in session ID fields)
-    "-tmp-",              # dashed form of Linux tmp (in session ID fields)
-    "Users-johngavin"     # dashed form of home-dir prefix in session IDs
+    "/Users/[^/[:space:]]+",  # any home-dir path: /Users/<anyuser> or /Users/<anyuser>/... (#157, round-2)
+    "/private/[^/[:space:]]+", # any /private/<dir> path — not just /private/tmp/ (#157, round-2)
+    "/tmp/",                   # actual Linux tmp absolute path
+    "-private-tmp-",           # dashed form of macOS tmp (in session ID fields)
+    "-tmp-",                   # dashed form of Linux tmp (in session ID fields)
+    "Users-johngavin"          # dashed form of home-dir prefix in session IDs
   )
 }
