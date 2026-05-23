@@ -40,4 +40,7 @@ jobs:
         run: bash inst/scripts/qa_email_output.sh /tmp/email_qa.html
 
       - name: Send Report
-        run: Rscript inst/scripts/send_daily_email.R
+        # --send-only reads /tmp/email_qa.html (the validated artifact from the
+        # "Build email HTML" step) and sends that exact content.  This guarantees
+        # the emailed bytes == the QA-validated bytes (fixes roborev Finding 1).
+        run: Rscript inst/scripts/send_daily_email.R --send-only

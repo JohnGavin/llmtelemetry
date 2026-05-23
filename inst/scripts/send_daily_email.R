@@ -4,11 +4,20 @@
 #
 # Flags:
 #   --build-only  Build HTML and write to /tmp/email_qa.html, then exit 0.
-#                 Used by CI to run bash QA before the send step.
-#   (default)     Build, run inline R QA, then send via SMTP.
+#                 Used by CI so the bash QA step can validate before sending.
+#   --send-only   Read /tmp/email_qa.html (already built + QA-validated) and
+#                 send it via SMTP without regenerating.  The emailed bytes are
+#                 EXACTLY the bytes that passed QA.  Used by CI send step.
+#   (default)     Build, run inline R QA, then send via SMTP (local/dev use).
+#
+# CI flow (daily-report.yaml):
+#   1. Rscript send_daily_email.R --build-only   → builds /tmp/email_qa.html
+#   2. bash qa_email_output.sh /tmp/email_qa.html → validates
+#   3. Rscript send_daily_email.R --send-only     → reads & sends same file
 
 args <- commandArgs(trailingOnly = TRUE)
 build_only <- "--build-only" %in% args
+send_only  <- "--send-only"  %in% args
 
 library(blastula)
 library(dplyr)
@@ -19,6 +28,67 @@ library(lubridate)
 library(DBI)
 library(duckdb)
 library(here)
+
+# Source shared formatting helpers (dollar, comma, millions, email_safe_num).
+# here::here() resolves to the package root regardless of cwd at call time.
+source(file.path(here::here(), "R", "email_helpers.R"))
+
+# --send-only: read the already-built + QA-validated HTML and send it.
+# The CI send step uses this flag so the emailed bytes == the validated bytes.
+if (send_only) {
+  qa_file <- "/tmp/email_qa.html"
+  if (!file.exists(qa_file)) {
+    stop("--send-only: /tmp/email_qa.html not found. Run --build-only first.")
+  }
+  email_body <- paste(readLines(qa_file, warn = FALSE), collapse = "\n")
+  message("--send-only: using pre-validated HTML from ", qa_file)
+
+  london_time <- format(Sys.time(), tz = "Europe/London", "%Y-%m-%d %H:%M")
+  dark_muted  <- "#a0a0a0"  # needed for footer only
+  gmail_user  <- Sys.getenv("GMAIL_USERNAME")
+  gmail_pass  <- Sys.getenv("GMAIL_APP_PASSWORD")
+
+  if (gmail_user == "" || gmail_pass == "") {
+    message("WARNING: GMAIL_USERNAME or GMAIL_APP_PASSWORD not set. Skipping email.")
+    cat("\n--- Email Body (send-only, credentials missing) ---\n")
+    cat(email_body)
+    cat("\n----------------------------------------------------\n")
+    quit(status = 0)
+  }
+
+  today <- Sys.Date()
+  email <- compose_email(
+    body   = md(email_body),
+    footer = md(sprintf(
+      "<span style='color: %s;'>Report generated: %s (London)</span>",
+      dark_muted, london_time))
+  )
+  smtp_creds <- creds_envvar(
+    user        = gmail_user,
+    pass_envvar = "GMAIL_APP_PASSWORD",
+    host        = "smtp.gmail.com",
+    port        = 465,
+    use_ssl     = TRUE
+  )
+  tryCatch({
+    smtp_send(
+      email       = email,
+      to          = gmail_user,
+      from        = gmail_user,
+      subject     = sprintf("LLM Telemetry Report - %s", today),
+      credentials = smtp_creds
+    )
+    message("Email sent successfully (--send-only)!")
+  }, error = function(e) {
+    message("ERROR: Failed to send email via SMTP.")
+    message("Details: ", e$message)
+    cat("\n--- Email Body (--send-only, SMTP failed) ---\n")
+    cat(email_body)
+    cat("\n----------------------------------------------\n")
+    quit(status = 0)
+  })
+  quit(status = 0)
+}
 
 # Load cached ccusage data from inst/extdata/
 load_cached <- function(type) {
@@ -97,29 +167,9 @@ safe_date <- function(x) {
   tryCatch(as.Date(x), error = function(e) NA)
 }
 
-# Helper for formatting
-dollar <- function(x) {
-  if (is.null(x) || length(x) == 0) return("-")
-  if (is.na(x) || is.nan(x) || !is.finite(x)) return("-")
-  sprintf("$%.2f", x)
-}
-comma <- function(x) {
-  if (is.null(x) || length(x) == 0) return("-")
-  if (is.na(x) || is.nan(x) || !is.finite(x)) return("-")
-  format(x, big.mark = ",", scientific = FALSE)
-}
-millions <- function(x) {
-  if (is.null(x) || length(x) == 0) return("-")
-  if (is.na(x) || is.nan(x) || !is.finite(x)) return("-")
-  sprintf("%.1fM", x / 1e6)
-}
-# Guard for raw integer/count insertions that bypass dollar/comma/millions.
-# Prevents NaN or NA from reaching sprintf %s slots (cc_days, gm_days, etc).
-email_safe_num <- function(x, fallback = "-") {
-  if (is.null(x) || length(x) == 0) return(fallback)
-  if (is.na(x) || is.nan(x) || !is.finite(x)) return(fallback)
-  as.character(as.integer(x))
-}
+# Formatting helpers (dollar, comma, millions, email_safe_num) are sourced from
+# R/email_helpers.R above.  They are NOT redefined here — tests exercise the
+# real implementation by sourcing that same file.
 format_hhmm <- function(mins) {
   if (is.null(mins) || length(mins) == 0 || is.na(mins) || !is.finite(mins)) {
     return("-:-")
