@@ -262,6 +262,8 @@ if (has_cmonitor) {
   }) |> bind_rows() |> arrange(startTime)
 
   write_json(blk_rows, file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
+  # Also persist to inst/extdata so CI has a committed snapshot to fall back to
+  write_json(blk_rows, file.path(extdata, "ccusage_blocks.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d active blocks\n", nrow(blk_rows)))
 
   # --- 3b. Per-model daily breakdown from model_stats -------------------------
@@ -315,12 +317,20 @@ if (has_cmonitor) {
     write_json(list(), fallback_daily_dst, auto_unbox = TRUE)
     cat("  -> ccusage_daily.json not found, wrote empty (CI fallback)\n")
   }
-  # Always overwrite sessions/blocks so the fallback is deterministic (no stale
-  # snapshot preserved from a prior run or checked-in file). Fixes #141.
+  # Always write empty sessions (raw sessionIds must not appear in public output).
   write_json(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
   cat("  -> wrote empty ccusage_sessions.json (CI fallback; cmonitor-rs not available)\n")
-  write_json(list(), file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
-  cat("  -> wrote empty ccusage_blocks.json (CI fallback; cmonitor-rs not available)\n")
+  # Blocks: use committed inst/extdata snapshot if present, else write empty array.
+  # This keeps the "Time Blocks" dashboard page populated in CI. (#141)
+  fallback_blocks_src <- file.path(extdata, "ccusage_blocks.json")
+  fallback_blocks_dst <- file.path(out_dir, "ccusage_blocks.json")
+  if (file.exists(fallback_blocks_src)) {
+    file.copy(fallback_blocks_src, fallback_blocks_dst, overwrite = TRUE)
+    cat("  -> copied ccusage_blocks.json from inst/extdata (CI fallback)\n")
+  } else {
+    write_json(list(), fallback_blocks_dst, auto_unbox = TRUE)
+    cat("  -> wrote empty ccusage_blocks.json (CI fallback; no committed snapshot)\n")
+  }
 }
 
 # --- 4. Export Gemini from DuckDB (unchanged) ----------------------------------
