@@ -36,12 +36,21 @@ What these do NOT catch (intentional):
 with no following username token (the generic pattern requires at least one
 non-slash, non-space character after \verb{/Users/})
 \item \code{"mention of /private/ in a design note"} — bare \verb{/private/} with no
-following directory token (the generic pattern requires \verb{<dir>/})
+following directory token (the generic pattern requires at least one
+non-slash, non-space character after \verb{/private/})
 }
 
-The generic regexes (\verb{/Users/[^/[:space:]]+/} and \verb{/private/[^/[:space:]]+/})
+The generic regexes (\verb{/Users/[^/[:space:]]+} and \verb{/private/[^/[:space:]]+})
 match any real path rooted at \verb{/Users/} or \verb{/private/} (requiring at least one
-directory component after the prefix), while bare mentions like \verb{/Users/} alone
-do not match.  This is the minimal change that closes the any-user gap (#157)
-without introducing false positives on conceptual references.
+non-slash, non-space character after the prefix).  The trailing slash is NOT
+required: \verb{/Users/alice} (bare, no trailing slash) and \verb{/Users/alice/docs} are
+both caught.  Bare mentions like \verb{/Users/} alone (no username token) do not
+match.  This is the minimal change that closes the any-user gap (#157) without
+introducing false positives on conceptual references.
+
+Round-2 regression fix: the original patterns required a trailing slash
+(\verb{/Users/[^/[:space:]]+/}), so bare forms like \verb{/Users/alice} and
+\verb{/Users/johngavin} (no trailing slash) bypassed the gate.  Dropping the
+mandatory trailing slash while keeping the username token requirement
+(\verb{[^/[:space:]]+}) fixes this without introducing false positives.
 }
