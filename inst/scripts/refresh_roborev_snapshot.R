@@ -56,7 +56,7 @@ migrate_unified_db(db_path = db_path)
 # ---------------------------------------------------------------------------
 
 cli_h2("Step 2: Scrape roborev findings")
-findings <- scrape_roborev(repo_path = repo_path)
+findings <- scrape_roborev(repo_path = repo_path, require_bin = TRUE)
 cli_inform("Scraped {nrow(findings)} finding(s) from {dplyr::n_distinct(findings$job_id)} review(s)")
 
 # ---------------------------------------------------------------------------

@@ -37,7 +37,7 @@ plan_roborev <- function() {
     ),
     targets::tar_target(
       roborev_findings,
-      .roborev_raw_to_findings(roborev_raw)
+      llmtelemetry:::.roborev_raw_to_findings(roborev_raw)
     )
   )
 }

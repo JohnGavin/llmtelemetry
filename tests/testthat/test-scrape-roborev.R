@@ -365,6 +365,67 @@ test_that(".roborev_raw_to_findings truncates summary to 80 characters", {
 })
 
 # ---------------------------------------------------------------------------
+# scrape_roborev — graceful degradation when roborev binary is unavailable
+# ---------------------------------------------------------------------------
+
+test_that("scrape_roborev returns empty tibble with correct schema when binary is missing", {
+  # Mock .roborev_bin() to simulate a missing binary
+  withr::with_envvar(
+    c(ROBOREV_BIN = "", PATH = ""),
+    {
+      # scrape_roborev should not abort but return an empty tibble
+      result <- expect_no_error(
+        suppressMessages(scrape_roborev(repo_path = tempdir()))
+      )
+
+      expect_s3_class(result, "tbl_df")
+      expect_equal(nrow(result), 0L)
+
+      # Check required schema columns are present
+      expected_cols <- c(
+        "job_id", "project", "branch", "commit_sha", "reviewed_at",
+        "severity", "primary_file", "full_location", "problem_text",
+        "fix_text", "agent", "verdict"
+      )
+      expect_true(all(expected_cols %in% names(result)))
+
+      # severity and verdict must be factors with the correct levels
+      expect_s3_class(result$severity, "factor")
+      expect_equal(
+        levels(result$severity),
+        c("critical", "high", "medium", "low", "info", "unknown")
+      )
+      expect_s3_class(result$verdict, "factor")
+      expect_equal(levels(result$verdict), c("pass", "fail", "unknown"))
+    }
+  )
+})
+
+test_that("scrape_roborev emits an informational message when binary is missing", {
+  withr::with_envvar(
+    c(ROBOREV_BIN = "", PATH = ""),
+    {
+      expect_message(
+        scrape_roborev(repo_path = tempdir()),
+        regexp = "roborev binary not found"
+      )
+    }
+  )
+})
+
+test_that("scrape_roborev aborts when binary is missing and require_bin = TRUE", {
+  withr::with_envvar(
+    c(ROBOREV_BIN = "", PATH = ""),
+    {
+      expect_error(
+        scrape_roborev(repo_path = tempdir(), require_bin = TRUE),
+        class = "rlang_error"
+      )
+    }
+  )
+})
+
+# ---------------------------------------------------------------------------
 # reviewed_at NA fallback — Finding 2 regression test
 # ---------------------------------------------------------------------------
 

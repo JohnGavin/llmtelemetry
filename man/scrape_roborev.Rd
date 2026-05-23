@@ -4,7 +4,11 @@
 \alias{scrape_roborev}
 \title{Scrape roborev review findings}
 \usage{
-scrape_roborev(repo_path = here::here(), since_date = NULL)
+scrape_roborev(
+  repo_path = here::here(),
+  since_date = NULL,
+  require_bin = FALSE
+)
 }
 \arguments{
 \item{repo_path}{Character path to the git repository root. Defaults to
@@ -12,6 +16,10 @@ scrape_roborev(repo_path = here::here(), since_date = NULL)
 
 \item{since_date}{Optional Date or character (ISO 8601). If provided, only
 reviews with \code{reviewed_at >= since_date} are included.}
+
+\item{require_bin}{Logical. When \code{FALSE} (default), a missing roborev binary
+returns an empty tibble with an informational message instead of aborting.
+When \code{TRUE}, a missing binary raises an error.}
 }
 \value{
 A tibble with columns:
@@ -23,4 +31,14 @@ A tibble with columns:
 Calls \verb{roborev list} to enumerate review jobs, then \verb{roborev show} for each
 job, and parses the markdown findings. Returns a tibble matching the
 roborev findings interface contract consumed by downstream dashboard agents.
+}
+\details{
+When \code{require_bin = FALSE} (the default) and the \code{roborev} binary cannot be
+found, the function returns an empty tibble with the correct schema and
+emits an informational message — it does not abort. This satisfies the
+graceful-degradation contract documented in \code{\link[=plan_roborev]{plan_roborev()}}.
+
+Set \code{require_bin = TRUE} when the binary is genuinely required (e.g. in
+standalone CLI scripts where an empty result would be silently misleading).
+In that case a missing binary raises an error via \code{\link[=.roborev_bin]{.roborev_bin()}}.
 }

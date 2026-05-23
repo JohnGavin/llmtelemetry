@@ -244,26 +244,58 @@ utils::globalVariables(c(
 #' job, and parses the markdown findings. Returns a tibble matching the
 #' roborev findings interface contract consumed by downstream dashboard agents.
 #'
+#' When `require_bin = FALSE` (the default) and the `roborev` binary cannot be
+#' found, the function returns an empty tibble with the correct schema and
+#' emits an informational message — it does not abort. This satisfies the
+#' graceful-degradation contract documented in [plan_roborev()].
+#'
+#' Set `require_bin = TRUE` when the binary is genuinely required (e.g. in
+#' standalone CLI scripts where an empty result would be silently misleading).
+#' In that case a missing binary raises an error via [.roborev_bin()].
+#'
 #' @param repo_path Character path to the git repository root. Defaults to
 #'   `here::here()`.
 #' @param since_date Optional Date or character (ISO 8601). If provided, only
 #'   reviews with `reviewed_at >= since_date` are included.
+#' @param require_bin Logical. When `FALSE` (default), a missing roborev binary
+#'   returns an empty tibble with an informational message instead of aborting.
+#'   When `TRUE`, a missing binary raises an error.
 #' @return A tibble with columns:
 #'   `job_id`, `project`, `branch`, `commit_sha`, `reviewed_at`,
 #'   `severity`, `primary_file`, `full_location`, `problem_text`,
 #'   `fix_text`, `agent`, `verdict`
 #' @export
-scrape_roborev <- function(repo_path = here::here(), since_date = NULL) {
+scrape_roborev <- function(repo_path = here::here(), since_date = NULL,
+                           require_bin = FALSE) {
   checkmate::assert_directory_exists(repo_path)
   if (!is.null(since_date)) {
     since_date <- as.Date(since_date)
     checkmate::assert_date(since_date, len = 1L)
   }
+  checkmate::assert_flag(require_bin)
 
-  # Binary resolution is handled inside .roborev_list_jobs()/.roborev_show()
-  # via .roborev_bin(). Check early here so scrape_roborev() fails fast with a
+  # Binary resolution — check early so scrape_roborev() fails fast with a
   # clear message rather than midway through a long job list.
-  .roborev_bin()
+  # When require_bin = FALSE, a missing binary is handled gracefully.
+  bin_available <- tryCatch({
+    .roborev_bin()
+    TRUE
+  }, error = function(e) {
+    if (require_bin) {
+      # Re-raise — the caller explicitly requires the binary.
+      stop(e)
+    }
+    FALSE
+  })
+
+  if (!bin_available) {
+    cli::cli_inform(c(
+      "i" = "roborev binary not found; returning empty findings tibble.",
+      "i" = "Install roborev or set {.envvar ROBOREV_BIN} to enable scraping.",
+      "i" = "See: {.url https://github.com/JohnGavin/roborev}"
+    ))
+    return(.empty_scrape_tibble())
+  }
 
   # 1. List review jobs
   jobs_df <- .roborev_list_jobs(repo_path, limit = 500L)
