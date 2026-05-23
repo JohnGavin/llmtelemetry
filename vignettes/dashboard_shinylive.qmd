@@ -301,12 +301,15 @@ pal <- list(
 )
 
 # --- Data loading -------------------------------------------------------------
-# base_url is a relative prefix so fetches work from any host+path.
-# "/data/X.json" would be an absolute path — on the GH Pages project site at
-# https://johngavin.github.io/llmtelemetry/ it resolves to the wrong host
-# root. Using "data/" as a relative prefix resolves correctly from wherever
-# the HTML is served (local http.server or gh-pages sub-path).
-base_url <- "data/"
+# WebR's download.file runs in a Web Worker; relative URLs (e.g. "data/X.json")
+# resolve against the worker's deep script path, NOT the page URL — so they
+# 404 in production. Plain "/data/" is also wrong: it resolves to the host
+# root, dropping the "/llmtelemetry/" project sub-path on the GH Pages site.
+# The correct value is the origin-absolute project path "/llmtelemetry/data/"
+# which resolves to https://johngavin.github.io/llmtelemetry/data/X.json.
+# NOTE: if this dashboard is ever served from a different base path, this
+# prefix must be updated (or computed from window.location.pathname).
+base_url <- "/llmtelemetry/data/"
 
 load_json <- function(filename) {
   tryCatch({
