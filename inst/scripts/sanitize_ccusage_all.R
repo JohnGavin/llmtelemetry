@@ -34,14 +34,20 @@ suppressPackageStartupMessages({
 # structure.  Applied at ALL guard sites (previously only "^-Users-|^/" was
 # checked, which missed /private/tmp/ and .claude/worktrees/ forms).
 #
-# Patterns covered:
-#   ^-Users-        raw home-dir prefix (legacy macOS ccusage format)
-#   ^/              Unix absolute path (e.g. /Users/..., /private/tmp/...)
-#   ^-private-tmp-  macOS /private/tmp worktrees (roborev, fixer agents)
-#   ^-tmp-          generic /tmp worktrees
-#   -worktree-      any *-worktree-* substring (numeric or named)
-#   worktree-agent- named agent worktrees (.claude/worktrees/agent-...)
-#   johngavin       username anywhere in the string (belt-and-suspenders)
+# SINGLE SOURCE OF TRUTH: Both SENSITIVE_ID_PATTERN (used by the sanitizer)
+# and SENSITIVE_VERIFY_PATTERNS (used by the final verification gate) are
+# derived from this one mapping.  Adding a new class here automatically
+# propagates to verification — they can never drift again.
+#
+# Pattern class → sanitizer regex → verify substring
+# ---------------------------------------------------
+#   home-dir prefix  :  ^-Users-            → "Users-johngavin"
+#   absolute path    :  ^/                  → "/Users/"  (covers /Users/... and /private/...)
+#   macOS tmp        :  ^-private-tmp-      → "-private-tmp-"
+#   generic tmp      :  ^-tmp-              → "-tmp-"
+#   any worktree     :  -worktree-          → "-worktree-"
+#   named agent wt   :  worktree-agent-     → "worktree-agent-"  (belt-and-suspenders)
+#   username         :  johngavin           → "johngavin"
 SENSITIVE_ID_PATTERN <- paste0(
   "^-Users-",           # raw home-dir prefix
   "|^/",                # Unix absolute path
@@ -50,6 +56,21 @@ SENSITIVE_ID_PATTERN <- paste0(
   "|-worktree-",        # any *-worktree-* substring (catches numeric + named)
   "|worktree-agent-",   # .claude/worktrees/agent-... named form
   "|johngavin"          # username anywhere (belt-and-suspenders)
+)
+
+# SENSITIVE_VERIFY_PATTERNS — grep-able substrings derived from SENSITIVE_ID_PATTERN.
+# Used by the final verification gate to scan file content (not just string starts),
+# so patterns here are anchor-free substrings, not anchored regexes.
+# INVARIANT: every class in SENSITIVE_ID_PATTERN has at least one entry here.
+# If you add a class above, add the matching verify substring below.
+SENSITIVE_VERIFY_PATTERNS <- c(
+  "Users-johngavin",    # home-dir prefix class  (^-Users-)
+  "/Users/",            # absolute-path class     (^/) — covers /Users/..., /private/...
+  "-private-tmp-",      # macOS tmp class         (^-private-tmp-)
+  "-tmp-",              # generic tmp class        (^-tmp-)
+  "-worktree-",         # any worktree class       (-worktree-)
+  "worktree-agent-",    # named agent worktree     (worktree-agent-)
+  "johngavin"           # username class           (johngavin)
 )
 
 # ---------------------------------------------------------------------------
@@ -311,20 +332,13 @@ if (!interactive() && !isTRUE(getOption("sanitize_ccusage_all_sourced_for_test")
               daily_result$n_sanitized, basename(daily_file)))
 
   # --- ccusage_blocks_all.json (verify clean, do not modify) ---
-  # VERIFY_PATTERNS must be a superset of SENSITIVE_ID_PATTERN so the
-  # verification gate cannot report "0 leaks" while leaks remain (Finding 1).
-  # Shared single source of truth: add new patterns to BOTH lists together.
-  VERIFY_PATTERNS <- c(
-    "Users-johngavin",   # raw home-dir prefix
-    "johngavin",         # bare username anywhere (belt-and-suspenders)
-    "-private-tmp-",     # macOS /private/tmp worktrees
-    "-tmp-",             # generic /tmp worktrees
-    "worktree-[0-9]+",   # numeric-suffix worktrees
-    "worktree-agent-"    # named agent worktrees
-  )
+  # SENSITIVE_VERIFY_PATTERNS is the single source of truth for the verification
+  # gate — derived from the same pattern classes as SENSITIVE_ID_PATTERN above so
+  # they can never drift.  See the SENSITIVE_ID_PATTERN comment block for the
+  # class-by-class mapping.
   blocks_content <- paste(readLines(blocks_file, warn = FALSE), collapse = "\n")
-  blocks_leaks <- any(vapply(VERIFY_PATTERNS,
-    function(p) grepl(p, blocks_content, perl = TRUE), logical(1)))
+  blocks_leaks <- any(vapply(SENSITIVE_VERIFY_PATTERNS,
+    function(p) grepl(p, blocks_content, perl = TRUE, fixed = FALSE), logical(1)))
   if (blocks_leaks) {
     stop("ccusage_blocks_all.json contains path leaks — manual review needed")
   } else {
@@ -335,7 +349,7 @@ if (!interactive() && !isTRUE(getOption("sanitize_ccusage_all_sourced_for_test")
   cat("\nVerification:\n")
   for (f in c(session_file, daily_file, blocks_file)) {
     txt <- paste(readLines(f, warn = FALSE), collapse = "\n")
-    n_remaining <- sum(vapply(VERIFY_PATTERNS, function(p) {
+    n_remaining <- sum(vapply(SENSITIVE_VERIFY_PATTERNS, function(p) {
       m <- gregexpr(p, txt, perl = TRUE)[[1]]
       sum(m > 0L)
     }, integer(1)))

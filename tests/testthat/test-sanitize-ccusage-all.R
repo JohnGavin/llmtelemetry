@@ -483,3 +483,74 @@ test_that("sanitize_daily_all merged modelsUsed serializes as JSON array (Findin
   expect_true(grepl('"modelsUsed":\\s*\\[', txt, perl = TRUE),
               label = "merged modelsUsed must serialize as JSON array, not scalar string")
 })
+
+# ---------------------------------------------------------------------------
+# Finding A (round-3) — SENSITIVE_VERIFY_PATTERNS must catch the two classes
+# that OLD VERIFY_PATTERNS omitted: absolute-path (^/) and generic -worktree-.
+# These tests prove the new unified source-of-truth covers those gaps.
+# ---------------------------------------------------------------------------
+
+# The SENSITIVE_VERIFY_PATTERNS constant is defined in the sourced script.
+
+test_that("SENSITIVE_VERIFY_PATTERNS catches absolute-path class that old gate omitted (Finding A, #140 round-3)", {
+  # An absolute Unix path (^/ class in SENSITIVE_ID_PATTERN) leaking into a
+  # JSON field would appear as e.g. "/Users/johngavin/..." in the file text.
+  # Old VERIFY_PATTERNS had no entry covering this; the new /Users/ entry does.
+  absolute_path_leak <- "/Users/johngavin/docs_gh/llm/some-file.R"
+  matched <- any(vapply(SENSITIVE_VERIFY_PATTERNS,
+    function(p) grepl(p, absolute_path_leak, perl = TRUE), logical(1)))
+  expect_true(matched,
+    label = "SENSITIVE_VERIFY_PATTERNS must detect /Users/ absolute-path leak")
+})
+
+test_that("SENSITIVE_VERIFY_PATTERNS catches /private/tmp absolute path (Finding A, #140 round-3)", {
+  # A /private/tmp/ absolute path (^/ class) would be missed by old VERIFY_PATTERNS.
+  absolute_path_leak <- "/private/tmp/roborev-worktree-1234567890"
+  matched <- any(vapply(SENSITIVE_VERIFY_PATTERNS,
+    function(p) grepl(p, absolute_path_leak, perl = TRUE), logical(1)))
+  expect_true(matched,
+    label = "SENSITIVE_VERIFY_PATTERNS must detect /private/tmp/ absolute-path leak")
+})
+
+test_that("SENSITIVE_VERIFY_PATTERNS catches generic -worktree- class that old gate omitted (Finding A, #140 round-3)", {
+  # Old VERIFY_PATTERNS had "worktree-[0-9]+" and "worktree-agent-" but NOT
+  # a plain "-worktree-" entry.  A future variant like "-worktree-fixer-abc"
+  # (no numeric suffix, no "agent-" prefix) would slip through.
+  # The new "-worktree-" entry in SENSITIVE_VERIFY_PATTERNS catches it.
+  novel_worktree_form <- "project-worktree-fixer-abc123"
+  matched <- any(vapply(SENSITIVE_VERIFY_PATTERNS,
+    function(p) grepl(p, novel_worktree_form, perl = TRUE), logical(1)))
+  expect_true(matched,
+    label = "SENSITIVE_VERIFY_PATTERNS must detect generic -worktree- substring")
+})
+
+test_that("SENSITIVE_VERIFY_PATTERNS is not fooled by non-sensitive strings (Finding A, #140 round-3)", {
+  # Canonical project names must NOT trigger the verify gate.
+  clean_strings <- c("llmtelemetry", "irishbuoys", "randomwalk",
+                     "sanitized@llm@h1a2b3c4d5e6", "claude-sonnet-4-6")
+  for (s in clean_strings) {
+    matched <- any(vapply(SENSITIVE_VERIFY_PATTERNS,
+      function(p) grepl(p, s, perl = TRUE), logical(1)))
+    expect_false(matched,
+      label = sprintf("SENSITIVE_VERIFY_PATTERNS must NOT flag clean string: %s", s))
+  }
+})
+
+test_that("derive_canonical_id output does not trigger SENSITIVE_VERIFY_PATTERNS (Finding A, #140 round-3)", {
+  # After sanitization the canonical IDs must not leak any sensitive pattern.
+  # This proves sanitizer + verify gate are consistent end-to-end.
+  sensitive_inputs <- c(
+    "-Users-johngavin-docs-gh-llm",
+    "/Users/johngavin/docs_gh/llmtelemetry",
+    "-private-tmp-roborev-worktree-1832056705",
+    "-tmp-fixer-worktree-2651148717",
+    "-Users-johngavin-docs-gh-llmtelemetry-.claude-worktrees-agent-a9b480562a7b91e3e"
+  )
+  for (raw in sensitive_inputs) {
+    result <- derive_canonical_id(raw)
+    leaked <- any(vapply(SENSITIVE_VERIFY_PATTERNS,
+      function(p) grepl(p, result, perl = TRUE), logical(1)))
+    expect_false(leaked,
+      label = sprintf("sanitized output for '%s' must not trigger SENSITIVE_VERIFY_PATTERNS", raw))
+  }
+})
