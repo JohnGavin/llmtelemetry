@@ -491,23 +491,35 @@ test_that("export_dashboard_data.R CI fallback always writes ccusage_blocks.json
     )
   )
 
-  # (3) The fallback must contain a write_json call in the blocks-specific branch.
+  # (3) The fallback must contain a write_json call whose PATH argument is
+  #     fallback_blocks_dst, not merely any write_json anywhere in the window.
   #     PR #163 uses intermediate variables (fallback_blocks_dst). We narrow the
   #     check to the ~15-line window around `fallback_blocks_src <-` to avoid
   #     unrelated write_json calls elsewhere in the script satisfying the assertion
   #     (#168: the broad fallback_lines-to-EOF search was too loose).
+  #     Round-2 tightening: collapse the window to a single string and require
+  #     write_json(<first-arg>, fallback_blocks_dst, ...) — i.e. fallback_blocks_dst
+  #     must appear as the SECOND positional argument (the path), not as an
+  #     unrelated token on a separate line.
   blocks_src_idx <- grep("fallback_blocks_src\\s*<-", lines)
   skip_if(length(blocks_src_idx) == 0L,
           "fallback_blocks_src assignment not found in export_dashboard_data.R")
   blocks_window_start <- blocks_src_idx[[1L]]
   blocks_window_end   <- min(length(lines), blocks_window_start + 15L)
   blocks_branch_lines <- lines[blocks_window_start:blocks_window_end]
-  has_write_json_fallback <- any(grepl("write_json", blocks_branch_lines)) &&
-    any(grepl("fallback_blocks_dst", blocks_branch_lines))
+  # Collapse to a single string so multi-line calls are matched as one unit.
+  blocks_window_text  <- paste(blocks_branch_lines, collapse = "\n")
+  # Match write_json(<any-first-arg>, fallback_blocks_dst, ...) — the destination
+  # must be fallback_blocks_dst, not just any co-occurring token.
+  has_write_json_fallback <- grepl(
+    "write_json\\s*\\([^,]+,\\s*fallback_blocks_dst",
+    blocks_window_text
+  )
   expect_true(
     has_write_json_fallback,
     info = paste(
-      "CI fallback blocks branch does not contain a write_json call for ccusage_blocks.json.",
+      "CI fallback blocks branch does not contain write_json(<data>, fallback_blocks_dst, ...).",
+      "The destination argument of write_json must be fallback_blocks_dst.",
       "Add write_json(list(), fallback_blocks_dst, auto_unbox=TRUE) in the else branch. Fixes #141 #168."
     )
   )
