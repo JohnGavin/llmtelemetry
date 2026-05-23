@@ -589,7 +589,7 @@ ui <- page_navbar(
       const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
       const worker = new Worker(
         URL.createObjectURL(new Blob(
-          ["importScripts(\"" + bundle.mainWorker + "\");"],
+          ["importScripts(\\"" + bundle.mainWorker + "\\");"],
           {type:"text/javascript"}
         ))
       );
