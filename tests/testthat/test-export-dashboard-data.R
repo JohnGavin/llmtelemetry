@@ -334,8 +334,14 @@ test_that("projects_master.json is sorted alphabetically", {
   path <- extdata_path("projects_master.json")
   skip_if(!nzchar(path), "projects_master.json not installed")
   result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
-  expect_equal(result$canonical_project, sort(result$canonical_project),
-               info = "canonical_project should be sorted alphabetically")
+  # Use method="radix" (byte-order, locale-independent) to match the export
+  # script's sort(method="radix"). Locale-aware sort() disagrees between
+  # devtools::test() (C locale) and standalone Rscript (en_US.UTF-8) on
+  # mixed-case names like "ClaudeProbe". Radix sort is deterministic
+  # regardless of the R session's LC_COLLATE setting. (#163 follow-up)
+  expect_equal(result$canonical_project,
+               sort(result$canonical_project, method = "radix"),
+               info = "canonical_project should be sorted in byte-order (radix) order")
 })
 
 test_that("projects_master.json contains known real projects", {
@@ -439,8 +445,11 @@ test_that("export_dashboard_data.R CI fallback copies ccusage_daily.json (not cc
 # ── CI fallback determinism (issue #141) ──────────────────────────────────────
 
 test_that("export_dashboard_data.R CI fallback always writes ccusage_blocks.json (no stale guard)", {
-  # The fallback must unconditionally write ccusage_blocks.json so CI never
-  # preserves a stale checked-in snapshot. Validates fix for issue #141.
+  # The fallback must always produce ccusage_blocks.json in the output directory,
+  # either by copying the committed inst/extdata snapshot (if present) or by
+  # writing an empty array []. It must NEVER silently preserve a stale output
+  # (the pre-#163 bug: `if (!file.exists(dst))` skipped writing when dst existed).
+  # Validates the fix for issue #141 (updated for PR #163 blocks-fallback refactor).
   script_path <- system.file("scripts", "export_dashboard_data.R",
                              package = "llmtelemetry")
   skip_if(!nzchar(script_path), "export_dashboard_data.R not installed")
@@ -451,31 +460,48 @@ test_that("export_dashboard_data.R CI fallback always writes ccusage_blocks.json
   skip_if(length(else_idx) == 0, "could not locate else-branch in export script")
   fallback_lines <- lines[seq(min(else_idx), length(lines))]
 
-  # The fallback must NOT gate the ccusage_blocks.json write on file absence.
-  # Specifically: `if (!file.exists(... "ccusage_blocks.json"...))` is forbidden.
-  guarded_write <- grepl(
-    "file\\.exists.*ccusage_blocks",
-    fallback_lines
-  )
-  expect_false(
-    any(guarded_write),
+  # (1) The fallback must reference ccusage_blocks.json as the destination path.
+  #     Either as a literal or via a fallback_blocks_dst variable assignment.
+  references_blocks_dst <- any(grepl("ccusage_blocks\\.json", fallback_lines))
+  expect_true(
+    references_blocks_dst,
     info = paste(
-      "CI fallback gates ccusage_blocks.json write on file absence.",
-      "This preserves stale checked-in snapshots and causes nondeterministic CI.",
-      "Remove the if(!file.exists(...)) guard so the fallback always overwrites. Fixes #141."
+      "CI fallback does not reference ccusage_blocks.json.",
+      "The fallback must produce this file (copy snapshot or write empty array). Fixes #141."
     )
   )
 
-  # The fallback must contain an unconditional write_json call for ccusage_blocks.json
-  unconditional_write <- grepl(
-    "write_json.*ccusage_blocks\\.json|ccusage_blocks\\.json.*write_json",
+  # (2) The old stale-guard pattern (`if (!file.exists(dst))` gating the write
+  #     on the DESTINATION not existing) must NOT be present. This is the exact
+  #     bug that caused nondeterministic CI: if the destination already existed,
+  #     the write was skipped and a stale snapshot was preserved.
+  #     Note: `file.exists(src)` gating on the SOURCE is intentional (#163)
+  #     and distinguishes "copy committed snapshot" from "write empty fallback".
+  #     Only a dst-file-existence guard is forbidden.
+  stale_guard <- any(grepl(
+    "file\\.exists.*fallback_blocks_dst|!file\\.exists.*['\"]ccusage_blocks",
     fallback_lines
-  )
-  expect_true(
-    any(unconditional_write),
+  ))
+  expect_false(
+    stale_guard,
     info = paste(
-      "CI fallback does not unconditionally write ccusage_blocks.json.",
-      "Add write_json(list(), ..., auto_unbox=TRUE) without any file.exists() guard. Fixes #141."
+      "CI fallback gates ccusage_blocks.json on DESTINATION file existence.",
+      "This preserves stale output and causes nondeterministic CI.",
+      "Remove the if(!file.exists(dst)) guard. Fixes #141."
+    )
+  )
+
+  # (3) The fallback must contain a write_json call (the empty-array path).
+  #     PR #163 uses intermediate variables (fallback_blocks_dst) rather than
+  #     literal path strings in write_json calls — search for write_json near
+  #     fallback_blocks_dst rather than for the literal filename.
+  has_write_json_fallback <- any(grepl("write_json", fallback_lines)) &&
+    any(grepl("fallback_blocks_dst|ccusage_blocks", fallback_lines))
+  expect_true(
+    has_write_json_fallback,
+    info = paste(
+      "CI fallback does not contain a write_json call for ccusage_blocks.json.",
+      "Add write_json(list(), fallback_blocks_dst, auto_unbox=TRUE) in the else branch. Fixes #141."
     )
   )
 })
