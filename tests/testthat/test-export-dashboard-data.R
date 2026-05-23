@@ -512,3 +512,51 @@ test_that("export_dashboard_data.R in-script QA does not treat ccusage_blocks as
     )
   )
 })
+
+test_that("export_dashboard_data.R schema-only validation rejects non-array ccusage_blocks.json (#141 round-3)", {
+  # The schema-only validation loop must assert the parsed JSON is a plain
+  # (unnamed) list — i.e. a JSON array. A JSON object {} or a scalar must be
+  # REJECTED with stop(). A zero-length array [] and a populated array must PASS.
+  script_path <- system.file("scripts", "export_dashboard_data.R",
+                             package = "llmtelemetry")
+  skip_if(!nzchar(script_path), "export_dashboard_data.R not installed")
+  lines <- readLines(script_path)
+
+  # Locate the optional_schema_files loop body (lines between the loop header
+  # and the closing `}` that ends the for-loop).
+  loop_start <- grep("optional_schema_files\\s*<-", lines)
+  skip_if(length(loop_start) == 0L,
+          "optional_schema_files not found in export_dashboard_data.R")
+  # The block runs from the assignment through the end of the for-loop.
+  # Grab up to 40 lines from the assignment — generous enough to cover the body.
+  block_end <- min(length(lines), loop_start[1L] + 40L)
+  schema_block <- paste(lines[loop_start[1L]:block_end], collapse = "\n")
+
+  # 1. Must parse WITHOUT simplification — simplifyVector/DataFrame/Matrix = FALSE.
+  #    Using simplifyDataFrame = TRUE (the old code) silently coerces a JSON object
+  #    into a data.frame, making the type check below meaningless.
+  expect_true(
+    grepl("simplifyVector\\s*=\\s*FALSE", schema_block),
+    info = paste(
+      "Schema-only validation must use simplifyVector = FALSE so that JSON arrays",
+      "are returned as plain R lists rather than simplified vectors/data.frames.",
+      "Fixes #141 round-3."
+    )
+  )
+
+  # 2. Must have an explicit named-list / non-list guard that calls stop().
+  #    The guard must check both is.list(parsed) AND that names() is empty/NULL
+  #    (to distinguish unnamed JSON arrays from named JSON objects).
+  has_type_guard <- grepl("is\\.list\\(parsed\\)", schema_block) &&
+    grepl("names\\(parsed\\)", schema_block) &&
+    grepl("stop\\(", schema_block)
+  expect_true(
+    has_type_guard,
+    info = paste(
+      "Schema-only validation must guard against non-array JSON by checking",
+      "is.list(parsed), names(parsed), and calling stop() on violation.",
+      "A JSON object {} would otherwise be accepted as 'QA OK'.",
+      "Fixes #141 round-3."
+    )
+  )
+})

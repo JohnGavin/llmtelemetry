@@ -1853,12 +1853,21 @@ for (f in optional_schema_files) {
     next
   }
   parsed <- tryCatch(
-    jsonlite::fromJSON(path, simplifyDataFrame = TRUE),
+    jsonlite::fromJSON(path, simplifyVector = FALSE, simplifyDataFrame = FALSE,
+                      simplifyMatrix = FALSE),
     error = function(e) {
       stop(sprintf("QA FAILED: %s.json is not valid JSON: %s", f, conditionMessage(e)))
     }
   )
-  n_opt <- if (is.data.frame(parsed)) nrow(parsed) else if (is.list(parsed)) length(parsed) else 0L
+  # Must be a JSON array: an unnamed (plain) list. Named lists are JSON objects;
+  # scalars are not lists at all. Both must be rejected (#141 round-3).
+  if (!is.list(parsed) || length(names(parsed)) > 0L) {
+    stop(sprintf(
+      "QA FAILED: %s.json must be a JSON array but got %s",
+      f, if (!is.list(parsed)) class(parsed)[1L] else "JSON object (named list)"
+    ))
+  }
+  n_opt <- length(parsed)
   cat(sprintf("  QA OK (optional): %s.json (%d rows — empty array is valid)\n", f, n_opt))
 }
 
