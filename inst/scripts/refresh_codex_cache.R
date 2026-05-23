@@ -285,15 +285,72 @@ read_codex_log <- function(log_path, offset_path) {
   start_offset <- detect_rotation(log_path, recorded_offset)
 
   # Also process rotated sibling files (codex-tui.log.1, etc.)
+  # Fix #138: track per-file byte offsets in a sidecar JSON so rotated siblings
+  # are not re-read from byte 0 on every refresh.
   log_dir  <- dirname(log_path)
   log_base <- basename(log_path)
   siblings <- sort(list.files(log_dir,
     pattern = paste0("^", log_base, "\\."),
     full.names = TRUE))
 
+  # Load per-file offset map (maps basename -> last-processed byte offset)
+  sibling_offsets_path <- file.path(dirname(offset_path), "codex_log_offsets.json")
+
+  sibling_offset_map <- if (file.exists(sibling_offsets_path)) {
+    tryCatch(
+      jsonlite::fromJSON(sibling_offsets_path, simplifyVector = TRUE),
+      error = function(e) list()
+    )
+  } else {
+    list()
+  }
+
+  # If rotation was detected (start_offset == 0 and recorded_offset > 0), the
+  # previous active log was rotated to a sibling with size == recorded_offset.
+  # Auto-mark that sibling as fully consumed so it is not re-ingested.
+  rotation_detected <- (start_offset == 0L && recorded_offset > 0)
+  if (rotation_detected) {
+    for (sib in siblings) {
+      sib_base  <- basename(sib)
+      sib_fsize <- file.info(sib)$size
+      if (!is.na(sib_fsize) && sib_fsize == recorded_offset) {
+        # This sibling has exactly the bytes that were consumed in the last run.
+        # Mark it as fully consumed so the loop below skips it.
+        if (is.null(sibling_offset_map[[sib_base]]) ||
+            sibling_offset_map[[sib_base]] < sib_fsize) {
+          sibling_offset_map[[sib_base]] <- sib_fsize
+        }
+      }
+    }
+  }
+
   all_lines <- character(0L)
   for (sib in siblings) {
-    all_lines <- c(all_lines, readLines(sib, warn = FALSE))
+    sib_base   <- basename(sib)
+    sib_offset <- sibling_offset_map[[sib_base]]
+    sib_offset <- if (is.null(sib_offset)) 0L else as.integer(sib_offset)
+    sib_fsize  <- file.info(sib)$size
+
+    if (is.na(sib_fsize) || sib_fsize <= sib_offset) {
+      # Sibling already fully consumed (or unreadable) — skip
+      next
+    }
+
+    # Read only the new bytes since last processed offset
+    con <- file(sib, open = "rb")
+    if (sib_offset > 0L) seek(con, where = sib_offset)
+    sib_lines <- readLines(con, warn = FALSE)
+    close(con)
+
+    all_lines <- c(all_lines, sib_lines)
+
+    # Update offset for this sibling to end-of-file
+    sibling_offset_map[[sib_base]] <- sib_fsize
+  }
+
+  # Persist updated sibling offsets (always write to capture new siblings)
+  if (length(sibling_offset_map) > 0L) {
+    jsonlite::write_json(sibling_offset_map, sibling_offsets_path, auto_unbox = TRUE)
   }
 
   # Current log from start_offset
@@ -609,11 +666,33 @@ if (!interactive()) {
 
   if (is.data.frame(existing_sessions) && nrow(existing_sessions) > 0L) {
     existing_sessions <- as_tibble(existing_sessions)
-    # Combine; new rows overwrite existing for same thread_id
-    all_sessions <- bind_rows(
-      existing_sessions |> filter(!thread_id %in% sessions$thread_id),
-      sessions
-    )
+    # Fix #139: additive merge — combine numeric fields for overlapping thread_ids
+    # rather than replacing the existing row with only this window's aggregate.
+    overlap_s <- inner_join(existing_sessions, sessions, by = "thread_id",
+                            suffix = c("_old", "_new"))
+    if (nrow(overlap_s) > 0L) {
+      merged_overlap_s <- overlap_s |>
+        mutate(
+          started_at        = pmin(started_at_old, started_at_new, na.rm = TRUE),
+          ended_at          = pmax(ended_at_old,   ended_at_new,   na.rm = TRUE),
+          n_turns           = n_turns_old       + n_turns_new,
+          total_tokens      = total_tokens_old  + total_tokens_new,
+          est_cost_usd      = dplyr::coalesce(est_cost_usd_old, 0) +
+                              dplyr::coalesce(est_cost_usd_new, 0),
+          canonical_project = dplyr::coalesce(canonical_project_new,
+                                              canonical_project_old),
+          model             = dplyr::coalesce(model_new, model_old),
+          source            = dplyr::coalesce(source_new, source_old)
+        )
+      # Keep columns present in existing_sessions (drop *_old / *_new suffixes)
+      keep_cols <- intersect(names(existing_sessions), names(merged_overlap_s))
+      merged_overlap_s <- merged_overlap_s |> select(all_of(keep_cols))
+    } else {
+      merged_overlap_s <- existing_sessions[0L, ]
+    }
+    new_only_s <- anti_join(sessions, existing_sessions, by = "thread_id")
+    old_only_s <- anti_join(existing_sessions, sessions,  by = "thread_id")
+    all_sessions <- bind_rows(old_only_s, merged_overlap_s, new_only_s)
   } else {
     all_sessions <- sessions
   }
@@ -634,15 +713,40 @@ if (!interactive()) {
 
   if (is.data.frame(existing_daily) && nrow(existing_daily) > 0L) {
     existing_daily <- as_tibble(existing_daily)
-    # Remove rows that will be replaced by new data for same keys
-    key_cols <- c("date", "canonical_project", "model", "source")
-    key_cols_existing <- intersect(key_cols, names(existing_daily))
-    if (length(key_cols_existing) == length(key_cols)) {
-      new_keys <- daily |> select(all_of(key_cols))
-      existing_daily <- existing_daily |>
-        anti_join(new_keys, by = key_cols)
+    # Fix #139: additive merge — sum numeric fields for overlapping daily keys
+    # rather than replacing the existing row with only this window's aggregate.
+    key_cols         <- c("date", "canonical_project", "model", "source")
+    key_cols_present <- intersect(key_cols, names(existing_daily))
+    if (length(key_cols_present) == length(key_cols)) {
+      # Numeric columns to sum for overlapping rows
+      numeric_daily_cols <- intersect(
+        names(existing_daily),
+        c("input_tokens", "cached_input_tokens", "output_tokens",
+          "reasoning_output_tokens", "total_tokens", "n_turns", "est_cost_usd")
+      )
+      overlap_d <- inner_join(existing_daily, daily, by = key_cols,
+                              suffix = c("_old", "_new"))
+      if (nrow(overlap_d) > 0L) {
+        for (col in numeric_daily_cols) {
+          old_col <- paste0(col, "_old")
+          new_col <- paste0(col, "_new")
+          if (old_col %in% names(overlap_d) && new_col %in% names(overlap_d)) {
+            overlap_d[[col]] <- dplyr::coalesce(overlap_d[[old_col]], 0) +
+                                 dplyr::coalesce(overlap_d[[new_col]], 0)
+          }
+        }
+        keep_cols_d <- intersect(names(existing_daily), names(overlap_d))
+        overlap_d <- overlap_d |> select(all_of(keep_cols_d))
+      } else {
+        overlap_d <- existing_daily[0L, ]
+      }
+      new_only_d <- anti_join(daily,          existing_daily, by = key_cols)
+      old_only_d <- anti_join(existing_daily, daily,          by = key_cols)
+      all_daily  <- bind_rows(old_only_d, overlap_d, new_only_d) |> arrange(date)
+    } else {
+      # key columns missing in existing_daily — fall back to full replacement
+      all_daily <- bind_rows(existing_daily, daily) |> arrange(date)
     }
-    all_daily <- bind_rows(existing_daily, daily) |> arrange(date)
   } else {
     all_daily <- daily
   }
