@@ -15,7 +15,9 @@ test_that("no filesystem-path-style strings in committed extdata", {
     "[A-Za-z0-9]{8,}/repo", # agent-worktree-id/repo style
     "[A-Za-z0-9]{8,}-repo", # dash-form agent worktree (e.g. "D73dOZsvyf-repo")
     "pers-NHS",             # specific medical project leak
-    "antigravity"           # specific leaked name
+    "antigravity",          # specific leaked name
+    "-private-tmp-",        # macOS /private/tmp worktree paths (issue #140)
+    "worktree-[0-9]+"       # numeric-suffix worktree identifiers (issue #140)
   )
 
   # JSON files to skip:
