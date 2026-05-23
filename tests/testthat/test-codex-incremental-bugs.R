@@ -417,3 +417,173 @@ test_that("#139: read_codex_log + merge over two refresh cycles preserves all tu
   expect_equal(t$started_at,   "2026-05-20T08:00:00Z",
                label = "#139 integration: started_at is the earlier timestamp")
 })
+
+# ── Issue #138 round-2: multi-generation rotation ─────────────────────────────
+
+test_that("#138 round-2: two rotations (active->'.1'->'.2') produce no duplicates", {
+  skip_if(
+    !exists("read_codex_log"),
+    "read_codex_log not found — script may not be installed"
+  )
+
+  td <- withr::local_tempdir()
+
+  log_path    <- file.path(td, "codex-tui.log")
+  offset_path <- file.path(td, ".codex_log_offset.txt")
+
+  # Turn lines for three distinct threads
+  line_t1 <- make_turn_line("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", total_tokens = 111L,
+                              timestamp = "2026-05-20T08:00:00.000000Z")
+  line_t2 <- make_turn_line("ffffffff-ffff-ffff-ffff-ffffffffffff", total_tokens = 222L,
+                              timestamp = "2026-05-20T09:00:00.000000Z")
+  line_t3 <- make_turn_line("00000000-0000-0000-0000-000000000003", total_tokens = 333L,
+                              timestamp = "2026-05-20T10:00:00.000000Z")
+
+  # ── Refresh #1: active log has T1 only ────────────────────────────────────
+  writeLines(line_t1, log_path)
+  r1 <- read_codex_log(log_path, offset_path)
+  expect_equal(nrow(r1$turns), 1L, label = "Refresh 1: 1 turn (T1)")
+  writeLines(as.character(r1$offset_used), offset_path)
+
+  # ── First rotation: active -> .1, new active has T2 ───────────────────────
+  file.rename(log_path, paste0(log_path, ".1"))
+  writeLines(line_t2, log_path)
+
+  # ── Refresh #2: T1 in .1 (already consumed), T2 in active (new) ───────────
+  r2 <- read_codex_log(log_path, offset_path)
+  t1_rows_r2 <- sum(r2$turns$thread_id == "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", na.rm = TRUE)
+  t2_rows_r2 <- sum(r2$turns$thread_id == "ffffffff-ffff-ffff-ffff-ffffffffffff", na.rm = TRUE)
+  expect_equal(t1_rows_r2, 0L, label = "#138 round-2: T1 in .1 must NOT be re-read in refresh 2")
+  expect_equal(t2_rows_r2, 1L, label = "#138 round-2: T2 from new active must appear in refresh 2")
+  writeLines(as.character(r2$offset_used), offset_path)
+
+  # ── Second rotation: .1 -> .2, active -> .1, new active has T3 ────────────
+  file.rename(paste0(log_path, ".1"), paste0(log_path, ".2"))
+  file.rename(log_path, paste0(log_path, ".1"))
+  writeLines(line_t3, log_path)
+
+  # ── Refresh #3: T1 in .2 (consumed gen-1), T2 in .1 (consumed gen-2), T3 new
+  r3 <- read_codex_log(log_path, offset_path)
+  t1_rows_r3 <- sum(r3$turns$thread_id == "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", na.rm = TRUE)
+  t2_rows_r3 <- sum(r3$turns$thread_id == "ffffffff-ffff-ffff-ffff-ffffffffffff", na.rm = TRUE)
+  t3_rows_r3 <- sum(r3$turns$thread_id == "00000000-0000-0000-0000-000000000003", na.rm = TRUE)
+
+  expect_equal(
+    t1_rows_r3, 0L,
+    label = "#138 round-2: T1 in .2 (second-gen sibling) must NOT be re-read"
+  )
+  expect_equal(
+    t2_rows_r3, 0L,
+    label = "#138 round-2: T2 in .1 (first-gen sibling) must NOT be re-read"
+  )
+  expect_equal(
+    t3_rows_r3, 1L,
+    label = "#138 round-2: T3 from new active must appear exactly once"
+  )
+})
+
+# ── Issue #138/#139 round-2: NA cost preservation ────────────────────────────
+
+test_that("#139 round-2 session merge: NA+NA cost stays NA, known+NA and known+known sum", {
+  library(dplyr, warn.conflicts = FALSE)
+  library(tibble)
+
+  # Helper that mirrors the fixed merge logic from the main block
+  merge_sessions <- function(old, new) {
+    overlap <- inner_join(old, new, by = "thread_id", suffix = c("_old", "_new"))
+    if (nrow(overlap) == 0L) return(bind_rows(
+      anti_join(old, new, by = "thread_id"),
+      anti_join(new, old, by = "thread_id")
+    ))
+    merged <- overlap |>
+      mutate(
+        n_turns      = n_turns_old + n_turns_new,
+        total_tokens = total_tokens_old + total_tokens_new,
+        est_cost_usd = dplyr::case_when(
+          is.na(est_cost_usd_old) & is.na(est_cost_usd_new) ~ NA_real_,
+          TRUE ~ dplyr::coalesce(est_cost_usd_old, 0) +
+                 dplyr::coalesce(est_cost_usd_new, 0)
+        )
+      ) |>
+      select(thread_id, n_turns, total_tokens, est_cost_usd)
+    old_only <- anti_join(old, new, by = "thread_id") |>
+      select(thread_id, n_turns, total_tokens, est_cost_usd)
+    new_only <- anti_join(new, old, by = "thread_id") |>
+      select(thread_id, n_turns, total_tokens, est_cost_usd)
+    bind_rows(old_only, merged, new_only)
+  }
+
+  make_sess <- function(tid, cost, n = 1L, tok = 100L) {
+    tibble(thread_id = tid, n_turns = n, total_tokens = tok,
+           est_cost_usd = cost)
+  }
+
+  # Case 1: NA + NA -> NA (not 0)
+  result_na_na <- merge_sessions(
+    make_sess("t-na-na", NA_real_),
+    make_sess("t-na-na", NA_real_)
+  )
+  expect_true(
+    is.na(result_na_na$est_cost_usd[result_na_na$thread_id == "t-na-na"]),
+    label = "#139 round-2 session: NA + NA must remain NA (not 0)"
+  )
+
+  # Case 2: known + NA -> sum (with NA treated as 0)
+  result_known_na <- merge_sessions(
+    make_sess("t-k-na", 0.01),
+    make_sess("t-k-na", NA_real_)
+  )
+  expect_equal(
+    result_known_na$est_cost_usd[result_known_na$thread_id == "t-k-na"],
+    0.01, tolerance = 1e-9,
+    label = "#139 round-2 session: known + NA should sum to known value"
+  )
+
+  # Case 3: known + known -> sum
+  result_kk <- merge_sessions(
+    make_sess("t-kk", 0.01),
+    make_sess("t-kk", 0.02)
+  )
+  expect_equal(
+    result_kk$est_cost_usd[result_kk$thread_id == "t-kk"],
+    0.03, tolerance = 1e-9,
+    label = "#139 round-2 session: known + known must sum correctly"
+  )
+})
+
+test_that("#139 round-2 daily merge: NA+NA cost stays NA, known+NA and known+known sum", {
+  library(dplyr, warn.conflicts = FALSE)
+  library(tibble)
+
+  # Helper that mirrors the fixed merge logic from the main block (daily path)
+  merge_daily_cost <- function(old_cost, new_cost) {
+    dplyr::case_when(
+      is.na(old_cost) & is.na(new_cost) ~ NA_real_,
+      TRUE ~ dplyr::coalesce(old_cost, 0) + dplyr::coalesce(new_cost, 0)
+    )
+  }
+
+  # NA + NA -> NA
+  expect_true(
+    is.na(merge_daily_cost(NA_real_, NA_real_)),
+    label = "#139 round-2 daily: NA + NA must remain NA (not 0)"
+  )
+
+  # known + NA -> known
+  expect_equal(
+    merge_daily_cost(0.05, NA_real_), 0.05, tolerance = 1e-9,
+    label = "#139 round-2 daily: known + NA must return the known value"
+  )
+
+  # NA + known -> known
+  expect_equal(
+    merge_daily_cost(NA_real_, 0.07), 0.07, tolerance = 1e-9,
+    label = "#139 round-2 daily: NA + known must return the known value"
+  )
+
+  # known + known -> sum
+  expect_equal(
+    merge_daily_cost(0.03, 0.04), 0.07, tolerance = 1e-9,
+    label = "#139 round-2 daily: known + known must sum"
+  )
+})
