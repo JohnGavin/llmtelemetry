@@ -48,6 +48,10 @@ forbidden_patterns <- c(base_forbidden, structural_forbidden)
 #   - "johngavin"     — author name in e.g. "fix: check johngavin cache"
 #   - "JohnGavin"     — GitHub handle in PR merge messages
 #   - "worktree-agent-" — branch references in merge-commit messages
+#   - "-worktree-"    — PR branch name substring in merge messages, e.g.
+#                       "fix/cc-sh-worktree-safety"; NOT a filesystem path
+#                       (actual /private/tmp/roborev-worktree-... still caught
+#                       by path_shape_patterns() via the "/private/tmp/" entry)
 #   - "/Users/"       — when describing the concept (not a real path with username)
 # IMPORTANT: allowlisting a token removes it from the scan for bare occurrences,
 # but path_shape_patterns() patterns are ADDED BACK unconditionally so that a
@@ -56,6 +60,7 @@ commit_message_bare_allowlist <- c(
   "johngavin",        # bare username — OK in message context
   "JohnGavin",        # GitHub handle — OK in message context
   "worktree-agent-",  # branch reference — OK in message context
+  "-worktree-",       # PR branch name substring (e.g. fix/cc-sh-worktree-safety)
   "/Users/",          # abstract mention of the /Users/ directory concept
   "/private/",        # abstract mention (no username following = not a real path)
   "/tmp/"             # abstract mention
@@ -371,5 +376,116 @@ test_that("committed extdata JSON files are valid JSON", {
       info = sprintf("%s is not valid JSON: %s", basename(f),
                      if (inherits(result, "error")) conditionMessage(result) else "")
     )
+  }
+})
+
+# ---------------------------------------------------------------------------
+# Hardening: hex-encoding bypass detection (#163 round-2).
+# Long hex-blob fields (matching ^[0-9a-f]{40,}$) in committed JSON files
+# must decode to text that contains none of the forbidden path patterns.
+# This catches the codex_log_offsets.json class of leak where raw log text
+# (including cwd=/Users/... paths) is hex-encoded and slips past plain-text
+# scanners.
+# ---------------------------------------------------------------------------
+
+test_that("hex-encoded fields in committed extdata JSON do not decode to forbidden paths", {
+  # Hex-blob detector: matches a string that looks like a long hex value.
+  # We use 40+ hex chars (same length as a git SHA) as the lower bound;
+  # odd-length strings cannot be valid hex pairs, so we also check even length.
+  is_hex_blob <- function(x) {
+    nchar(x) >= 40L &&
+      nchar(x) %% 2L == 0L &&
+      grepl("^[0-9a-f]+$", x, perl = TRUE)
+  }
+
+  # Try to decode a hex string to UTF-8 text.  Returns NA_character_ on failure.
+  hex_decode <- function(hex_str) {
+    tryCatch({
+      n <- nchar(hex_str) %/% 2L
+      raw_vec <- as.raw(vapply(seq_len(n), function(i) {
+        strtoi(substr(hex_str, (i - 1L) * 2L + 1L, i * 2L), base = 16L)
+      }, integer(1L)))
+      rawToChar(raw_vec)
+    }, error = function(e) NA_character_,
+       warning = function(e) NA_character_)
+  }
+
+  # Patterns that must not appear in decoded hex text:
+  # these are the canonical forbidden path identifiers.
+  hex_forbidden <- c(
+    "/Users/",
+    "/private/",
+    "cwd=",
+    "-private-tmp-"
+  )
+
+  pkg_root <- normalizePath(file.path(test_path(), "..", ".."), mustWork = FALSE)
+  extdata_dir <- file.path(pkg_root, "inst", "extdata")
+
+  # Scan only git-tracked files — untracked runtime sidecars (e.g.
+  # codex_log_offsets.json) may legitimately exist on disk and would
+  # generate false positives.  The threat model is committed files only.
+  tracked_in_extdata <- tryCatch({
+    raw_out <- system2(
+      "git",
+      c("-C", pkg_root, "ls-files", "--error-unmatch", "inst/extdata/"),
+      stdout = TRUE, stderr = FALSE
+    )
+    file.path(pkg_root, raw_out[grepl("\\.json$", raw_out)])
+  }, error = function(e) {
+    # Fallback: use filesystem listing if git is unavailable (e.g. R CMD check
+    # without git).  This is conservative — no tracked-file filter.
+    list.files(extdata_dir, pattern = "\\.json$", full.names = TRUE)
+  })
+  json_files <- tracked_in_extdata
+
+  # Files to skip (same exclusions as the main regression gate):
+  skip_basenames <- c(
+    "ccusage_daily_raw_20260220.json",
+    "ccusage_daily_raw_20260221.json",
+    "github_issue_events.json",
+    "test.json"
+  )
+  json_files <- json_files[!basename(json_files) %in% skip_basenames]
+
+  # Recursively collect all leaf character values from a parsed JSON object.
+  collect_strings <- function(obj) {
+    if (is.character(obj)) {
+      return(as.character(obj))
+    }
+    if (is.list(obj)) {
+      return(unlist(lapply(obj, collect_strings), use.names = FALSE))
+    }
+    if (is.data.frame(obj)) {
+      chr_cols <- vapply(obj, is.character, logical(1L))
+      return(unlist(lapply(obj[chr_cols], as.character), use.names = FALSE))
+    }
+    character(0L)
+  }
+
+  for (f in json_files) {
+    parsed <- tryCatch(
+      jsonlite::fromJSON(f, simplifyVector = TRUE, simplifyDataFrame = TRUE),
+      error = function(e) NULL
+    )
+    if (is.null(parsed)) next
+
+    all_strings <- collect_strings(parsed)
+    hex_candidates <- all_strings[!is.na(all_strings) & vapply(all_strings, is_hex_blob, logical(1L))]
+
+    for (hex_val in hex_candidates) {
+      decoded <- hex_decode(hex_val)
+      if (is.na(decoded)) next
+
+      for (pat in hex_forbidden) {
+        expect_false(
+          grepl(pat, decoded, fixed = TRUE),
+          info = sprintf(
+            "%s: hex-encoded field decodes to text containing forbidden pattern '%s'",
+            basename(f), pat
+          )
+        )
+      }
+    }
   }
 })
