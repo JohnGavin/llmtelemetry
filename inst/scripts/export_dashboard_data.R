@@ -1870,8 +1870,11 @@ for (f in optional_schema_files) {
     }
   )
   # Must be a JSON array: an unnamed (plain) list. Named lists are JSON objects;
-  # scalars are not lists at all. Both must be rejected (#141 round-3).
-  if (!is.list(parsed) || length(names(parsed)) > 0L) {
+  # scalars are not lists at all. Both must be rejected (#141 round-3, #154).
+  # Use !is.null(names(parsed)) rather than length(names(parsed)) > 0L:
+  # jsonlite parses {} as a named list with names = character(0) (length 0 but
+  # NOT NULL), so the length-based guard incorrectly accepts {} as a valid array.
+  if (!is.list(parsed) || !is.null(names(parsed))) {
     stop(sprintf(
       "QA FAILED: %s.json must be a JSON array but got %s",
       f, if (!is.list(parsed)) class(parsed)[1L] else "JSON object (named list)"

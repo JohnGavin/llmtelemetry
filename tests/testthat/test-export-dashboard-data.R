@@ -491,17 +491,24 @@ test_that("export_dashboard_data.R CI fallback always writes ccusage_blocks.json
     )
   )
 
-  # (3) The fallback must contain a write_json call (the empty-array path).
-  #     PR #163 uses intermediate variables (fallback_blocks_dst) rather than
-  #     literal path strings in write_json calls — search for write_json near
-  #     fallback_blocks_dst rather than for the literal filename.
-  has_write_json_fallback <- any(grepl("write_json", fallback_lines)) &&
-    any(grepl("fallback_blocks_dst|ccusage_blocks", fallback_lines))
+  # (3) The fallback must contain a write_json call in the blocks-specific branch.
+  #     PR #163 uses intermediate variables (fallback_blocks_dst). We narrow the
+  #     check to the ~15-line window around `fallback_blocks_src <-` to avoid
+  #     unrelated write_json calls elsewhere in the script satisfying the assertion
+  #     (#168: the broad fallback_lines-to-EOF search was too loose).
+  blocks_src_idx <- grep("fallback_blocks_src\\s*<-", lines)
+  skip_if(length(blocks_src_idx) == 0L,
+          "fallback_blocks_src assignment not found in export_dashboard_data.R")
+  blocks_window_start <- blocks_src_idx[[1L]]
+  blocks_window_end   <- min(length(lines), blocks_window_start + 15L)
+  blocks_branch_lines <- lines[blocks_window_start:blocks_window_end]
+  has_write_json_fallback <- any(grepl("write_json", blocks_branch_lines)) &&
+    any(grepl("fallback_blocks_dst", blocks_branch_lines))
   expect_true(
     has_write_json_fallback,
     info = paste(
-      "CI fallback does not contain a write_json call for ccusage_blocks.json.",
-      "Add write_json(list(), fallback_blocks_dst, auto_unbox=TRUE) in the else branch. Fixes #141."
+      "CI fallback blocks branch does not contain a write_json call for ccusage_blocks.json.",
+      "Add write_json(list(), fallback_blocks_dst, auto_unbox=TRUE) in the else branch. Fixes #141 #168."
     )
   )
 })
@@ -586,3 +593,37 @@ test_that("export_dashboard_data.R schema-only validation rejects non-array ccus
     )
   )
 })
+
+test_that("optional schema guard: [] passes, {} and scalar are REJECTED (#154)", {
+  # Behavioural test for the !is.null(names(parsed)) guard (#154).
+  # jsonlite::fromJSON("{}") returns a named list with names = character(0)
+  # (length 0 but NOT NULL), so the old `length(names(parsed)) > 0L` guard
+  # incorrectly accepted {}.  The fix uses !is.null(names(parsed)).
+  #
+  # Acceptance criteria (directly mirror what export_dashboard_data.R does):
+  #   [] -> is.list = TRUE, is.null(names) = TRUE  -> PASS
+  #   {} -> is.list = TRUE, is.null(names) = FALSE -> FAIL
+  #   42 -> is.list = FALSE                        -> FAIL
+  is_valid_array <- function(json_str) {
+    parsed <- jsonlite::fromJSON(json_str, simplifyVector = FALSE,
+                                 simplifyDataFrame = FALSE, simplifyMatrix = FALSE)
+    is.list(parsed) && is.null(names(parsed))
+  }
+
+  # Empty array [] must pass
+  expect_true(is_valid_array("[]"),
+              label = "[] (empty JSON array) must be accepted as a valid array")
+
+  # Populated array must pass
+  expect_true(is_valid_array('[{"a":1},{"a":2}]'),
+              label = "Populated JSON array must be accepted")
+
+  # Empty object {} must be REJECTED (#154 — the bug: old guard allowed {})
+  expect_false(is_valid_array("{}"),
+               label = "{} (empty JSON object) must be REJECTED, not accepted as an array")
+
+  # Scalar must be REJECTED
+  expect_false(is_valid_array("42"),
+               label = "Scalar JSON value must be REJECTED, not accepted as an array")
+})
+
