@@ -217,3 +217,164 @@ test_that("qa_email_output.sh skips HTML comment lines for NaN check", {
   expect_false(grepl("<!--", non_comment))   # this line IS checked for NaN
   expect_true(grepl("NaN", non_comment))
 })
+
+# ── Source-assertion: qa_email_output.sh NaN grep must NOT use -i flag ────────
+# A regression back to `grep -ci "NaN"` (case-insensitive) would cause
+# false positives on session IDs or project names containing "nan".
+# This test reads the actual script and asserts the forbidden flag is absent
+# from the NaN check section.  A real regression in the script will fail this
+# test, even if all the R-simulation tests above still pass.
+#
+# Implementation note: the script passes patterns via a shell variable
+# (`grep -c "$pat"`) rather than quoting NaN inline.  We therefore inspect the
+# NaN-pattern loop header that declares `"NaN"` as one of the patterns, and the
+# grep command(s) within that loop, and assert that neither contains the -i flag.
+
+test_that("qa_email_output.sh NaN grep section does not use -i flag (source assertion)", {
+  # Locate the script relative to package root (same pattern as helper sourcing above)
+  script_candidates <- c(
+    file.path(getwd(), "inst", "scripts", "qa_email_output.sh"),           # cwd = pkg root
+    file.path(getwd(), "..", "..", "inst", "scripts", "qa_email_output.sh") # cwd = tests/testthat
+  )
+  script_path <- Filter(file.exists, script_candidates)
+  skip_if(length(script_path) == 0L, "qa_email_output.sh not found — skipping source assertion")
+  script_path <- script_path[[1L]]
+
+  script_lines <- readLines(script_path)
+
+  # Find the loop header line that declares "NaN" as one of the patterns.
+  # The script has: for pat in "NaN" ">NULL<" "NA_real_"; do
+  nan_loop_idx <- grep('"NaN"', script_lines)
+  expect_gt(length(nan_loop_idx), 0L,
+            label = 'At least one line containing "NaN" must exist in the script')
+
+  # The "NaN" declaration is in a for-loop header.  The grep call(s) that
+  # perform the actual NaN matching follow within the same loop body (within
+  # ~6 lines).  Look at the 8 lines after the first "NaN" occurrence and
+  # collect any lines that contain `grep` (the command, not the word in a
+  # comment).
+  window_start <- nan_loop_idx[[1L]]
+  window_end   <- min(window_start + 8L, length(script_lines))
+  window_lines <- script_lines[window_start:window_end]
+  # Match lines that contain a grep invocation (not just the word "grep" in a
+  # comment): look for lines where "grep" appears outside a leading "#"
+  non_comment <- window_lines[!grepl("^\\s*#", window_lines)]
+  nan_grep_lines <- grep("\\bgrep\\b", non_comment, value = TRUE)
+
+  expect_gt(length(nan_grep_lines), 0L,
+            label = "At least one grep call must appear in the NaN pattern loop body")
+
+  # None of the grep calls in this section should carry the -i flag.
+  # Flag variants that indicate case-insensitive matching:
+  #   -i, -ci, -ic, -Ei, -iE, -cia, grep -i, grep -ci "NaN", etc.
+  # We check: does any grep invocation on the line have a flag cluster that
+  # includes the letter "i"?
+  # Pattern: `grep` followed by optional content then `-` then a flag string
+  # that contains "i" before any space or quote.
+  has_case_insensitive <- grepl("\\bgrep\\b[^|\\n]*\\s-[a-zA-Z]*i[a-zA-Z]*", nan_grep_lines)
+  expect_false(any(has_case_insensitive),
+               label = paste(
+                 "grep call(s) in the NaN check section of qa_email_output.sh",
+                 "must NOT use the -i (case-insensitive) flag.",
+                 "Offending line(s):", paste(nan_grep_lines[has_case_insensitive], collapse = "; ")
+               ))
+})
+
+# ── Functional: run actual qa_email_output.sh against tiny fixture files ──────
+# These tests run the real bash script so a script regression (e.g. reverting
+# to grep -ci) is caught by an actual non-zero exit code, not just source text.
+# The fixtures include the required structural features the script checks for.
+
+test_that("qa_email_output.sh exits 0 for valid HTML with 'nanum' (no false positive)", {
+  skip_if(.Platform$OS.type != "unix", "bash tests require a Unix shell")
+  script_candidates <- c(
+    file.path(getwd(), "inst", "scripts", "qa_email_output.sh"),
+    file.path(getwd(), "..", "..", "inst", "scripts", "qa_email_output.sh")
+  )
+  script_path <- Filter(file.exists, script_candidates)
+  skip_if(length(script_path) == 0L, "qa_email_output.sh not found")
+  script_path <- script_path[[1L]]
+
+  # Minimal valid HTML that satisfies ALL checks in the script:
+  #   Required features: "Summary" (as >Summary<), "font-weight: bold",
+  #                      dashboard URL, at least one $N.NN cost
+  #   Ordering: "Time Block Activity" before ">Summary<"
+  #   QA markers: blocks_grouped_by_day, model_breakdown_days, models_found
+  # "nanum-session-abc123" must NOT trigger the NaN gate (false-positive check).
+  # NOTE: the ordering check uses `grep -n ">Summary<"` (angle brackets), so we
+  # must render as ">Summary<" not just "Summary".
+  fixture <- tempfile(fileext = ".html")
+  on.exit(unlink(fixture), add = TRUE)
+  # Helper: build a minimal but structurally complete HTML fixture.
+  # The script uses `grep -n ">Summary<"` (angle brackets) for the ordering
+  # check, so the fixture must contain that literal string.  It also uses
+  # `grep -qi` for optional features ("Time Block Activity", "Daily Cost by
+  # Model", "MTok", "blocks)") and `grep -qE '\$[0-9]+\.[0-9]{2}'` for costs.
+  # Including all of them avoids false WARNs and prevents set -euo pipefail
+  # crashes from grep returning 1 on missing patterns.
+  writeLines(c(
+    "<html><body>",
+    "<style>.hdr { font-weight: bold; }</style>",
+    "<h2>Time Block Activity (3 blocks)</h2>",
+    "<h2>Daily Cost by Model</h2>",
+    "<td>MTok used</td>",
+    "<td>>Summary< section</td>",   # provides the literal ">Summary<" token
+    "Summary",                       # satisfies grep -qi Summary
+    "<a href='https://johngavin.github.io/llmtelemetry'>Dashboard</a>",
+    "<td>$1.23</td>",
+    "<td>nanum-session-abc123</td>",
+    "<!-- QA:blocks_grouped_by_day=3 -->",
+    "<!-- QA:model_breakdown_days=3 -->",
+    "<!-- QA:models_found=claude-sonnet-4-6 -->"
+  ), fixture)
+
+  result <- system2("bash", args = c(script_path, fixture),
+                    stdout = TRUE, stderr = TRUE)
+  exit_code <- attr(result, "status")
+  # system2 returns NULL status on success (exit 0)
+  expect_true(is.null(exit_code) || exit_code == 0L,
+              label = paste(
+                "Script should exit 0 for HTML containing 'nanum' (not NaN).",
+                "Output:", paste(result, collapse = "\n")
+              ))
+})
+
+test_that("qa_email_output.sh exits 1 for HTML containing literal 'NaN'", {
+  skip_if(.Platform$OS.type != "unix", "bash tests require a Unix shell")
+  script_candidates <- c(
+    file.path(getwd(), "inst", "scripts", "qa_email_output.sh"),
+    file.path(getwd(), "..", "..", "inst", "scripts", "qa_email_output.sh")
+  )
+  script_path <- Filter(file.exists, script_candidates)
+  skip_if(length(script_path) == 0L, "qa_email_output.sh not found")
+  script_path <- script_path[[1L]]
+
+  # Same structural HTML but with a literal "NaN" in a visible table cell.
+  # The NaN gate must detect this and exit 1.
+  fixture <- tempfile(fileext = ".html")
+  on.exit(unlink(fixture), add = TRUE)
+  writeLines(c(
+    "<html><body>",
+    "<style>.hdr { font-weight: bold; }</style>",
+    "<h2>Time Block Activity (3 blocks)</h2>",
+    "<h2>Daily Cost by Model</h2>",
+    "<td>MTok used</td>",
+    "<td>>Summary< section</td>",
+    "Summary",
+    "<a href='https://johngavin.github.io/llmtelemetry'>Dashboard</a>",
+    "<td>$1.23</td>",
+    "<td>NaN</td>",   # literal NaN — must trip the NaN gate
+    "<!-- QA:blocks_grouped_by_day=3 -->",
+    "<!-- QA:model_breakdown_days=3 -->",
+    "<!-- QA:models_found=claude-sonnet-4-6 -->"
+  ), fixture)
+
+  result <- system2("bash", args = c(script_path, fixture),
+                    stdout = TRUE, stderr = TRUE)
+  exit_code <- attr(result, "status")
+  expect_equal(exit_code, 1L,
+               label = paste(
+                 "Script should exit 1 when HTML contains literal 'NaN'.",
+                 "Output:", paste(result, collapse = "\n")
+               ))
+})
