@@ -24,4 +24,11 @@ Pattern classes (must stay in sync between \code{sensitive_id_pattern()} and
 INVARIANT: every class in \code{sensitive_id_pattern()} has at least one
 corresponding entry in \code{sensitive_verify_patterns()}.  If you add a class
 to the sanitizer, add the matching verify substring(s) here.
+
+\strong{Message-field path-shape coverage (#157):} \code{path_shape_patterns()} uses
+generic PCRE regexes (\verb{/Users/[^/[:space:]]+/} and
+\verb{/private/[^/[:space:]]+/}) rather than johngavin-specific strings, so
+any-user paths (\verb{/Users/alice/...}) and non-tmp private paths
+(\verb{/private/var/folders/...}) in commit \code{message} fields are caught even
+when the bare \verb{/Users/} and \verb{/private/} tokens are allowlisted.
 }

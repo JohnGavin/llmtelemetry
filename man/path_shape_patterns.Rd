@@ -7,7 +7,9 @@
 path_shape_patterns()
 }
 \value{
-character vector of path-shape substrings (no anchors)
+character vector of path-shape substrings / regexes (no anchors;
+some entries are fixed strings, others are PCRE regexes — all used with
+\code{grepl(..., perl = TRUE)})
 }
 \description{
 These patterns are specific enough to distinguish an actual filesystem path
@@ -17,8 +19,11 @@ field, including commit \code{message} fields that have a bare-token allowlist.
 \details{
 Examples of what each catches:
 \itemize{
-\item \verb{/Users/johngavin/docs_gh/...}  — actual home-dir path
+\item \verb{/Users/johngavin/docs_gh/...}  — actual home-dir path (johngavin user)
+\item \verb{/Users/alice/projects/...}     — actual home-dir path (any other user)
 \item \verb{/private/tmp/roborev-worktree-...} — actual macOS tmp path
+\item \verb{/private/var/folders/...}      — actual macOS sandbox path (non-tmp)
+\item \verb{/private/etc/resolver/...}     — actual macOS system path (non-tmp)
 \item \verb{/tmp/fixer-worktree-...} — actual Linux tmp path
 \item \code{-private-tmp-roborev-worktree-...} — dashed form of macOS tmp
 \item \code{-tmp-fixer-worktree-...} — dashed form of Linux tmp
@@ -27,7 +32,16 @@ Examples of what each catches:
 
 What these do NOT catch (intentional):
 \itemize{
-\item \code{"feat: add hardcoded /Users/ path check"} — describes the concept, not
-a real path (no username following /Users/)
+\item \code{"feat: add hardcoded /Users/ path check"} — bare \verb{/Users/} concept mention
+with no following username token (the generic pattern requires at least one
+non-slash, non-space character after \verb{/Users/})
+\item \code{"mention of /private/ in a design note"} — bare \verb{/private/} with no
+following directory token (the generic pattern requires \verb{<dir>/})
 }
+
+The generic regexes (\verb{/Users/[^/[:space:]]+/} and \verb{/private/[^/[:space:]]+/})
+match any real path rooted at \verb{/Users/} or \verb{/private/} (requiring at least one
+directory component after the prefix), while bare mentions like \verb{/Users/} alone
+do not match.  This is the minimal change that closes the any-user gap (#157)
+without introducing false positives on conceptual references.
 }
