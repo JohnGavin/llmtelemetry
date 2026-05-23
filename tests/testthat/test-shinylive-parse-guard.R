@@ -46,6 +46,34 @@ write_shinylive_qmd <- function(body_lines) {
   tmp
 }
 
+# Helper: write a .qmd with TWO {shinylive-r} chunks.
+# chunk1_lines: body for the FIRST (valid) chunk
+# chunk2_lines: body for the SECOND chunk (may be broken)
+write_two_chunk_shinylive_qmd <- function(chunk1_lines, chunk2_lines) {
+  tmp <- tempfile(fileext = ".qmd")
+  content <- c(
+    "---",
+    "title: 'two-chunk fixture'",
+    "---",
+    "",
+    "## First app",
+    "",
+    "```{shinylive-r}",
+    "#| standalone: true",
+    chunk1_lines,
+    "```",
+    "",
+    "## Second app",
+    "",
+    "```{shinylive-r}",
+    "#| standalone: true",
+    chunk2_lines,
+    "```"
+  )
+  writeLines(content, tmp)
+  tmp
+}
+
 # ---------------------------------------------------------------------------
 
 test_that("guard script exists and is readable", {
@@ -183,5 +211,68 @@ test_that("guard exits non-zero when given a non-existent file", {
   expect_true(
     !is.null(exit_code) && exit_code != 0L,
     info = "Guard should exit non-zero for missing input file"
+  )
+})
+
+# round-2 (#159): guard must check EVERY chunk, not just the first
+test_that("guard fails when first chunk is valid but second chunk is broken", {
+  skip_if_not_installed("here")
+
+  guard <- guard_script_path()
+  skip_if(is.null(guard), "check_shinylive_parse.R not found — skip")
+
+  # First chunk: syntactically valid minimal Shiny app
+  valid_chunk <- c(
+    "library(shiny)",
+    "ui <- fluidPage(titlePanel('First app'))",
+    "server <- function(input, output) {}",
+    "shinyApp(ui, server)"
+  )
+
+  # Second chunk: deliberately broken — unclosed parenthesis
+  broken_chunk <- c(
+    "library(shiny)",
+    "",
+    "# Deliberately broken: missing closing parenthesis in second chunk",
+    "ui2 <- fluidPage(",
+    "  titlePanel('Second app'",   # missing ) for titlePanel and fluidPage
+    "",
+    "server2 <- function(input, output) {}",
+    "",
+    "shinyApp(ui2, server2)"
+  )
+
+  fixture_qmd <- write_two_chunk_shinylive_qmd(valid_chunk, broken_chunk)
+  on.exit(unlink(fixture_qmd), add = TRUE)
+
+  result <- suppressWarnings(system2(
+    "Rscript",
+    args   = c(shQuote(guard), shQuote(fixture_qmd)),
+    stdout = TRUE,
+    stderr = TRUE
+  ))
+  exit_code <- attr(result, "status")
+
+  # Guard MUST exit non-zero — the second chunk is broken
+  expect_true(
+    !is.null(exit_code) && exit_code != 0L,
+    info = paste(
+      "Parse guard did NOT reject a two-chunk .qmd with a broken second chunk",
+      "(expected exit 1).\n",
+      "Exit code:", if (is.null(exit_code)) "NULL (= 0)" else exit_code, "\n",
+      "Output:\n",
+      paste(result, collapse = "\n")
+    )
+  )
+
+  # Error output should identify chunk 2 as the problem
+  all_output <- paste(result, collapse = "\n")
+  expect_true(
+    grepl("PARSE ERROR", all_output, ignore.case = TRUE),
+    info = paste("Expected 'PARSE ERROR' in output:\n", all_output)
+  )
+  expect_true(
+    grepl("chunk 2", all_output, ignore.case = TRUE),
+    info = paste("Expected 'chunk 2' in output to identify the failing chunk:\n", all_output)
   )
 })
