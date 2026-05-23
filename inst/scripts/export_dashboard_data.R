@@ -1781,7 +1781,7 @@ if (!is.null(pm_all) && nrow(pm_all) > 0L) {
   date_min <- tapply(pm_dates$date, pm_dates$canonical_project, min)
   date_max <- tapply(pm_dates$date, pm_dates$canonical_project, max)
 
-  all_cp <- sort(unique(pm_all$canonical_project))
+  all_cp <- sort(unique(pm_all$canonical_project), method = "radix")
   projects_master <- data.frame(
     canonical_project = all_cp,
     n_sources         = as.integer(source_counts[all_cp]),
