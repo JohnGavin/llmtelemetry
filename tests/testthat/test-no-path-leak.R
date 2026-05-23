@@ -388,33 +388,41 @@ test_that("committed extdata JSON files are valid JSON", {
 # scanners.
 # ---------------------------------------------------------------------------
 
+# FILE-SCOPE hex helpers — shared by both the main extdata gate scan below
+# AND the uppercase-hex regression test (~line 500+).  Defining them here once
+# ensures that if the real detector regresses (e.g. reverts to lowercase-only),
+# the regression test fails too — it cannot pass against a stale local copy.
+
+#' Detect whether a string looks like a long hex-encoded blob.
+#'
+#' @param x character(1) — the string to test.
+#' @return logical(1) — TRUE iff x is >= 40 characters, even length, and
+#'   consists entirely of hex digits (case-insensitive).
+is_hex_blob <- function(x) {
+  nchar(x) >= 40L &&
+    nchar(x) %% 2L == 0L &&
+    grepl("^[0-9a-f]+$", x, perl = TRUE, ignore.case = TRUE)
+}
+
+#' Decode a hex string to a UTF-8 character string.
+#'
+#' @param hex_str character(1) — a hex-encoded string (upper, lower, or mixed case).
+#' @return character(1) — the decoded string, or NA_character_ on failure.
+#'   tolower() normalises uppercase/mixed-case hex before byte extraction so
+#'   that strtoi() receives consistent lowercase input.
+hex_decode <- function(hex_str) {
+  tryCatch({
+    hex_str <- tolower(hex_str)
+    n <- nchar(hex_str) %/% 2L
+    raw_vec <- as.raw(vapply(seq_len(n), function(i) {
+      strtoi(substr(hex_str, (i - 1L) * 2L + 1L, i * 2L), base = 16L)
+    }, integer(1L)))
+    rawToChar(raw_vec)
+  }, error   = function(e) NA_character_,
+     warning = function(e) NA_character_)
+}
+
 test_that("hex-encoded fields in committed extdata JSON do not decode to forbidden paths", {
-  # Hex-blob detector: matches a string that looks like a long hex value.
-  # We use 40+ hex chars (same length as a git SHA) as the lower bound;
-  # odd-length strings cannot be valid hex pairs, so we also check even length.
-  # Case-insensitive so uppercase/mixed-case hex (e.g. "0BADF00D...") is caught.
-  is_hex_blob <- function(x) {
-    nchar(x) >= 40L &&
-      nchar(x) %% 2L == 0L &&
-      grepl("^[0-9a-f]+$", x, perl = TRUE, ignore.case = TRUE)
-  }
-
-  # Try to decode a hex string to UTF-8 text.  Returns NA_character_ on failure.
-  # tolower() normalises uppercase/mixed-case hex before byte extraction so that
-  # strtoi() receives consistent lowercase input (it is case-insensitive already,
-  # but explicit normalisation documents the intent and avoids surprises).
-  hex_decode <- function(hex_str) {
-    tryCatch({
-      hex_str <- tolower(hex_str)
-      n <- nchar(hex_str) %/% 2L
-      raw_vec <- as.raw(vapply(seq_len(n), function(i) {
-        strtoi(substr(hex_str, (i - 1L) * 2L + 1L, i * 2L), base = 16L)
-      }, integer(1L)))
-      rawToChar(raw_vec)
-    }, error = function(e) NA_character_,
-       warning = function(e) NA_character_)
-  }
-
   # Patterns that must not appear in decoded hex text:
   # these are the canonical forbidden path identifiers.
   hex_forbidden <- c(
@@ -514,28 +522,14 @@ test_that("uppercase hex blob containing forbidden path is detected and rejected
   expect_true(grepl("^[0-9A-F]+$", hex_upper))     # uppercase chars present
   expect_false(grepl("^[0-9a-f]+$", hex_upper))     # lowercase-only check FAILS (old behaviour)
 
-  # New behaviour: ignore.case = TRUE catches it.
-  is_hex_blob_new <- function(x) {
-    nchar(x) >= 40L &&
-      nchar(x) %% 2L == 0L &&
-      grepl("^[0-9a-f]+$", x, perl = TRUE, ignore.case = TRUE)
-  }
-  expect_true(is_hex_blob_new(hex_upper),
+  # The REAL file-scope is_hex_blob() with ignore.case = TRUE must catch it.
+  # If is_hex_blob() ever regresses to lowercase-only matching, this test fails.
+  expect_true(is_hex_blob(hex_upper),
     label = "is_hex_blob with ignore.case=TRUE must detect uppercase hex blob")
 
-  # Decode the uppercase blob and verify it round-trips correctly.
-  hex_decode_ci <- function(hex_str) {
-    tryCatch({
-      hex_str <- tolower(hex_str)
-      n <- nchar(hex_str) %/% 2L
-      raw_vec <- as.raw(vapply(seq_len(n), function(i) {
-        strtoi(substr(hex_str, (i - 1L) * 2L + 1L, i * 2L), base = 16L)
-      }, integer(1L)))
-      rawToChar(raw_vec)
-    }, error   = function(e) NA_character_,
-       warning = function(e) NA_character_)
-  }
-  decoded <- hex_decode_ci(hex_upper)
+  # Decode using the REAL file-scope hex_decode() and verify it round-trips.
+  # If hex_decode() ever regresses (e.g. drops the tolower() call), this fails.
+  decoded <- hex_decode(hex_upper)
   expect_false(is.na(decoded), label = "uppercase hex must decode without error")
   expect_equal(decoded, leak_text, label = "decoded text must match original leak string")
 
