@@ -176,6 +176,7 @@ format_hhmm <- function(mins) {
   }
   sprintf("%02d:%02d", as.integer(mins %/% 60), as.integer(mins %% 60))
 }
+`%||%` <- function(a, b) if (!is.null(a) && length(a) > 0 && !is.na(a[1])) a else b
 
 # Dark mode color palette
 dark_bg <- "#1a1a2e"
@@ -915,6 +916,67 @@ if (!has_data) {
   }
 
   # (Top Claude Sessions moved to top — see sessions_html/projects_html below)
+
+  # --- Roborev review summary section ---
+  # Read roborev_summary.json (pre-computed by export_dashboard_data.R).
+  # Only uses sanitised pulse summary — no raw problem_text (issue #140).
+  roborev_html <- ""
+  tryCatch({
+    rv_db_path <- here::here("inst", "extdata", "roborev_summary.json")
+    if (file.exists(rv_db_path)) {
+      rv_data <- tryCatch(fromJSON(rv_db_path), error = function(e) NULL)
+      if (!is.null(rv_data) && is.list(rv_data)) {
+        pulse     <- rv_data$pulse
+        n_new_24h <- pulse$n_new_24h              %||% 0
+        n_res_24h <- pulse$n_resolved_24h         %||% 0
+        n_open    <- pulse$n_open                 %||% 0
+        n_loops   <- pulse$n_loops                %||% 0
+        n_esc     <- pulse$n_escalate             %||% 0
+        n_esc_fil <- pulse$n_escalate_issues_filed %||% 0
+        roborev_html <- sprintf(
+          '\n<h3 style="color: %s; margin-top: 20px;">Roborev (llmtelemetry, last 24h)</h3>
+<table style="border-collapse: collapse; max-width: 400px;">
+  <tr style="background-color: %s;">
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Metric</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Value</th>
+  </tr>
+  <tr style="background-color: %s;">
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">New findings</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+  </tr>
+  <tr style="background-color: %s;">
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Resolved</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+  </tr>
+  <tr style="background-color: %s;">
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Open total</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+  </tr>
+  <tr style="background-color: %s;">
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Active loops (Tier 2+)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+  </tr>
+  <tr style="background-color: %s;">
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Stuck loops (Tier 3, no ack)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d &nbsp; <span style="font-size:9px; color:%s;">[issues filed: %d]</span></td>
+  </tr>
+</table>
+<!-- QA:roborev_section=1 -->',
+          accent_orange, accent_orange, dark_border, dark_border,
+          dark_card,    dark_border, dark_text, dark_border, dark_text, n_new_24h,
+          dark_row_alt, dark_border, dark_text, dark_border, accent_green, n_res_24h,
+          dark_card,    dark_border, dark_text, dark_border, dark_text, n_open,
+          dark_row_alt, dark_border, dark_text, dark_border, dark_text, n_loops,
+          dark_card,    dark_border, dark_text, dark_border,
+          if (n_esc > 0) "#ff5555" else dark_text,
+          n_esc, dark_muted, n_esc_fil
+        )
+      }
+    }
+  }, error = function(e) {
+    message("Roborev summary not available: ", e$message)
+  })
+  email_body <- paste0(email_body, roborev_html)
 
   email_body <- paste0(email_body, sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
 <p style="color: %s; font-size: 12px;">

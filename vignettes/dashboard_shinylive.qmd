@@ -1076,6 +1076,54 @@ ui <- page_navbar(
     )
   ),
 
+  nav_panel("Reviews", value = "Reviews",
+    layout_columns(col_widths = c(12),
+      card(
+        card_header("Roborev — Automated Code Review Health"),
+        tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+          tags$p(
+            "The roborev pipeline runs ", tags$code("critic"), " and ",
+            tags$code("fixer"), " agents on every commit, then tracks whether
+            findings recur across review rounds. Loops = findings fixed and
+            re-opened more than once. Data sourced from ",
+            tags$code("unified.duckdb"), ". For the full interactive summary ",
+            "see the ",
+            tags$a(href = "roborev_summary.html", target = "_blank",
+                   style = "color:#7cb5ec;", "roborev_summary vignette"), "."
+          )
+        ),
+        card_footer(class = "text-muted small",
+          "Roborev pipeline health summary. Data refreshed on each tar_make() run.")
+      )
+    ),
+    layout_columns(col_widths = c(4),
+      card(
+        card_header("Roborev Pulse"),
+        tags$table(class = "table table-sm table-dark mb-0",
+          tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
+          tags$tbody(
+            tags$tr(tags$td("Open findings"), tags$td(textOutput("rv_n_open", inline = TRUE))),
+            tags$tr(tags$td("  Critical"),    tags$td(textOutput("rv_n_critical", inline = TRUE))),
+            tags$tr(tags$td("  High"),         tags$td(textOutput("rv_n_high", inline = TRUE))),
+            tags$tr(tags$td("Resolved"),       tags$td(textOutput("rv_n_resolved", inline = TRUE))),
+            tags$tr(tags$td("Active loops"),   tags$td(textOutput("rv_n_loops", inline = TRUE))),
+            tags$tr(tags$td("  Escalate (no ack)"),
+                    tags$td(textOutput("rv_n_escalate", inline = TRUE))),
+            tags$tr(tags$td("Est. wasted USD"),
+                    tags$td(textOutput("rv_wasted_usd", inline = TRUE)))
+          )
+        ),
+        card_footer(class = "text-muted small",
+          "Counts sourced from unified.duckdb roborev_findings and roborev_loops tables.")
+      )
+    ),
+    layout_columns(col_widths = c(12),
+      card(card_header("Active Loops"), DTOutput("rv_loops_table"),
+        card_footer(class = "text-muted small",
+          "Recurring review loops. Row colour: red=escalate, orange=block, yellow=watch. Sorted by cycles descending."))
+    )
+  ),
+
   nav_panel("Glossary", value = "Glossary", icon = icon("book"),
     card(card_header("Metric Definitions"),
       tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
@@ -2653,6 +2701,70 @@ server <- function(input, output, session) {
     d <- d[, cols, drop = FALSE]
     datatable(d, options = list(dom = "ftip", pageLength = 15, scrollX = TRUE),
       rownames = FALSE)
+  })
+
+  # --- Reviews tab: roborev pipeline health -----------------------------------
+  # Data loaded from roborev_summary.json (pre-computed by export_dashboard_data.R).
+  # Falls back gracefully when the file is not available (no roborev data yet).
+  roborev_summary_raw <- load_json("roborev_summary.json")
+
+  rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
+    roborev_summary_raw$pulse
+  } else {
+    NULL
+  }
+  rv_loops_raw <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
+    as_df(roborev_summary_raw$loops)
+  } else {
+    NULL
+  }
+
+  safe_rv <- function(key, default = "—") {
+    if (is.null(rv_pulse) || !key %in% names(rv_pulse)) return(default)
+    v <- rv_pulse[[key]]
+    if (is.null(v) || is.na(v)) default else as.character(v)
+  }
+
+  output$rv_n_open     <- renderText(safe_rv("n_open"))
+  output$rv_n_critical <- renderText(safe_rv("n_critical"))
+  output$rv_n_high     <- renderText(safe_rv("n_high"))
+  output$rv_n_resolved <- renderText(safe_rv("n_resolved"))
+  output$rv_n_loops    <- renderText(safe_rv("n_loops"))
+  output$rv_n_escalate <- renderText(safe_rv("n_escalate"))
+  output$rv_wasted_usd <- renderText({
+    v <- safe_rv("wasted_usd", default = NA)
+    if (is.na(v)) return("—")
+    tryCatch(sprintf("$%.2f", as.numeric(v)), error = function(e) "—")
+  })
+
+  output$rv_loops_table <- renderDT({
+    if (!has_rows(rv_loops_raw)) {
+      return(datatable(data.frame(message = "No loop data available"),
+                       options = list(dom = "t"), rownames = FALSE))
+    }
+    d <- rv_loops_raw
+    if ("cycles" %in% names(d)) d <- d[order(-as.integer(d$cycles)), ]
+    cols <- intersect(
+      c("tier", "cycles", "severity", "primary_file", "summary",
+        "first_seen", "last_seen", "estimated_wasted_usd"),
+      names(d)
+    )
+    d <- d[, cols, drop = FALSE]
+    row_js <- DT::JS("function(row, data) {
+      var tier = data[0];
+      var palette = {escalate: '#ff5555', block: '#ffaa3d', watch: '#ffd93d'};
+      var bg = palette[tier];
+      if (bg) $('td', row).css({'background-color': bg, 'color': '#000000'});
+    }")
+    datatable(d, rownames = FALSE,
+      options = list(
+        order      = list(list(1, "desc")),
+        pageLength = 25,
+        dom        = "frtip",
+        rowCallback = row_js,
+        scrollX    = TRUE
+      )
+    )
   })
 }
 
