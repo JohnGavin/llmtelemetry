@@ -281,20 +281,186 @@ read_codex_log <- function(log_path, offset_path) {
     0
   }
 
-  # Handle rotation
-  start_offset <- detect_rotation(log_path, recorded_offset)
-
   # Also process rotated sibling files (codex-tui.log.1, etc.)
+  # Fix #138 (round 2): key per-file offsets by a content fingerprint of the
+  # first 512 bytes rather than by basename.  Basenames shift on every
+  # rotation (.1->.2, .2->.3 …) so a basename-keyed map loses the stored
+  # offset for any sibling that has been renamed since the last refresh.
+  # A fingerprint of the first 512 bytes is stable across renames because
+  # the file content (and therefore its beginning) does not change.
+  #
+  # Additionally, we store the fingerprint of the ACTIVE log alongside the
+  # byte offset so that on the next refresh we can recognise it in the sibling
+  # list (it may have been renamed to .1, .2, etc.) and mark it consumed up to
+  # recorded_offset.  We also use the fingerprint to detect rotation even when
+  # the new active log happens to have the same byte size as the old one (which
+  # defeats the size-comparison heuristic used in round 1).
   log_dir  <- dirname(log_path)
   log_base <- basename(log_path)
   siblings <- sort(list.files(log_dir,
     pattern = paste0("^", log_base, "\\."),
     full.names = TRUE))
 
+  # ── Content-fingerprint helper ───────────────────────────────────────────────
+  # Reads up to n_bytes from a file and returns the raw bytes as a list with:
+  #   $fp  — hex string of the bytes (for comparison)
+  #   $len — actual number of bytes read (for length-aware comparison)
+  # Returns list(fp=NA_character_, len=0L) if the file is unreadable or empty.
+  .file_fingerprint <- function(path, n_bytes = 512L) {
+    tryCatch({
+      con <- file(path, open = "rb")
+      on.exit(close(con), add = TRUE)
+      raw_bytes <- readBin(con, what = "raw", n = n_bytes)
+      if (length(raw_bytes) == 0L) return(list(fp = NA_character_, len = 0L))
+      list(fp = paste(as.character(raw_bytes), collapse = ""), len = length(raw_bytes))
+    }, error = function(e) list(fp = NA_character_, len = 0L))
+  }
+
+  # Compare two fingerprint objects: TRUE only if both non-NA and fp strings
+  # match when read to the SAME length (shorter of the two).  This prevents
+  # false "rotation detected" when a file is merely appended to.
+  # Each byte is encoded as exactly 2 hex characters (no separator), so
+  # n bytes correspond to n*2 characters in the fp string.
+  .fp_match <- function(a, b) {
+    if (is.na(a$fp) || is.na(b$fp)) return(FALSE)
+    # Compare only to the length available in the shorter read.
+    n <- min(a$len, b$len)
+    if (n == 0L) return(FALSE)
+    substr(a$fp, 1L, n * 2L) == substr(b$fp, 1L, n * 2L)
+  }
+
+  # ── Load sidecar BEFORE rotation detection ──────────────────────────────────
+  # The sidecar JSON has two keys:
+  #   "offsets"      — named list: content-fingerprint -> last-processed byte offset
+  #   "active_fp"    — fingerprint string of the active log as of the LAST refresh
+  #   "active_fp_len"— number of bytes used to produce active_fp
+  sibling_offsets_path <- file.path(dirname(offset_path), "codex_log_offsets.json")
+
+  sidecar <- if (file.exists(sibling_offsets_path)) {
+    tryCatch(
+      jsonlite::fromJSON(sibling_offsets_path, simplifyVector = TRUE),
+      error = function(e) list()
+    )
+  } else {
+    list()
+  }
+
+  # Backwards-compatible: old sidecars stored a flat map (basename -> offset);
+  # new sidecars store a list with "offsets" and "active_fp".
+  if (!is.null(sidecar$offsets)) {
+    sibling_offset_map <- as.list(sidecar$offsets)
+    prev_active_fp     <- list(
+      fp  = sidecar$active_fp   %||% NA_character_,
+      len = sidecar$active_fp_len %||% 0L
+    )
+  } else {
+    # Treat entire sidecar as a flat map (old format); no active_fp available.
+    sibling_offset_map <- as.list(sidecar)
+    prev_active_fp     <- list(fp = NA_character_, len = 0L)
+  }
+
+  # ── Fingerprint-enhanced rotation detection ──────────────────────────────────
+  # Compare the fingerprint of the current active log with prev_active_fp using
+  # length-aware comparison (.fp_match).  A mismatch means the active log is a
+  # NEW file (rotation happened) and we must read from byte 0.
+  # An append-only change does NOT trigger this because .fp_match compares only
+  # the bytes available in the shorter (previous) fingerprint.
+  current_active_fpobj <- .file_fingerprint(log_path)
+  active_fp_changed    <- !is.na(prev_active_fp$fp) &&
+                          !.fp_match(prev_active_fp, current_active_fpobj)
+
+  start_offset <- if (active_fp_changed) {
+    # Active log is a NEW file (rotation happened) — start from byte 0.
+    0L
+  } else {
+    # Fall back to size-based detection (covers first run and no-rotation case).
+    detect_rotation(log_path, recorded_offset)
+  }
+
+  # ── Mark previously-active log as consumed when it appears as a sibling ─────
+  # If we stored the fingerprint of the active log last time, find that sibling
+  # now (it may have been renamed to .1, .2, …) and set its stored offset to
+  # recorded_offset so the sibling loop below skips it.
+  #
+  # Round-3 fix (#138/#139): use the sibling's CURRENT fingerprint as the key,
+  # not prev_active_fp$fp.  If the log was shorter than 512 bytes at the last
+  # refresh (prev_active_fp$len < 512) and then grew before rotation, the
+  # sibling's current fingerprint (fp_obj$fp) covers the full 512-byte window
+  # while prev_active_fp$fp only covers the old shorter window.  .fp_match
+  # still returns TRUE (it compares only the min-length prefix), so the match
+  # succeeds, but if we stored the offset under prev_active_fp$fp, the sibling
+  # read loop (which keys by fp_obj$fp) would find nothing and re-read from 0.
+  # Storing under fp_obj$fp makes the key consistent across both paths.
+  if (!is.na(prev_active_fp$fp) && recorded_offset > 0) {
+    for (sib in siblings) {
+      fp_obj <- .file_fingerprint(sib)
+      if (.fp_match(prev_active_fp, fp_obj)) {
+        # This sibling IS the previous active log.  Mark it consumed up to
+        # the byte offset that was recorded after the last refresh.
+        # Key by the sibling's ACTUAL current fingerprint (fp_obj$fp) so the
+        # sibling read loop (which also uses fp_obj$fp) finds the offset.
+        fp_key <- fp_obj$fp
+        if (is.null(sibling_offset_map[[fp_key]]) ||
+            sibling_offset_map[[fp_key]] < recorded_offset) {
+          sibling_offset_map[[fp_key]] <- recorded_offset
+        }
+        break
+      }
+    }
+  }
+
+  # ── Fallback: size-based sibling marking (backwards-compat, no active_fp) ───
+  # Retained for the first refresh after upgrading (no active_fp stored yet).
+  size_rotation_detected <- (start_offset == 0L && recorded_offset > 0)
+  if (size_rotation_detected && is.na(prev_active_fp$fp)) {
+    for (sib in siblings) {
+      sib_fsize <- file.info(sib)$size
+      if (!is.na(sib_fsize) && sib_fsize == recorded_offset) {
+        fp_obj <- .file_fingerprint(sib)
+        if (!is.na(fp_obj$fp)) {
+          if (is.null(sibling_offset_map[[fp_obj$fp]]) ||
+              sibling_offset_map[[fp_obj$fp]] < sib_fsize) {
+            sibling_offset_map[[fp_obj$fp]] <- sib_fsize
+          }
+        }
+      }
+    }
+  }
+
   all_lines <- character(0L)
   for (sib in siblings) {
-    all_lines <- c(all_lines, readLines(sib, warn = FALSE))
+    fp_obj     <- .file_fingerprint(sib)
+    fp_key     <- fp_obj$fp
+    sib_offset <- if (!is.na(fp_key)) sibling_offset_map[[fp_key]] else NULL
+    sib_offset <- if (is.null(sib_offset)) 0L else as.integer(sib_offset)
+    sib_fsize  <- file.info(sib)$size
+
+    if (is.na(sib_fsize) || sib_fsize <= sib_offset) {
+      # Sibling already fully consumed (or unreadable) — skip
+      next
+    }
+
+    # Read only the new bytes since last processed offset
+    con <- file(sib, open = "rb")
+    if (sib_offset > 0L) seek(con, where = sib_offset)
+    sib_lines <- readLines(con, warn = FALSE)
+    close(con)
+
+    all_lines <- c(all_lines, sib_lines)
+
+    # Update offset for this sibling keyed by its fingerprint
+    if (!is.na(fp_key)) {
+      sibling_offset_map[[fp_key]] <- sib_fsize
+    }
   }
+
+  # Persist updated sidecar: offsets map + fingerprint of this refresh's active log
+  sidecar_out <- list(
+    offsets       = sibling_offset_map,
+    active_fp     = if (!is.na(current_active_fpobj$fp)) current_active_fpobj$fp else NULL,
+    active_fp_len = if (!is.na(current_active_fpobj$fp)) current_active_fpobj$len else NULL
+  )
+  jsonlite::write_json(sidecar_out, sibling_offsets_path, auto_unbox = TRUE)
 
   # Current log from start_offset
   fsize <- file.info(log_path)$size
@@ -637,11 +803,36 @@ if (!interactive()) {
   n_existing_sessions <- if (is.data.frame(existing_sessions)) nrow(existing_sessions) else 0L
   if (is.data.frame(existing_sessions) && nrow(existing_sessions) > 0L) {
     existing_sessions <- as_tibble(existing_sessions)
-    # Combine; new rows overwrite existing for same thread_id
-    all_sessions <- bind_rows(
-      existing_sessions |> filter(!thread_id %in% sessions$thread_id),
-      sessions
-    )
+    # Fix #139: additive merge — combine numeric fields for overlapping thread_ids
+    # rather than replacing the existing row with only this window's aggregate.
+    overlap_s <- inner_join(existing_sessions, sessions, by = "thread_id",
+                            suffix = c("_old", "_new"))
+    if (nrow(overlap_s) > 0L) {
+      merged_overlap_s <- overlap_s |>
+        mutate(
+          started_at        = pmin(started_at_old, started_at_new, na.rm = TRUE),
+          ended_at          = pmax(ended_at_old,   ended_at_new,   na.rm = TRUE),
+          n_turns           = n_turns_old       + n_turns_new,
+          total_tokens      = total_tokens_old  + total_tokens_new,
+          est_cost_usd      = dplyr::case_when(
+                                is.na(est_cost_usd_old) & is.na(est_cost_usd_new) ~ NA_real_,
+                                TRUE ~ dplyr::coalesce(est_cost_usd_old, 0) +
+                                       dplyr::coalesce(est_cost_usd_new, 0)
+                              ),
+          canonical_project = dplyr::coalesce(canonical_project_new,
+                                              canonical_project_old),
+          model             = dplyr::coalesce(model_new, model_old),
+          source            = dplyr::coalesce(source_new, source_old)
+        )
+      # Keep columns present in existing_sessions (drop *_old / *_new suffixes)
+      keep_cols <- intersect(names(existing_sessions), names(merged_overlap_s))
+      merged_overlap_s <- merged_overlap_s |> select(all_of(keep_cols))
+    } else {
+      merged_overlap_s <- existing_sessions[0L, ]
+    }
+    new_only_s <- anti_join(sessions, existing_sessions, by = "thread_id")
+    old_only_s <- anti_join(existing_sessions, sessions,  by = "thread_id")
+    all_sessions <- bind_rows(old_only_s, merged_overlap_s, new_only_s)
   } else {
     all_sessions <- sessions
   }
@@ -664,15 +855,49 @@ if (!interactive()) {
   n_existing_daily <- if (is.data.frame(existing_daily)) nrow(existing_daily) else 0L
   if (is.data.frame(existing_daily) && nrow(existing_daily) > 0L) {
     existing_daily <- as_tibble(existing_daily)
-    # Remove rows that will be replaced by new data for same keys
-    key_cols <- c("date", "canonical_project", "model", "source")
-    key_cols_existing <- intersect(key_cols, names(existing_daily))
-    if (length(key_cols_existing) == length(key_cols)) {
-      new_keys <- daily |> select(all_of(key_cols))
-      existing_daily <- existing_daily |>
-        anti_join(new_keys, by = key_cols)
+    # Fix #139: additive merge — sum numeric fields for overlapping daily keys
+    # rather than replacing the existing row with only this window's aggregate.
+    key_cols         <- c("date", "canonical_project", "model", "source")
+    key_cols_present <- intersect(key_cols, names(existing_daily))
+    if (length(key_cols_present) == length(key_cols)) {
+      # Numeric columns to sum for overlapping rows
+      numeric_daily_cols <- intersect(
+        names(existing_daily),
+        c("input_tokens", "cached_input_tokens", "output_tokens",
+          "reasoning_output_tokens", "total_tokens", "n_turns", "est_cost_usd")
+      )
+      overlap_d <- inner_join(existing_daily, daily, by = key_cols,
+                              suffix = c("_old", "_new"))
+      if (nrow(overlap_d) > 0L) {
+        for (col in numeric_daily_cols) {
+          old_col <- paste0(col, "_old")
+          new_col <- paste0(col, "_new")
+          if (old_col %in% names(overlap_d) && new_col %in% names(overlap_d)) {
+            if (col == "est_cost_usd") {
+              # Preserve NA when BOTH sides are unknown; sum when at least one is known
+              overlap_d[[col]] <- dplyr::case_when(
+                is.na(overlap_d[[old_col]]) & is.na(overlap_d[[new_col]]) ~ NA_real_,
+                TRUE ~ dplyr::coalesce(overlap_d[[old_col]], 0) +
+                       dplyr::coalesce(overlap_d[[new_col]], 0)
+              )
+            } else {
+              overlap_d[[col]] <- dplyr::coalesce(overlap_d[[old_col]], 0) +
+                                   dplyr::coalesce(overlap_d[[new_col]], 0)
+            }
+          }
+        }
+        keep_cols_d <- intersect(names(existing_daily), names(overlap_d))
+        overlap_d <- overlap_d |> select(all_of(keep_cols_d))
+      } else {
+        overlap_d <- existing_daily[0L, ]
+      }
+      new_only_d <- anti_join(daily,          existing_daily, by = key_cols)
+      old_only_d <- anti_join(existing_daily, daily,          by = key_cols)
+      all_daily  <- bind_rows(old_only_d, overlap_d, new_only_d) |> arrange(date)
+    } else {
+      # key columns missing in existing_daily — fall back to full replacement
+      all_daily <- bind_rows(existing_daily, daily) |> arrange(date)
     }
-    all_daily <- bind_rows(existing_daily, daily) |> arrange(date)
   } else {
     all_daily <- daily
   }
