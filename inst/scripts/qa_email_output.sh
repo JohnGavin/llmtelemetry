@@ -26,9 +26,11 @@ for pat in "Error in" "Error:" "invalid 'trim'" "prettyNum" "object .* not found
   fi
 done
 
-# NaN/NULL — skip inside HTML comments (QA markers may contain "NULL" legitimately)
+# NaN/NULL — skip inside HTML comments (QA markers may contain "NULL" legitimately).
+# Use case-sensitive matching (no -i) to avoid false positives from substrings
+# containing "nan" (e.g. session IDs, project names). Fixes issue #137.
 for pat in "NaN" ">NULL<" "NA_real_"; do
-  COUNT=$(grep -v '<!--' "$FILE" | grep -ci "$pat" || true)
+  COUNT=$(grep -v '<!--' "$FILE" | grep -c "$pat" || true)
   if [ "$COUNT" -gt 0 ]; then
     echo "FAIL: '$pat' in visible content ($COUNT hits)"
     ERRORS=$((ERRORS + COUNT))

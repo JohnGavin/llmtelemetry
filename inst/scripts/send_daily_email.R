@@ -1,6 +1,14 @@
 # send_daily_email.R
 # Send daily LLM usage report via Gmail
-# Called from GitHub Actions workflow: .github/workflows/daily-llm-report.yaml
+# Called from GitHub Actions workflow: .github/workflows/daily-report.yaml
+#
+# Flags:
+#   --build-only  Build HTML and write to /tmp/email_qa.html, then exit 0.
+#                 Used by CI to run bash QA before the send step.
+#   (default)     Build, run inline R QA, then send via SMTP.
+
+args <- commandArgs(trailingOnly = TRUE)
+build_only <- "--build-only" %in% args
 
 library(blastula)
 library(dplyr)
@@ -91,18 +99,33 @@ safe_date <- function(x) {
 
 # Helper for formatting
 dollar <- function(x) {
-  if (is.na(x) || is.null(x) || is.nan(x)) return("-")
+  if (is.null(x) || length(x) == 0) return("-")
+  if (is.na(x) || is.nan(x) || !is.finite(x)) return("-")
   sprintf("$%.2f", x)
 }
 comma <- function(x) {
-  if (is.na(x) || is.null(x) || is.nan(x)) return("-")
+  if (is.null(x) || length(x) == 0) return("-")
+  if (is.na(x) || is.nan(x) || !is.finite(x)) return("-")
   format(x, big.mark = ",", scientific = FALSE)
 }
 millions <- function(x) {
-  if (is.na(x) || is.null(x) || is.nan(x)) return("-")
+  if (is.null(x) || length(x) == 0) return("-")
+  if (is.na(x) || is.nan(x) || !is.finite(x)) return("-")
   sprintf("%.1fM", x / 1e6)
 }
-format_hhmm <- function(mins) sprintf("%02d:%02d", as.integer(mins %/% 60), as.integer(mins %% 60))
+# Guard for raw integer/count insertions that bypass dollar/comma/millions.
+# Prevents NaN or NA from reaching sprintf %s slots (cc_days, gm_days, etc).
+email_safe_num <- function(x, fallback = "-") {
+  if (is.null(x) || length(x) == 0) return(fallback)
+  if (is.na(x) || is.nan(x) || !is.finite(x)) return(fallback)
+  as.character(as.integer(x))
+}
+format_hhmm <- function(mins) {
+  if (is.null(mins) || length(mins) == 0 || is.na(mins) || !is.finite(mins)) {
+    return("-:-")
+  }
+  sprintf("%02d:%02d", as.integer(mins %/% 60), as.integer(mins %% 60))
+}
 
 # Dark mode color palette
 dark_bg <- "#1a1a2e"
@@ -559,8 +582,8 @@ if (!has_data) {
   dark_border, dark_text, dollar(cc_cost_day),
   dark_border, accent_blue, millions(total_tokens),
   dark_border, dark_text, millions(cc_tok_day),
-  dark_border, dark_text, cc_days,
-  dark_border, dark_text, n_sessions,
+  dark_border, dark_text, email_safe_num(cc_days, "0"),
+  dark_border, dark_text, email_safe_num(n_sessions, "0"),
   dark_border, dark_text, ifelse(is.na(cc_entries), "-", comma(cc_entries)),
   dark_border, dark_muted, as.character(cc_start),
   dark_border, dark_muted, as.character(cc_end))
@@ -584,8 +607,8 @@ if (!has_data) {
   dark_border, dark_text, dollar(gm_cost_day),
   dark_border, accent_blue, millions(gm_tokens),
   dark_border, dark_text, millions(gm_tok_day),
-  dark_border, dark_text, gm_days,
-  dark_border, dark_text, ifelse(gm_sessions_count == 0, "-", gm_sessions_count),
+  dark_border, dark_text, email_safe_num(gm_days),
+  dark_border, dark_text, email_safe_num(gm_sessions_count, "0"),
   dark_border, dark_text, comma(gm_entries),
   dark_border, dark_muted, as.character(gm_start),
   dark_border, dark_muted, as.character(gm_end))
@@ -609,7 +632,7 @@ if (!has_data) {
   dark_border, dark_text, dollar(cm_cost_day),
   dark_border, accent_blue, millions(cm_tokens),
   dark_border, dark_text, millions(cm_tok_day),
-  dark_border, dark_text, cm_days,
+  dark_border, dark_text, email_safe_num(cm_days),
   dark_border, dark_text, # Sessions (2 placeholders for style, value is hardcoded '-')
   dark_border, dark_text, comma(cm_entries),
   dark_border, dark_muted, as.character(cm_start),
@@ -649,8 +672,8 @@ if (!has_data) {
       dark_border, dark_text, dollar(cx_cost_day),
       dark_border, accent_blue, millions(cx_total_tokens),
       dark_border, dark_text, millions(cx_tok_day),
-      dark_border, dark_text, cx_days,
-      dark_border, dark_text, cx_sessions,
+      dark_border, dark_text, email_safe_num(cx_days, "0"),
+      dark_border, dark_text, email_safe_num(cx_sessions, "0"),
       dark_border, dark_text,
       dark_border, dark_muted, as.character(cx_start),
       dark_border, dark_muted, as.character(cx_end))
@@ -867,6 +890,13 @@ if (!has_data) {
 # Save HTML for CI QA step (always, even if checks pass)
 writeLines(email_body, "/tmp/email_qa.html")
 message("Email HTML saved to /tmp/email_qa.html for QA")
+
+# In --build-only mode (used by CI), exit here so the bash QA step can run
+# before the send step.  The send step reads /tmp/email_qa.html directly.
+if (build_only) {
+  message("--build-only: exiting after HTML build; bash QA will run next")
+  quit(status = 0)
+}
 
 qa_errors <- character(0)
 
