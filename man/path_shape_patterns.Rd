@@ -2,7 +2,7 @@
 % Please edit documentation in R/sensitive_patterns.R
 \name{path_shape_patterns}
 \alias{path_shape_patterns}
-\title{Patterns that indicate filesystem path shape}
+\title{Patterns that identify genuine filesystem path leaks in any field}
 \usage{
 path_shape_patterns()
 }
@@ -10,17 +10,24 @@ path_shape_patterns()
 character vector of path-shape substrings (no anchors)
 }
 \description{
-A subset of \code{sensitive_verify_patterns()} that identifies filesystem path
-structure regardless of field-level allowlisting.
+These patterns are specific enough to distinguish an actual filesystem path
+from a commit message describing a concept.  They are applied to every
+field, including commit \code{message} fields that have a bare-token allowlist.
 }
 \details{
-Commit \code{message} fields may legitimately contain bare author names
-("johngavin") or branch references ("worktree-agent-abc").  But a message
-containing "/Users/johngavin/..." or "-private-tmp-roborev-worktree-1234"
-is a genuine path leak and must be caught even in the message field.
+Examples of what each catches:
+\itemize{
+\item \verb{/Users/johngavin/docs_gh/...}  — actual home-dir path
+\item \verb{/private/tmp/roborev-worktree-...} — actual macOS tmp path
+\item \verb{/tmp/fixer-worktree-...} — actual Linux tmp path
+\item \code{-private-tmp-roborev-worktree-...} — dashed form of macOS tmp
+\item \code{-tmp-fixer-worktree-...} — dashed form of Linux tmp
+\item \code{Users-johngavin} — dashed form of home-dir prefix in ID fields
+}
 
-Use this set when scanning a field that has an allowlist for author-name
-tokens — apply the allowlist to the base \code{sensitive_verify_patterns()} but
-ALWAYS apply \code{path_shape_patterns()} on top (path-shape patterns are not
-allowlist-eligible).
+What these do NOT catch (intentional):
+\itemize{
+\item \code{"feat: add hardcoded /Users/ path check"} — describes the concept, not
+a real path (no username following /Users/)
+}
 }

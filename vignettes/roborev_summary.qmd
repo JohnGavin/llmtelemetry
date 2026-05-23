@@ -1,0 +1,253 @@
+---
+title: "Roborev Review Summary"
+date: "`r Sys.Date()`"
+format:
+  html:
+    page-layout: full
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+    theme: darkly
+    css: |
+      body { background-color: #1a1a1a !important; color: #e0e0e0 !important; }
+      .card { background-color: #222 !important; border-color: #444 !important; }
+      table.dataTable th, table.dataTable td { background-color: #222 !important; color: #e0e0e0 !important; }
+      table.dataTable thead th { background-color: #2a2a2a !important; }
+      .dataTables_wrapper .dataTables_filter input { background-color: #333; color: #e0e0e0; }
+      .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #ccc !important; }
+      h2, h3 { color: #4ea8de !important; }
+      .pulse-table td, .pulse-table th { padding: 4px 10px; }
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(llmtelemetry)
+library(DT)
+library(plotly)
+
+# safe_tar_read: reads a named RDS from inst/extdata/vignettes/ if it exists,
+# otherwise falls back to the fixture generator for local development.
+# In CI the targets pipeline writes RDS files to inst/extdata/vignettes/
+# before the vignette is rendered.
+safe_tar_read <- function(name, fixture_fn = NULL) {
+  rds_path <- system.file(
+    file.path("extdata", "vignettes", paste0(name, ".rds")),
+    package = "llmtelemetry"
+  )
+  if (nchar(rds_path) > 0 && file.exists(rds_path)) {
+    return(readRDS(rds_path))
+  }
+  # Fallback: use fixture generator if provided
+  if (!is.null(fixture_fn)) {
+    return(fixture_fn())
+  }
+  stop(paste0("Target '", name, "' not found. ",
+              "Run tar_make() or provide a fixture_fn."))
+}
+
+# Load fixture helpers for local development
+fixture_path <- system.file(
+  "testthat/fixtures/roborev_page_fixture.R",
+  package = "llmtelemetry"
+)
+if (nchar(fixture_path) == 0) {
+  # Running from source
+  fixture_path <- file.path(
+    here::here(), "tests", "testthat", "fixtures", "roborev_page_fixture.R"
+  )
+}
+if (file.exists(fixture_path)) source(fixture_path)
+
+# Load pre-computed targets (falls back to fixtures in dev)
+vig_roborev_pulse <- safe_tar_read(
+  "vig_roborev_pulse",
+  fixture_fn = if (exists("make_roborev_findings")) function() {
+    build_pulse_table(make_roborev_findings(), make_roborev_loops())
+  } else NULL
+)
+
+vig_roborev_trend <- safe_tar_read(
+  "vig_roborev_trend",
+  fixture_fn = if (exists("make_roborev_findings")) function() {
+    plot_open_findings_trend(make_roborev_findings())
+  } else NULL
+)
+
+vig_roborev_top <- safe_tar_read(
+  "vig_roborev_top",
+  fixture_fn = if (exists("make_roborev_findings")) function() {
+    plot_top_files(make_roborev_findings())
+  } else NULL
+)
+
+vig_roborev_loops <- safe_tar_read(
+  "vig_roborev_loops",
+  fixture_fn = if (exists("make_roborev_loops")) function() {
+    plot_loops_table(make_roborev_loops())
+  } else NULL
+)
+
+vig_roborev_inflow <- safe_tar_read(
+  "vig_roborev_inflow",
+  fixture_fn = if (exists("make_roborev_findings")) function() {
+    plot_inflow_outflow(make_roborev_findings())
+  } else NULL
+)
+
+vig_roborev_resolution <- safe_tar_read(
+  "vig_roborev_resolution",
+  fixture_fn = if (exists("make_roborev_findings")) function() {
+    plot_resolution_time(make_roborev_findings())
+  } else NULL
+)
+
+vig_roborev_recent <- safe_tar_read(
+  "vig_roborev_recent",
+  fixture_fn = if (exists("make_roborev_findings")) function() {
+    build_recent_table(make_roborev_findings(), days = 30L)
+  } else NULL
+)
+
+# Convenience helpers for inline prose
+n_open <- if (is.data.frame(vig_roborev_pulse)) {
+  row <- vig_roborev_pulse[vig_roborev_pulse$metric == "Open findings", ]
+  if (nrow(row) > 0) row$value[1] else "—"
+} else "—"
+
+n_loops <- if (is.data.frame(vig_roborev_pulse)) {
+  row <- vig_roborev_pulse[vig_roborev_pulse$metric == "Active loops", ]
+  if (nrow(row) > 0) row$value[1] else "—"
+} else "—"
+
+n_escalate <- if (is.data.frame(vig_roborev_pulse)) {
+  row <- vig_roborev_pulse[vig_roborev_pulse$metric == "  Escalate (no ack)", ]
+  if (nrow(row) > 0) row$value[1] else "—"
+} else "—"
+```
+
+[roborev (the automated code-review system)](https://github.com/JohnGavin/llm/issues/144)
+is the project's hook-driven review pipeline that runs `critic` and `fixer` agents on
+every commit and tracks whether findings recur across review rounds. This page provides
+a single-glance health summary of the review pipeline's current state.
+
+## 1. Pulse
+
+Current state at a glance. All values are computed from the pre-built targets pipeline
+and reflect the latest `tar_make()` run. There are currently **`r n_open`** open
+findings and **`r n_loops`** active
+<a href="https://github.com/JohnGavin/llm/issues/144"><abbr title="roborev: automated code-review system that tracks findings across review rounds">roborev</abbr></a>
+loops, of which **`r n_escalate`** are in the Tier 3 escalate state with no acknowledgement.
+
+```{r pulse-table}
+if (is.data.frame(vig_roborev_pulse) && nrow(vig_roborev_pulse) > 0) {
+  knitr::kable(
+    vig_roborev_pulse,
+    col.names = c("Metric", "Value"),
+    format = "html",
+    table.attr = 'class="table table-sm table-dark pulse-table"'
+  )
+}
+```
+
+## 2. Trends
+
+Open finding counts over time, broken down by severity. The stacked area chart
+shows how the backlog has evolved — widening bands indicate accumulation, shrinking
+bands indicate resolution progress. The range slider defaults to the last 90 days;
+drag to inspect older periods.
+
+```{r trend-plot}
+if (!is.null(vig_roborev_trend)) vig_roborev_trend
+```
+
+Weekly inflow (new findings opened) versus outflow (findings resolved) shows the
+velocity balance. When inflow consistently exceeds outflow the backlog grows; the
+goal is net-zero or negative weeks. The line chart uses the same severity palette
+as the trend above, with range slider defaulting to the last 90 days.
+
+```{r inflow-outflow}
+if (!is.null(vig_roborev_inflow)) vig_roborev_inflow
+```
+
+Median hours to resolve a finding, by severity. Critical findings that take hundreds
+of hours to resolve indicate blocked escalation paths; low findings with long
+resolution times may indicate deprioritisation. Points are coloured using the same
+severity palette as all other charts on this page.
+
+```{r resolution-time}
+if (!is.null(vig_roborev_resolution)) vig_roborev_resolution
+```
+
+## 3. Top Problems
+
+Files ranked by open-finding count. The Cleveland dot plot shows each file as a point
+at its open count, coloured by the most severe open finding. Files near the right edge
+of the chart are highest-priority review targets — they have accumulated the most
+unresolved findings. Only the top 15 files are shown; hover a point to see counts and
+worst severity.
+
+```{r top-files}
+if (!is.null(vig_roborev_top)) vig_roborev_top
+```
+
+## 4. Loop Detector
+
+A "loop" is a finding that has been flagged, fixed, and re-opened more than once
+across multiple review cycles. Loops indicate that the fix did not address the root
+cause, or that a systemic pattern keeps re-introducing the same defect.
+
+The table below lists all detected loops, sorted by cycle count (most repetitions
+first). Row colour encodes the loop tier:
+
+- **Escalate** (red): stuck loops with no acknowledgement — Tier 3 escalation issues
+  are filed automatically via `inst/scripts/escalate_stuck_loops.R`.
+- **Block** (orange): loops actively blocking review resolution.
+- **Watch** (yellow): loops under monitoring but not yet blocking.
+
+```{r loops-table}
+if (!is.null(vig_roborev_loops)) vig_roborev_loops
+```
+
+## 5. Recent Activity
+
+All findings opened or resolved in the last 30 days, ordered by find date descending.
+Use the search box to filter by file, severity, or summary text.
+
+```{r recent-activity}
+if (!is.null(vig_roborev_recent)) vig_roborev_recent
+```
+
+## Methodology
+
+### What this vignette computes
+
+This vignette displays the current state of the
+<a href="https://github.com/JohnGavin/llm/issues/144"><abbr title="roborev: automated code-review system that tracks findings across review rounds">roborev</abbr></a>
+review pipeline. It reads seven pre-computed targets — `vig_roborev_pulse`,
+`vig_roborev_trend`, `vig_roborev_top`, `vig_roborev_loops`, `vig_roborev_inflow`,
+`vig_roborev_resolution`, and `vig_roborev_recent` — built by
+`plan_roborev_vignette()` from the `roborev_findings` and `roborev_loops` upstream
+targets. Zero inline computation is performed in this vignette: all aggregations
+and chart objects are produced by the pipeline and served as RDS files from
+`inst/extdata/vignettes/` in CI.
+
+### Data sources
+
+- `roborev_findings` target: produced by Agent 1's `plan_roborev.R`; sourced from
+  the `roborev_findings` table in `~/.claude/logs/unified.duckdb`, refreshed on
+  every `critic` + `fixer` agent run.
+- `roborev_loops` target: produced by Agent 2's loop-detection plan; written to
+  `~/.claude/logs/unified.duckdb` by the `detect_loops()` function run after each
+  review cycle.
+- During local development and testing: `tests/testthat/fixtures/roborev_page_fixture.R`
+  provides synthetic data with the same shape as production.
+
+### AI disclosure
+
+This vignette was developed with assistance from Anthropic's Claude (model: Opus 4.7
+and Sonnet 4.6). AI helped with code structure, prose drafting, and visualization
+choices. All analytical decisions and data interpretations are the author's
+responsibility.

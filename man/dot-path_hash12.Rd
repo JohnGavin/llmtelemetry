@@ -13,7 +13,6 @@
 A 12-character lowercase hex string.
 }
 \description{
-Uses \code{digest::digest()} with MD5 when available; falls back to a weighted
-integer sum approach so the function works without the \code{digest} package.
+Uses \code{digest::digest()} with MD5 (digest is in Imports so always available).
 }
 \keyword{internal}
