@@ -55,6 +55,9 @@ jobs:
         working-directory: vignettes
         run: quarto add quarto-ext/shinylive --no-prompt
 
+      - name: Guard — parse {shinylive-r} chunk before render (issue #159)
+        run: Rscript inst/scripts/check_shinylive_parse.R vignettes/dashboard_shinylive.qmd
+
       - name: Export dashboard data
         run: Rscript inst/scripts/export_dashboard_data.R
 
