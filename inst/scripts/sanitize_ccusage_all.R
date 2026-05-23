@@ -28,6 +28,56 @@ suppressPackageStartupMessages({
 })
 
 # ---------------------------------------------------------------------------
+# SENSITIVE_ID_PATTERN and SENSITIVE_VERIFY_PATTERNS — single source of truth
+# ---------------------------------------------------------------------------
+# Both constants are now derived from the canonical package functions
+# llmtelemetry::sensitive_id_pattern() and llmtelemetry::sensitive_verify_patterns()
+# defined in R/sensitive_patterns.R.
+#
+# When this script is sourced for testing (via the package), the functions are
+# already available through the package namespace.  When called as a standalone
+# Rscript (outside the package), we define fallback inline functions so the
+# script remains self-contained.
+#
+# NEVER re-define SENSITIVE_ID_PATTERN or SENSITIVE_VERIFY_PATTERNS inline here.
+# If you need to change a pattern, change R/sensitive_patterns.R ONLY.
+
+if (!exists("sensitive_id_pattern", mode = "function")) {
+  # Standalone Rscript fallback — mirrors R/sensitive_patterns.R exactly.
+  # This block is ONLY reached when the script runs outside the package
+  # (e.g. cron refresh_and_preserve.sh).  Inside the package the namespace
+  # provides the function automatically.
+  sensitive_id_pattern <- function() {
+    paste0(
+      "^-Users-",           # raw home-dir prefix (dashed form)
+      "|^/",                # Unix absolute path: /Users/..., /private/tmp/..., /var/..., /tmp/...
+      "|^-private-tmp-",    # macOS /private/tmp/ in dashed form
+      "|^-tmp-",            # generic /tmp/ in dashed form
+      "|-worktree-",        # any *-worktree-* substring (numeric, named, generic)
+      "|worktree-agent-",   # .claude/worktrees/agent-... (belt-and-suspenders)
+      "|johngavin"          # username anywhere
+    )
+  }
+  sensitive_verify_patterns <- function() {
+    c(
+      "Users-johngavin",    # home-dir prefix class   (^-Users-)
+      "/Users/",            # absolute-path class (^/) — home dirs
+      "/private/",          # absolute-path class (^/) — macOS /private/tmp/
+      "/tmp/",              # absolute-path class (^/) — Linux /tmp/
+      "/var/",              # absolute-path class (^/) — Linux /var/
+      "-private-tmp-",      # macOS tmp class          (^-private-tmp-)
+      "-tmp-",              # generic tmp class         (^-tmp-)
+      "-worktree-",         # any worktree class        (-worktree-)
+      "worktree-agent-",    # named agent worktree      (worktree-agent-)
+      "johngavin"           # username class
+    )
+  }
+}
+
+SENSITIVE_ID_PATTERN     <- sensitive_id_pattern()
+SENSITIVE_VERIFY_PATTERNS <- sensitive_verify_patterns()
+
+# ---------------------------------------------------------------------------
 # Helpers — canonicalization (mirrors R/canonicalize.R internals)
 # ---------------------------------------------------------------------------
 
@@ -95,16 +145,21 @@ suppressPackageStartupMessages({
 #' @return character scalar — sanitized ID
 derive_canonical_id <- function(raw_id) {
   if (is.null(raw_id) || is.na(raw_id) || !nzchar(raw_id)) return(raw_id)
-  # Only rewrite if it looks like a path (starts with "-Users-" or "/")
-  if (!grepl("^-Users-|^/", raw_id)) return(raw_id)
+  # Rewrite any ID that looks like a private filesystem path or contains a
+  # private identifier (home-dir prefix, /private/tmp/, worktree, username).
+  if (!grepl(SENSITIVE_ID_PATTERN, raw_id, perl = TRUE)) return(raw_id)
   canonical <- .canonicalize_project_local_scalar(raw_id)
   if (is.na(canonical) || !nzchar(canonical)) {
-    # Fallback: strip the home-dir prefix and use remainder
+    # Fallback: strip the home-dir prefix and use remainder.
+    # For non -Users- prefixes (e.g. -private-tmp-, -tmp-) the strip below
+    # leaves an empty string, which is caught by the !nzchar() guard.
     canonical <- gsub("^-Users-johngavin-docs[-_]?[-_]?(?:pers-NHS-health-data-antigravity-|gh-|)",
                       "", raw_id, perl = TRUE)
     canonical <- gsub("^proj-", "", canonical)
     canonical <- gsub("-", "/", canonical, fixed = TRUE)
-    if (!nzchar(canonical)) canonical <- "unknown"
+    if (!nzchar(canonical) || grepl(SENSITIVE_ID_PATTERN, canonical, perl = TRUE)) {
+      canonical <- "unknown"
+    }
   }
   # Append stable hash so downstream consumers can correlate across refreshes
   hash12 <- substr(digest::digest(raw_id, algo = "md5"), 1, 12)
@@ -118,7 +173,7 @@ derive_canonical_id <- function(raw_id) {
 #' @return character scalar
 sanitize_project_path <- function(pp) {
   if (is.null(pp) || is.na(pp) || !nzchar(pp)) return(pp)
-  if (!grepl("^-Users-|^/", pp)) return(pp)
+  if (!grepl(SENSITIVE_ID_PATTERN, pp, perl = TRUE)) return(pp)
   # Strip UUID suffix before canonicalizing
   pp_nouid <- sub("/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", "", pp)
   derive_canonical_id(pp_nouid)
@@ -138,13 +193,13 @@ sanitize_session_all <- function(data) {
 
   for (i in seq_along(sessions)) {
     sid <- sessions[[i]]$sessionId
-    if (!is.null(sid) && grepl("^-Users-|^/", sid)) {
+    if (!is.null(sid) && grepl(SENSITIVE_ID_PATTERN, sid, perl = TRUE)) {
       sessions[[i]]$sessionId <- derive_canonical_id(sid)
       n_sanitized <- n_sanitized + 1L
     }
 
     pp <- sessions[[i]]$projectPath
-    if (!is.null(pp) && grepl("^-Users-|^/", pp)) {
+    if (!is.null(pp) && grepl(SENSITIVE_ID_PATTERN, pp, perl = TRUE)) {
       sessions[[i]]$projectPath <- sanitize_project_path(pp)
       n_sanitized <- n_sanitized + 1L
     }
@@ -171,15 +226,19 @@ sanitize_daily_all <- function(data) {
   # Build mapping from raw key to canonical key
   raw_keys <- names(projects)
   canonical_keys <- vapply(raw_keys, function(k) {
-    if (grepl("^-Users-|^/", k)) {
+    if (grepl(SENSITIVE_ID_PATTERN, k, perl = TRUE)) {
       canonical <- .canonicalize_project_local_scalar(k)
       if (is.na(canonical) || !nzchar(canonical)) {
-        # Fallback: strip prefix, convert dashes
+        # Fallback: strip the home-dir prefix and use remainder.
+        # For non -Users- prefixes (e.g. -private-tmp-) the strip leaves an
+        # empty string or still contains private tokens, caught below.
         canonical <- gsub("^-Users-johngavin-docs[-_]?[-_]?(?:pers-NHS-health-data-antigravity-|gh-|)",
                           "", k, perl = TRUE)
         canonical <- gsub("^proj-", "", canonical)
         canonical <- gsub("-", "/", canonical, fixed = TRUE)
-        if (!nzchar(canonical)) canonical <- "unknown"
+        if (!nzchar(canonical) || grepl(SENSITIVE_ID_PATTERN, canonical, perl = TRUE)) {
+          canonical <- "unknown"
+        }
       }
       canonical
     } else {
@@ -224,9 +283,10 @@ sanitize_daily_all <- function(data) {
           }, numeric(1))
           base_entry[[fld]] <- sum(vals)
         }
-        # Union of modelsUsed
+        # Union of modelsUsed — preserve array shape so write_json(auto_unbox=TRUE)
+        # serialises a single-model entry as ["model"] not "model" (Finding 2).
         all_models <- unique(unlist(lapply(same_date, `[[`, "modelsUsed")))
-        base_entry$modelsUsed <- all_models
+        base_entry$modelsUsed <- as.list(all_models)
         # Concatenate modelBreakdowns
         all_breakdowns <- do.call(c, lapply(same_date, `[[`, "modelBreakdowns"))
         base_entry$modelBreakdowns <- all_breakdowns
@@ -276,23 +336,27 @@ if (!interactive() && !isTRUE(getOption("sanitize_ccusage_all_sourced_for_test")
               daily_result$n_sanitized, basename(daily_file)))
 
   # --- ccusage_blocks_all.json (verify clean, do not modify) ---
+  # SENSITIVE_VERIFY_PATTERNS is the single source of truth for the verification
+  # gate — derived from the same pattern classes as SENSITIVE_ID_PATTERN above so
+  # they can never drift.  See the SENSITIVE_ID_PATTERN comment block for the
+  # class-by-class mapping.
   blocks_content <- paste(readLines(blocks_file, warn = FALSE), collapse = "\n")
-  blocks_leaks <- grepl("Users-johngavin|sessionId.*Users|projectPath.*Users",
-                        blocks_content, perl = TRUE)
+  blocks_leaks <- any(vapply(SENSITIVE_VERIFY_PATTERNS,
+    function(p) grepl(p, blocks_content, perl = TRUE, fixed = FALSE), logical(1)))
   if (blocks_leaks) {
-    warning("ccusage_blocks_all.json contains path leaks — manual review needed")
+    stop("ccusage_blocks_all.json contains path leaks — manual review needed")
   } else {
     cat("  ccusage_blocks_all.json: verified clean\n")
   }
 
   # --- Final verification ---
   cat("\nVerification:\n")
-  for (f in c(session_file, daily_file)) {
+  for (f in c(session_file, daily_file, blocks_file)) {
     txt <- paste(readLines(f, warn = FALSE), collapse = "\n")
-    n_remaining <- sum(sapply(
-      c("Users-johngavin", "sessionId.*Users", "projectPath.*Users"),
-      function(p) length(gregexpr(p, txt, perl = TRUE)[[1]][gregexpr(p, txt, perl = TRUE)[[1]] > 0])
-    ))
+    n_remaining <- sum(vapply(SENSITIVE_VERIFY_PATTERNS, function(p) {
+      m <- gregexpr(p, txt, perl = TRUE)[[1]]
+      sum(m > 0L)
+    }, integer(1)))
     cat(sprintf("  %s: %d leak pattern(s) remaining\n", basename(f), n_remaining))
     if (n_remaining > 0L) {
       stop("Sanitization incomplete — leaks remain in ", basename(f))

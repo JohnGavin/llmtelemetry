@@ -1,33 +1,107 @@
+# ---------------------------------------------------------------------------
+# Helpers used by both the main scan test and the unit tests below.
+# ---------------------------------------------------------------------------
+
+#' Scan a character vector of values for forbidden patterns.
+#'
+#' @param values character vector — the column or field values to scan
+#' @param patterns character vector — patterns to check (grepl, perl = TRUE)
+#' @param field_name character(1) — name for error messages
+#' @param file_name  character(1) — source file for error messages
+#' @return invisible(NULL); calls expect_false() for each pattern hit
+scan_field <- function(values, patterns, field_name, file_name) {
+  col_text <- paste(values, collapse = "\n")
+  for (pat in patterns) {
+    expect_false(
+      grepl(pat, col_text, perl = TRUE),
+      info = sprintf(
+        "%s column '%s' contains forbidden pattern '%s'",
+        file_name, field_name, pat
+      )
+    )
+  }
+  invisible(NULL)
+}
+
+# ---------------------------------------------------------------------------
+# Pattern constants — derived from the package's single source of truth.
+# ---------------------------------------------------------------------------
+
+# Base patterns from the canonical package function (covers all classes in
+# sensitive_id_pattern()).  See R/sensitive_patterns.R for the class table.
+base_forbidden <- sensitive_verify_patterns()
+
+# Additional structural patterns not in the verify set but relevant for the
+# committed-extdata regression gate.
+structural_forbidden <- c(
+  "[A-Za-z0-9]{8,}/repo", # agent-worktree-id/repo style (e.g. "D73dOZsvyf/repo")
+  "[A-Za-z0-9]{8,}-repo", # dash-form agent worktree     (e.g. "D73dOZsvyf-repo")
+  "pers-NHS",              # specific medical project leak
+  "antigravity"            # specific leaked name
+)
+
+# Full set applied to all non-allowlisted fields.
+forbidden_patterns <- c(base_forbidden, structural_forbidden)
+
+# Bare-token allowlist for commit MESSAGE fields.
+# These tokens may appear in author-written text without constituting a leak:
+#   - "johngavin"     — author name in e.g. "fix: check johngavin cache"
+#   - "JohnGavin"     — GitHub handle in PR merge messages
+#   - "worktree-agent-" — branch references in merge-commit messages
+#   - "/Users/"       — when describing the concept (not a real path with username)
+# IMPORTANT: allowlisting a token removes it from the scan for bare occurrences,
+# but path_shape_patterns() patterns are ADDED BACK unconditionally so that a
+# message containing "/Users/johngavin/..." is still caught.
+commit_message_bare_allowlist <- c(
+  "johngavin",        # bare username — OK in message context
+  "JohnGavin",        # GitHub handle — OK in message context
+  "worktree-agent-",  # branch reference — OK in message context
+  "/Users/",          # abstract mention of the /Users/ directory concept
+  "/private/",        # abstract mention (no username following = not a real path)
+  "/tmp/"             # abstract mention
+)
+
+# Which fields in git commit data are commit message text:
+commit_message_fields_json   <- "message"   # key name in JSON array
+commit_message_field_parquet <- "message"   # column name in parquet
+
+# Patterns for commit message fields:
+# 1. Start from the full forbidden set.
+# 2. Remove bare-token allowances.
+# 3. Add path_shape_patterns() unconditionally — these are specific enough
+#    (include username or specific tmp context) to distinguish real paths from
+#    conceptual references.
+strict_message_patterns <- unique(c(
+  setdiff(forbidden_patterns, commit_message_bare_allowlist),
+  path_shape_patterns()
+))
+
+# ---------------------------------------------------------------------------
+# Main regression gate: scan every committed extdata file.
+# ---------------------------------------------------------------------------
+
 test_that("no filesystem-path-style strings in committed extdata", {
   # Use testthat::test_path() to locate the package root correctly whether
   # running via devtools::test(), R CMD check, or in a git worktree.
   pkg_root <- normalizePath(file.path(test_path(), "..", ".."), mustWork = FALSE)
-  extdata_dir    <- file.path(pkg_root, "inst", "extdata")
-  parquet_dir    <- file.path(pkg_root, "inst", "extdata", "telemetry")
+  extdata_dir <- file.path(pkg_root, "inst", "extdata")
+  parquet_dir <- file.path(pkg_root, "inst", "extdata", "telemetry")
 
-  json_files <- list.files(extdata_dir, pattern = "\\.json$", full.names = TRUE)
+  json_files    <- list.files(extdata_dir, pattern = "\\.json$",    full.names = TRUE)
   parquet_files <- list.files(parquet_dir, pattern = "\\.parquet$",
                               recursive = TRUE, full.names = TRUE)
 
-  # Patterns that indicate private filesystem paths or leaked project names
-  forbidden_patterns <- c(
-    "-Users-johngavin",     # raw home-dir prefix
-    "[A-Za-z0-9]{8,}/repo", # agent-worktree-id/repo style
-    "[A-Za-z0-9]{8,}-repo", # dash-form agent worktree (e.g. "D73dOZsvyf-repo")
-    "pers-NHS",             # specific medical project leak
-    "antigravity"           # specific leaked name
-  )
-
-  # JSON files to skip:
-  # - ccusage_daily_raw_*: legacy raw snapshots not generated by export script
-  # - github_issue_events.json: raw GH API dump containing PR text where
-  #   English phrases like "statistical-repo" match the agent-worktree regex
-  #   but are not path leaks. This file is not generated by export_dashboard_data.R.
-  # - test.json: scratch/developer file, not a dashboard export
-  # NOTE: ccusage_daily_all.json, ccusage_session_all.json, and ccusage_blocks_all.json
-  # are all sanitized and MUST be scanned — they were removed from skip_basenames as part
-  # of the privacy-regression fix (roborev Issue #1, #118).
-  # ccusage_blocks_all.json audited 2026-05-19: 0 forbidden-pattern hits (issue #118).
+  # JSON files to skip entirely (not generated by export_dashboard_data.R):
+  # - ccusage_daily_raw_*: legacy raw snapshots
+  # - github_issue_events.json: raw GH API dump with English phrases that match
+  #   the agent-worktree regex but are not path leaks
+  # - test.json: scratch/developer file
+  # NOTE: git_commits_by_project.json is NO LONGER skipped wholesale (round-3
+  # Finding B fix).  Its "message" field is allowed to contain author-written
+  # tokens; all other fields (project, canonical_project, hash, date, ...) are
+  # fully scanned.  See field-specific logic below.
+  # NOTE: ccusage_daily_all.json, ccusage_session_all.json, and
+  # ccusage_blocks_all.json are sanitized and MUST be scanned.
   skip_basenames <- c(
     "ccusage_daily_raw_20260220.json",
     "ccusage_daily_raw_20260221.json",
@@ -36,34 +110,252 @@ test_that("no filesystem-path-style strings in committed extdata", {
   )
   json_files <- json_files[!basename(json_files) %in% skip_basenames]
 
-  for (f in json_files) {
-    content <- readLines(f, warn = FALSE)
-    text <- paste(content, collapse = "\n")
-    for (pat in forbidden_patterns) {
-      expect_false(
-        grepl(pat, text, perl = TRUE),
-        info = sprintf("%s contains forbidden pattern '%s'", basename(f), pat)
-      )
-    }
-  }
-
-  # Parquet files: read each into a data frame, check string columns for patterns
   con <- DBI::dbConnect(duckdb::duckdb())
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
 
+  for (f in json_files) {
+    is_commit_file <- basename(f) == "git_commits_by_project.json"
+
+    if (!is_commit_file) {
+      # Standard whole-file scan — every pattern must be absent.
+      content <- readLines(f, warn = FALSE)
+      text <- paste(content, collapse = "\n")
+      for (pat in forbidden_patterns) {
+        expect_false(
+          grepl(pat, text, perl = TRUE),
+          info = sprintf("%s contains forbidden pattern '%s'", basename(f), pat)
+        )
+      }
+    } else {
+      # git_commits_by_project.json: field-specific scan.
+      # "message" field may contain bare author-name tokens (not path leaks);
+      # all other fields are fully scanned.
+      # IMPORTANT: path-shape patterns ARE enforced on the message field too —
+      # a message containing "/Users/johngavin/..." is still a leak.
+      commits <- jsonlite::fromJSON(f, simplifyDataFrame = TRUE)
+      non_msg_cols <- setdiff(names(commits), commit_message_fields_json)
+
+      for (col in non_msg_cols) {
+        if (is.character(commits[[col]])) {
+          scan_field(commits[[col]], forbidden_patterns, col, basename(f))
+        }
+      }
+
+      # Message field: bare-token allowlist applied, but path-shape is NOT waived.
+      if (commit_message_fields_json %in% names(commits)) {
+        msg_values <- commits[[commit_message_fields_json]]
+        if (is.character(msg_values)) {
+          scan_field(msg_values, strict_message_patterns, "message", basename(f))
+        }
+      }
+    }
+  }
+
+  # Parquet files: read each into a data frame, check string columns for patterns.
+  # git_commits.parquet: NO LONGER skipped wholesale (round-3 Finding B fix).
+  # Structured columns are fully scanned; the "message" column gets the same
+  # field-specific treatment as git_commits_by_project.json above.
   for (pf in parquet_files) {
+    is_commit_file <- basename(pf) == "git_commits.parquet"
     df <- DBI::dbGetQuery(con, sprintf("SELECT * FROM read_parquet('%s')", pf))
 
     for (col in names(df)) {
-      if (is.character(df[[col]])) {
-        col_text <- paste(df[[col]], collapse = "\n")
-        for (pat in forbidden_patterns) {
-          expect_false(
-            grepl(pat, col_text, perl = TRUE),
-            info = sprintf("%s column %s contains forbidden pattern '%s'", basename(pf), col, pat)
-          )
-        }
+      if (!is.character(df[[col]])) next
+
+      if (is_commit_file && col == commit_message_field_parquet) {
+        # Message column: allow bare-token allowlist, but keep path-shape checks.
+        scan_field(df[[col]], strict_message_patterns, col, basename(pf))
+      } else {
+        # All other columns: full scan.
+        scan_field(df[[col]], forbidden_patterns, col, basename(pf))
       }
+    }
+  }
+})
+
+# ---------------------------------------------------------------------------
+# Test: field-specific scan helper catches project-column leaks but not
+# allowlisted message tokens (#140 round-4 Low).
+# ---------------------------------------------------------------------------
+
+test_that("scan_field catches project-column leak and passes allowlisted message content", {
+  fake_commits <- data.frame(
+    project           = c("-Users-johngavin-docs-gh-llm", "irishbuoys"),
+    canonical_project = c("llm", "irishbuoys"),
+    hash              = c("abc1234", "def5678"),
+    date              = c("2026-05-01", "2026-05-02"),
+    message           = c("fix: check johngavin cache invalidation",
+                          "Merge pull request from JohnGavin/fix-branch"),
+    stringsAsFactors  = FALSE
+  )
+
+  # The project column contains a raw home-dir path — scan_field must detect it.
+  project_leak_detected <- FALSE
+  withCallingHandlers(
+    {
+      # scan_field calls expect_false(); if the pattern IS present, the
+      # expectation fails but we can detect it by wrapping in tryCatch.
+      tryCatch(
+        scan_field(fake_commits$project, forbidden_patterns, "project", "fake.json"),
+        error = function(e) { project_leak_detected <<- TRUE }
+      )
+    },
+    expectation_failure = function(e) {
+      project_leak_detected <<- TRUE
+      invokeRestart("muffleWarning")
+    }
+  )
+  # We can't easily intercept testthat failures in the same test, so instead:
+  # directly verify the grep logic that scan_field uses.
+  project_text <- paste(fake_commits$project, collapse = "\n")
+  expect_true(
+    any(vapply(forbidden_patterns, function(p)
+      grepl(p, project_text, perl = TRUE), logical(1))),
+    label = "project column with raw path must match at least one forbidden pattern"
+  )
+
+  # The message column contains only allowlisted tokens (johngavin, JohnGavin).
+  # strict_message_patterns has had those tokens removed.
+  # Verify the message text does NOT match any strict pattern.
+  message_text <- paste(fake_commits$message, collapse = "\n")
+  expect_false(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, message_text, perl = TRUE), logical(1))),
+    label = "allowlisted message text must not match any strict_message_patterns"
+  )
+})
+
+# ---------------------------------------------------------------------------
+# Regression: path-shape in message field MUST be caught even though bare
+# tokens are allowlisted (#140 round-4 — message-field allowlisting gap).
+# ---------------------------------------------------------------------------
+
+test_that("path-shape leak in message field is still caught despite bare-token allowlist", {
+  # A message that contains a raw filesystem path is a leak, not an author name.
+  message_with_path_leak <- "/Users/johngavin/docs_gh/llm/some-file.R was the culprit"
+  expect_true(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, message_with_path_leak, perl = TRUE), logical(1))),
+    label = "message containing /Users/... must still match strict_message_patterns"
+  )
+
+  # A message with /private/tmp path leak must also be caught.
+  private_tmp_leak <- "session at /private/tmp/roborev-worktree-1234 crashed"
+  expect_true(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, private_tmp_leak, perl = TRUE), logical(1))),
+    label = "message containing /private/tmp/... must still match strict_message_patterns"
+  )
+
+  # Clean messages must pass.
+  clean_message <- "fix: check johngavin cache — from JohnGavin/feat-branch"
+  expect_false(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, clean_message, perl = TRUE), logical(1))),
+    label = "clean message with only bare author tokens must NOT match strict_message_patterns"
+  )
+})
+
+# ---------------------------------------------------------------------------
+# Regression: generic ^/ path without "worktree" in it (#140 round-4).
+# The roborev finding: /private/tmp/plain-id passes old verify gate.
+# ---------------------------------------------------------------------------
+
+test_that("forbidden_patterns catches /private/tmp/plain-id (no worktree substring)", {
+  # A raw projectPath like "/private/tmp/plain-id" does NOT contain "-worktree-",
+  # "worktree-agent-", or "/Users/" — but it IS a private absolute path.
+  # The new "/private/" entry in sensitive_verify_patterns() must catch it.
+  plain_id_path <- "/private/tmp/plain-id"
+  expect_true(
+    any(vapply(forbidden_patterns, function(p)
+      grepl(p, plain_id_path, perl = TRUE), logical(1))),
+    label = "/private/tmp/plain-id must match forbidden_patterns via /private/ entry"
+  )
+})
+
+test_that("forbidden_patterns catches generic -worktree- without numeric suffix or 'agent-'", {
+  # The old forbidden_patterns had "worktree-[0-9]+" and "worktree-agent-" but
+  # not a plain "-worktree-" entry.  A form like "project-worktree-fixer-abc"
+  # (no numeric suffix, no "agent-" prefix) would slip through.
+  generic_worktree <- "project-worktree-fixer-abc123"
+  expect_true(
+    any(vapply(forbidden_patterns, function(p)
+      grepl(p, generic_worktree, perl = TRUE), logical(1))),
+    label = "generic -worktree- form must match forbidden_patterns"
+  )
+})
+
+test_that("forbidden_patterns does not false-positive on clean project names", {
+  clean <- c("llmtelemetry", "irishbuoys", "randomwalk",
+             "sanitized@llm@h1a2b3c4d5e6", "claude-sonnet-4-6", "unknown")
+  for (s in clean) {
+    expect_false(
+      any(vapply(forbidden_patterns, function(p)
+        grepl(p, s, perl = TRUE), logical(1))),
+      label = sprintf("clean string '%s' must NOT match forbidden_patterns", s)
+    )
+  }
+})
+
+# ---------------------------------------------------------------------------
+# Legacy regression tests (kept from prior rounds).
+# ---------------------------------------------------------------------------
+
+test_that("leak injected into non-message column of git_commits_by_project.json is caught (Finding B, #140 round-3)", {
+  # Regression test: proves that removing the whole-file skip (round-3 fix)
+  # means a leak in the 'project' column is now detected, even though 'message'
+  # is allowed to contain author-written references.
+  fake_commits <- data.frame(
+    project           = c("-Users-johngavin-docs-gh-llm", "irishbuoys"),
+    canonical_project = c("llm", "irishbuoys"),
+    hash              = c("abc1234", "def5678"),
+    date              = c("2026-05-01", "2026-05-02"),
+    message           = c("fix: normal commit message", "feat: normal commit"),
+    stringsAsFactors  = FALSE
+  )
+
+  forbidden_in_project <- "-Users-johngavin"
+
+  # Check the project column (must be caught):
+  project_text <- paste(fake_commits$project, collapse = "\n")
+  expect_true(
+    grepl(forbidden_in_project, project_text, perl = TRUE),
+    label = "injected leak must be detectable in project column"
+  )
+
+  # Check the message column (no injected leak):
+  message_text <- paste(fake_commits$message, collapse = "\n")
+  expect_false(
+    grepl(forbidden_in_project, message_text, perl = TRUE),
+    label = "message column must not contain the injected project-column leak"
+  )
+})
+
+test_that("leak injected into non-message column of git_commits.parquet is caught by field-specific scan (Finding B, #140 round-3)", {
+  pkg_root <- normalizePath(file.path(test_path(), "..", ".."), mustWork = FALSE)
+  pf <- file.path(pkg_root, "inst", "extdata", "telemetry", "v1", "git_commits.parquet")
+  skip_if(!file.exists(pf), "git_commits.parquet not present in extdata")
+
+  con2 <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(con2, shutdown = TRUE), add = TRUE)
+
+  df <- DBI::dbGetQuery(con2, sprintf("SELECT * FROM read_parquet('%s')", pf))
+
+  forbidden_patterns_structural <- c(
+    "-Users-johngavin",
+    "johngavin",
+    "-private-tmp-",
+    "-tmp-",
+    "worktree-agent-"
+  )
+  for (col in c("project", "canonical_project")) {
+    if (!col %in% names(df)) next
+    col_text <- paste(df[[col]], collapse = "\n")
+    for (pat in forbidden_patterns_structural) {
+      expect_false(
+        grepl(pat, col_text, perl = TRUE),
+        info = sprintf("git_commits.parquet column '%s' contains forbidden pattern '%s' — field-specific scan should have caught this", col, pat)
+      )
     }
   }
 })
@@ -76,7 +368,8 @@ test_that("committed extdata JSON files are valid JSON", {
     result <- tryCatch(jsonlite::fromJSON(f), error = function(e) e)
     expect_false(
       inherits(result, "error"),
-      info = sprintf("%s is not valid JSON: %s", basename(f), if (inherits(result, "error")) conditionMessage(result) else "")
+      info = sprintf("%s is not valid JSON: %s", basename(f),
+                     if (inherits(result, "error")) conditionMessage(result) else "")
     )
   }
 })
