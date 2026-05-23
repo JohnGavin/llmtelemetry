@@ -315,14 +315,12 @@ if (has_cmonitor) {
     write_json(list(), fallback_daily_dst, auto_unbox = TRUE)
     cat("  -> ccusage_daily.json not found, wrote empty (CI fallback)\n")
   }
-  if (!file.exists(file.path(out_dir, "ccusage_sessions.json"))) {
-    write_json(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
-    cat("  -> wrote empty ccusage_sessions.json (CI fallback; cmonitor-rs not available)\n")
-  }
-  if (!file.exists(file.path(out_dir, "ccusage_blocks.json"))) {
-    write_json(list(), file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
-    cat("  -> wrote empty ccusage_blocks.json (CI fallback; cmonitor-rs not available)\n")
-  }
+  # Always overwrite sessions/blocks so the fallback is deterministic (no stale
+  # snapshot preserved from a prior run or checked-in file). Fixes #141.
+  write_json(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
+  cat("  -> wrote empty ccusage_sessions.json (CI fallback; cmonitor-rs not available)\n")
+  write_json(list(), file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
+  cat("  -> wrote empty ccusage_blocks.json (CI fallback; cmonitor-rs not available)\n")
 }
 
 # --- 4. Export Gemini from DuckDB (unchanged) ----------------------------------
@@ -1799,7 +1797,11 @@ if (!is.null(pm_all) && nrow(pm_all) > 0L) {
 
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
-critical_files <- c("ccusage_daily", "ccusage_blocks", "git_commits",
+# ccusage_blocks is intentionally excluded from critical_files: the CI fallback
+# writes an empty array [] when cmonitor-rs is unavailable (issue #141).
+# Schema validation for ccusage_blocks (valid JSON array, length 0 allowed) runs
+# separately below.
+critical_files <- c("ccusage_daily", "git_commits",
                      "git_bus_factor", "git_velocity", "git_timing",
                      "git_churn", "git_bugs")
 qa_errors <- 0L
@@ -1840,5 +1842,33 @@ if (qa_errors > 0L) {
   stop(sprintf("QA FAILED: %d critical data files are empty", qa_errors))
 }
 cat("QA passed: all critical data files have rows\n\n")
+
+# Schema-only validation for optional files: valid JSON array, length 0 allowed.
+# ccusage_blocks.json is written as [] by the CI fallback (no cmonitor-rs).
+optional_schema_files <- c("ccusage_blocks")
+for (f in optional_schema_files) {
+  path <- file.path(out_dir, paste0(f, ".json"))
+  if (!file.exists(path)) {
+    cat(sprintf("  QA WARN: %s.json missing (optional)\n", f))
+    next
+  }
+  parsed <- tryCatch(
+    jsonlite::fromJSON(path, simplifyVector = FALSE, simplifyDataFrame = FALSE,
+                      simplifyMatrix = FALSE),
+    error = function(e) {
+      stop(sprintf("QA FAILED: %s.json is not valid JSON: %s", f, conditionMessage(e)))
+    }
+  )
+  # Must be a JSON array: an unnamed (plain) list. Named lists are JSON objects;
+  # scalars are not lists at all. Both must be rejected (#141 round-3).
+  if (!is.list(parsed) || length(names(parsed)) > 0L) {
+    stop(sprintf(
+      "QA FAILED: %s.json must be a JSON array but got %s",
+      f, if (!is.list(parsed)) class(parsed)[1L] else "JSON object (named list)"
+    ))
+  }
+  n_opt <- length(parsed)
+  cat(sprintf("  QA OK (optional): %s.json (%d rows — empty array is valid)\n", f, n_opt))
+}
 
 cat("Done. Output in", out_dir, "\n")

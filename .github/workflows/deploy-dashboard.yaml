@@ -63,12 +63,15 @@ jobs:
           python3 << 'PYEOF'
           import json, os, sys
           data_dir = "vignettes/data"
-          critical = ["ccusage_daily", "ccusage_blocks", "git_commits",
+          critical = ["ccusage_daily", "git_commits",
                       "git_bus_factor", "git_velocity", "git_timing",
                       "git_churn", "git_bugs"]
-          optional = ["gemini_daily", "gemini_sessions", "unified_sessions",
-                      "unified_costs", "git_tags", "git_crisis", "git_todo",
-                      "predictions", "calibration_buckets"]
+          # ccusage_blocks is produced by cmonitor-rs, which is unavailable in CI.
+          # The CI fallback writes a valid empty JSON array. Treat as optional so
+          # the deploy is not hard-failed when cmonitor-rs is absent. Fixes #141.
+          optional = ["ccusage_blocks", "gemini_daily", "gemini_sessions",
+                      "unified_sessions", "unified_costs", "git_tags",
+                      "git_crisis", "git_todo", "predictions", "calibration_buckets"]
           def count_rows(d):
               if isinstance(d, list): return len(d)
               if isinstance(d, dict):
@@ -267,17 +270,23 @@ jobs:
               FAIL=1
             }
           done
-          # Content QA: verify data files have rows
-          for f in ccusage_daily ccusage_blocks; do
-            ROWS=$(curl -sf "${BASE}/data/${f}.json" | python3 -c \
-              "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-            if [ "$ROWS" = "0" ]; then
-              echo "::warning::${f}.json has 0 rows"
-              FAIL=1
-            else
-              echo "OK: ${f}.json ($ROWS rows)"
-            fi
-          done
+          # Content QA: ccusage_daily must have rows (cmonitor-rs data, always present
+          # via committed extdata snapshot). ccusage_blocks is cmonitor-rs-only and
+          # legitimately empty in CI — validate schema (must be a JSON array) instead
+          # of row count. Fixes #141.
+          ROWS=$(curl -sf "${BASE}/data/ccusage_daily.json" | python3 -c \
+            "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+          if [ "$ROWS" = "0" ]; then
+            echo "::warning::ccusage_daily.json has 0 rows"
+            FAIL=1
+          else
+            echo "OK: ccusage_daily.json ($ROWS rows)"
+          fi
+          # ccusage_blocks: validate it is a JSON array (may be empty when cmonitor-rs unavailable)
+          curl -sf "${BASE}/data/ccusage_blocks.json" | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); assert isinstance(d,list), 'not an array'" 2>/dev/null \
+            && echo "OK: ccusage_blocks.json (valid JSON array)" \
+            || { echo "::warning::ccusage_blocks.json is not a valid JSON array"; FAIL=1; }
           # Check for "no data available" in critical JSON files
           echo "=== Checking for empty data files ==="
           for f in unified_sessions unified_costs git_commits git_velocity; do
