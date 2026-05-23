@@ -435,3 +435,80 @@ test_that("export_dashboard_data.R CI fallback copies ccusage_daily.json (not cc
   # Snapshot the block so future changes to CI fallback logic surface explicitly
   expect_snapshot(block_lines)
 })
+
+# ── CI fallback determinism (issue #141) ──────────────────────────────────────
+
+test_that("export_dashboard_data.R CI fallback always writes ccusage_blocks.json (no stale guard)", {
+  # The fallback must unconditionally write ccusage_blocks.json so CI never
+  # preserves a stale checked-in snapshot. Validates fix for issue #141.
+  script_path <- system.file("scripts", "export_dashboard_data.R",
+                             package = "llmtelemetry")
+  skip_if(!nzchar(script_path), "export_dashboard_data.R not installed")
+  lines <- readLines(script_path)
+
+  # Locate the else-branch fallback block (after `} else {`)
+  else_idx <- which(grepl("^\\s*}\\s*else\\s*\\{", lines))
+  skip_if(length(else_idx) == 0, "could not locate else-branch in export script")
+  fallback_lines <- lines[seq(min(else_idx), length(lines))]
+
+  # The fallback must NOT gate the ccusage_blocks.json write on file absence.
+  # Specifically: `if (!file.exists(... "ccusage_blocks.json"...))` is forbidden.
+  guarded_write <- grepl(
+    "file\\.exists.*ccusage_blocks",
+    fallback_lines
+  )
+  expect_false(
+    any(guarded_write),
+    info = paste(
+      "CI fallback gates ccusage_blocks.json write on file absence.",
+      "This preserves stale checked-in snapshots and causes nondeterministic CI.",
+      "Remove the if(!file.exists(...)) guard so the fallback always overwrites. Fixes #141."
+    )
+  )
+
+  # The fallback must contain an unconditional write_json call for ccusage_blocks.json
+  unconditional_write <- grepl(
+    "write_json.*ccusage_blocks\\.json|ccusage_blocks\\.json.*write_json",
+    fallback_lines
+  )
+  expect_true(
+    any(unconditional_write),
+    info = paste(
+      "CI fallback does not unconditionally write ccusage_blocks.json.",
+      "Add write_json(list(), ..., auto_unbox=TRUE) without any file.exists() guard. Fixes #141."
+    )
+  )
+})
+
+test_that("export_dashboard_data.R in-script QA does not treat ccusage_blocks as critical (round-2 fix #141)", {
+  # The in-script final QA (section 9) must NOT include ccusage_blocks in its
+  # critical_files set. The CI fallback intentionally writes an empty array []
+  # when cmonitor-rs is unavailable. Treating 0 rows as a QA failure would cause
+  # the script to stop() before the workflow's relaxed gate ever runs — making
+  # the workflow-gate change a no-op. Fixes #141 round-2.
+  script_path <- system.file("scripts", "export_dashboard_data.R",
+                             package = "llmtelemetry")
+  skip_if(!nzchar(script_path), "export_dashboard_data.R not installed")
+  lines <- readLines(script_path)
+
+  # Locate the critical_files assignment
+  crit_idx <- grep("critical_files\\s*<-\\s*c\\(", lines)
+  skip_if(length(crit_idx) == 0L,
+          "critical_files assignment not found in export_dashboard_data.R")
+
+  # Extract from that line up to the closing parenthesis (max 10 lines)
+  block_end <- min(length(lines), crit_idx[1L] + 10L)
+  crit_block <- paste(lines[crit_idx[1L]:block_end], collapse = "\n")
+
+  # ccusage_blocks must NOT appear inside the critical_files vector
+  expect_false(
+    grepl('"ccusage_blocks"', crit_block),
+    info = paste(
+      "ccusage_blocks is in the critical_files set in section 9 of export_dashboard_data.R.",
+      "The CI fallback writes an empty array for this file (cmonitor-rs unavailable),",
+      "so treating 0 rows as a QA failure makes the workflow relaxation a no-op.",
+      "Remove 'ccusage_blocks' from critical_files and add schema-only validation instead.",
+      "Fixes #141 round-2."
+    )
+  )
+})
