@@ -258,9 +258,10 @@ sanitize_daily_all <- function(data) {
           }, numeric(1))
           base_entry[[fld]] <- sum(vals)
         }
-        # Union of modelsUsed
+        # Union of modelsUsed — preserve array shape so write_json(auto_unbox=TRUE)
+        # serialises a single-model entry as ["model"] not "model" (Finding 2).
         all_models <- unique(unlist(lapply(same_date, `[[`, "modelsUsed")))
-        base_entry$modelsUsed <- all_models
+        base_entry$modelsUsed <- as.list(all_models)
         # Concatenate modelBreakdowns
         all_breakdowns <- do.call(c, lapply(same_date, `[[`, "modelBreakdowns"))
         base_entry$modelBreakdowns <- all_breakdowns
@@ -310,12 +311,16 @@ if (!interactive() && !isTRUE(getOption("sanitize_ccusage_all_sourced_for_test")
               daily_result$n_sanitized, basename(daily_file)))
 
   # --- ccusage_blocks_all.json (verify clean, do not modify) ---
-  # Check for the full set of sensitive patterns, not just Users-johngavin.
+  # VERIFY_PATTERNS must be a superset of SENSITIVE_ID_PATTERN so the
+  # verification gate cannot report "0 leaks" while leaks remain (Finding 1).
+  # Shared single source of truth: add new patterns to BOTH lists together.
   VERIFY_PATTERNS <- c(
-    "Users-johngavin",
-    "-private-tmp-",
-    "worktree-[0-9]+",
-    "worktree-agent-"
+    "Users-johngavin",   # raw home-dir prefix
+    "johngavin",         # bare username anywhere (belt-and-suspenders)
+    "-private-tmp-",     # macOS /private/tmp worktrees
+    "-tmp-",             # generic /tmp worktrees
+    "worktree-[0-9]+",   # numeric-suffix worktrees
+    "worktree-agent-"    # named agent worktrees
   )
   blocks_content <- paste(readLines(blocks_file, warn = FALSE), collapse = "\n")
   blocks_leaks <- any(vapply(VERIFY_PATTERNS,

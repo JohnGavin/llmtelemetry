@@ -228,6 +228,7 @@ test_that("daily sanitization round-trips through JSON without leaks", {
 
 WORKTREE_FORBIDDEN_PATTERNS <- c(
   "-private-tmp-",      # macOS /private/tmp worktrees (e.g. -private-tmp-roborev-worktree-1234)
+  "-tmp-",              # generic /tmp worktrees (e.g. -tmp-fixer-worktree-2651148717)
   "worktree-[0-9]",     # numeric-suffix worktrees
   "worktree-agent-",    # named agent worktrees (.claude/worktrees/agent-...)
   "johngavin"           # username leaked anywhere (belt-and-suspenders)
@@ -385,4 +386,100 @@ test_that("derive_canonical_id redacts .claude/worktrees/agent-... style path (i
   result <- derive_canonical_id(raw_id)
   expect_false(grepl("johngavin", result, fixed = TRUE))
   expect_true(grepl("^sanitized@", result))
+})
+
+# ---------------------------------------------------------------------------
+# Finding 1 — verification gate must cover all patterns that SENSITIVE_ID_PATTERN
+# covers, so it cannot report "0 leaks" while leaks remain (#140 round-2).
+# These tests prove the new WORKTREE_FORBIDDEN_PATTERNS catches strings that the
+# OLD VERIFY_PATTERNS (only "Users-johngavin", "-private-tmp-", "worktree-[0-9]+",
+# "worktree-agent-") would MISS.
+# ---------------------------------------------------------------------------
+
+test_that("contains_worktree_leak detects worktree-agent- pattern that old VERIFY_PATTERNS missed (Finding 1)", {
+  # The OLD script VERIFY_PATTERNS had "worktree-[0-9]+" but NOT "worktree-agent-"
+  # as a standalone entry (it was only added to SENSITIVE_ID_PATTERN, not VERIFY_PATTERNS).
+  # This test proves the WORKTREE_FORBIDDEN_PATTERNS used in tests also catches it.
+  sensitive_string <- "worktree-agent-a9b480562a7b91e3e"
+  expect_true(contains_worktree_leak(sensitive_string))
+})
+
+test_that("contains_worktree_leak detects bare johngavin that old gate missed (Finding 1)", {
+  # A string containing the username not preceded by -Users- is missed by
+  # "-Users-johngavin" but caught by the new "johngavin" pattern.
+  sensitive_string <- "sanitized@johngavin@h123abc"
+  expect_true(contains_worktree_leak(sensitive_string))
+})
+
+test_that("sanitize_session_all output contains no -tmp- or johngavin leaks (Finding 1)", {
+  # Verify that the sanitizer actually removes patterns the verification gate now checks.
+  fixture <- make_worktree_session_fixture()
+  result  <- sanitize_session_all(fixture)
+  json_text <- jsonlite::toJSON(result$sanitized_data, auto_unbox = TRUE)
+  # These were missed by the old verification gate; they must be absent after sanitization.
+  expect_false(grepl("-tmp-fixer-worktree", json_text, fixed = TRUE),
+               label = "generic -tmp- worktree must be sanitized")
+  expect_false(grepl("johngavin", json_text, fixed = TRUE),
+               label = "bare username must be sanitized")
+})
+
+# ---------------------------------------------------------------------------
+# Finding 2 — merged modelsUsed must serialize as a JSON array, not a scalar,
+# even when only one model is present after the merge (#140 round-2).
+# ---------------------------------------------------------------------------
+
+make_merge_daily_fixture <- function() {
+  # Two raw project keys that both canonicalize to "unknown" (worktree / tmp
+  # identifiers that have no recognisable project name), each with one date
+  # entry using the same single model — forces the merge path to run.
+  list(
+    projects = list(
+      "-private-tmp-roborev-worktree-1111111111" = list(
+        list(date = "2026-05-01",
+             inputTokens = 10L, outputTokens = 5L,
+             cacheCreationTokens = 0L, cacheReadTokens = 0L,
+             totalTokens = 15L, totalCost = 0.05,
+             modelsUsed = list("claude-opus-4-7"), modelBreakdowns = list())
+      ),
+      "-private-tmp-roborev-worktree-2222222222" = list(
+        list(date = "2026-05-01",
+             inputTokens = 3L, outputTokens = 2L,
+             cacheCreationTokens = 0L, cacheReadTokens = 0L,
+             totalTokens = 5L, totalCost = 0.02,
+             modelsUsed = list("claude-opus-4-7"), modelBreakdowns = list())
+      )
+    )
+  )
+}
+
+test_that("sanitize_daily_all merged single-model entry has modelsUsed as list (Finding 2)", {
+  fixture <- make_merge_daily_fixture()
+  result  <- sanitize_daily_all(fixture)
+
+  # Both raw keys are /private/tmp/ worktrees that canonicalize to "unknown";
+  # the merge path runs and the two date entries for 2026-05-01 are combined.
+  # After merge, modelsUsed must be a list (not a character vector) so that
+  # write_json(auto_unbox=TRUE) emits an array, not a scalar string.
+  projects <- result$sanitized_data$projects
+  expect_equal(length(projects), 1L,
+               label = "two same-date tmp worktree keys must merge to one canonical project")
+  # The merged entry is a list with one date; check that date entry.
+  merged_entry <- projects[[1]][[1]]
+  expect_true(is.list(merged_entry$modelsUsed),
+              label = "merged modelsUsed must be a list so JSON serializes as array")
+})
+
+test_that("sanitize_daily_all merged modelsUsed serializes as JSON array (Finding 2)", {
+  fixture <- make_merge_daily_fixture()
+  result  <- sanitize_daily_all(fixture)
+
+  tmp <- tempfile(fileext = ".json")
+  on.exit(unlink(tmp), add = TRUE)
+  jsonlite::write_json(result$sanitized_data, tmp, auto_unbox = TRUE, pretty = TRUE)
+  txt <- paste(readLines(tmp, warn = FALSE), collapse = "\n")
+
+  # With auto_unbox=TRUE a character vector of length 1 serializes as "model",
+  # but a list of length 1 serializes as ["model"].  Check for the array form.
+  expect_true(grepl('"modelsUsed":\\s*\\[', txt, perl = TRUE),
+              label = "merged modelsUsed must serialize as JSON array, not scalar string")
 })
