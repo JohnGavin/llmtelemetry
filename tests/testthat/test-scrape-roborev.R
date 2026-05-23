@@ -316,3 +316,69 @@ test_that("migrate_unified_db is idempotent when called twice", {
   migrate_unified_db(db_path = db_path)
   expect_no_error(migrate_unified_db(db_path = db_path))
 })
+
+# ---------------------------------------------------------------------------
+# .roborev_raw_to_findings — vignette contract transformation
+# ---------------------------------------------------------------------------
+
+test_that(".roborev_raw_to_findings returns empty tibble with correct schema for zero-row input", {
+  empty_raw <- .empty_scrape_tibble()
+  result <- llmtelemetry:::.roborev_raw_to_findings(empty_raw)
+
+  expect_s3_class(result, "tbl_df")
+  expect_equal(nrow(result), 0L)
+  expect_true(all(c(
+    "finding_id", "review_id", "review_commit", "severity",
+    "primary_file", "problem_text", "summary", "found_at",
+    "resolved_at", "fix_commit", "project", "agent_id"
+  ) %in% names(result)))
+})
+
+test_that(".roborev_raw_to_findings maps columns from roborev_raw correctly", {
+  raw <- make_test_findings()
+  result <- llmtelemetry:::.roborev_raw_to_findings(raw)
+
+  expect_equal(nrow(result), 1L)
+  expect_equal(result$review_id,     raw$job_id)
+  expect_equal(result$review_commit, raw$commit_sha)
+  expect_equal(result$severity,      as.character(raw$severity))
+  expect_equal(result$primary_file,  raw$primary_file)
+  expect_equal(result$problem_text,  raw$problem_text)
+  expect_equal(result$project,       raw$project)
+  expect_equal(result$agent_id,      raw$agent)
+})
+
+test_that(".roborev_raw_to_findings sets resolved_at and fix_commit to NA", {
+  raw <- make_test_findings()
+  result <- llmtelemetry:::.roborev_raw_to_findings(raw)
+
+  expect_true(is.na(result$resolved_at[1]))
+  expect_true(is.na(result$fix_commit[1]))
+})
+
+test_that(".roborev_raw_to_findings truncates summary to 80 characters", {
+  raw <- make_test_findings()
+  raw$problem_text <- paste(rep("x", 200L), collapse = "")
+  result <- llmtelemetry:::.roborev_raw_to_findings(raw)
+
+  expect_equal(nchar(result$summary[1]), 80L)
+})
+
+# ---------------------------------------------------------------------------
+# reviewed_at NA fallback — Finding 2 regression test
+# ---------------------------------------------------------------------------
+
+test_that("upsert_roborev_findings does not fail when reviewed_at is Sys.time() fallback", {
+  # Simulate a findings tibble where reviewed_at was set to Sys.time() (not NA)
+  # because the job list lacked a timestamp column.
+  db_path <- tempfile(fileext = ".duckdb")
+  withr::defer(unlink(db_path))
+
+  findings <- make_test_findings()
+  # Replace reviewed_at with current time (the fallback path)
+  findings$reviewed_at <- Sys.time()
+
+  result <- upsert_roborev_findings(findings, db_path = db_path)
+  expect_equal(result$new_findings, 1L)
+  expect_equal(result$new_reviews, 1L)
+})

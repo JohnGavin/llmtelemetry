@@ -3,12 +3,35 @@
 
 # Declare NSE variables used in dplyr pipelines
 utils::globalVariables(c(
-  "job_id", "content_hash", "scraped_at"
+  "job_id", "content_hash", "scraped_at",
+  "commit_sha", "reviewed_at", "agent"
 ))
 
 # ---------------------------------------------------------------------------
 # Internal helpers (not exported)
 # ---------------------------------------------------------------------------
+
+#' Resolve the roborev binary path
+#'
+#' Checks the `ROBOREV_BIN` environment variable first, then falls back to
+#' `Sys.which("roborev")`. Aborts with a clear message if the binary cannot
+#' be found.
+#'
+#' @return Character scalar — absolute path to the roborev binary.
+#' @keywords internal
+.roborev_bin <- function() {
+  bin <- Sys.getenv("ROBOREV_BIN", unset = Sys.which("roborev"))
+  if (!nzchar(bin) || !file.exists(bin)) {
+    cli::cli_abort(
+      c(
+        "x" = "roborev binary not found.",
+        "i" = "Install roborev or set {.envvar ROBOREV_BIN} to its path.",
+        "i" = "See: {.url https://github.com/JohnGavin/roborev}"
+      )
+    )
+  }
+  bin
+}
 
 #' List roborev review jobs
 #'
@@ -17,15 +40,7 @@ utils::globalVariables(c(
 #' @return A data.frame with review job metadata from `roborev list --json`
 #' @keywords internal
 .roborev_list_jobs <- function(repo_path, limit = 500L) {
-  roborev_bin <- "/usr/local/bin/roborev"
-  if (!file.exists(roborev_bin)) {
-    cli::cli_abort(
-      c(
-        "x" = "roborev binary not found at {.path {roborev_bin}}",
-        "i" = "Install roborev: https://github.com/JohnGavin/roborev"
-      )
-    )
-  }
+  roborev_bin <- .roborev_bin()
 
   result <- system2(
     roborev_bin,
@@ -72,7 +87,7 @@ utils::globalVariables(c(
 #' @return A tibble of parsed findings, or NULL if the review failed to parse
 #' @keywords internal
 .roborev_show <- function(job_id) {
-  roborev_bin <- "/usr/local/bin/roborev"
+  roborev_bin <- .roborev_bin()
 
   result <- system2(
     roborev_bin,
@@ -245,15 +260,10 @@ scrape_roborev <- function(repo_path = here::here(), since_date = NULL) {
     checkmate::assert_date(since_date, len = 1L)
   }
 
-  roborev_bin <- "/usr/local/bin/roborev"
-  if (!file.exists(roborev_bin)) {
-    cli::cli_abort(
-      c(
-        "x" = "roborev binary not found at {.path {roborev_bin}}",
-        "i" = "Install roborev or set the correct path"
-      )
-    )
-  }
+  # Binary resolution is handled inside .roborev_list_jobs()/.roborev_show()
+  # via .roborev_bin(). Check early here so scrape_roborev() fails fast with a
+  # clear message rather than midway through a long job list.
+  .roborev_bin()
 
   # 1. List review jobs
   jobs_df <- .roborev_list_jobs(repo_path, limit = 500L)
@@ -311,10 +321,13 @@ scrape_roborev <- function(repo_path = here::here(), since_date = NULL) {
     commit_sha_val <- if ("commit_sha" %in% names(row)) as.character(row[["commit_sha"]]) else NA_character_
     agent_val      <- if ("agent" %in% names(row))      as.character(row[["agent"]])      else NA_character_
     verdict_val    <- if ("verdict" %in% names(row))    as.character(row[["verdict"]])    else "unknown"
+    # reviewed_at is NOT NULL in roborev_reviews; use Sys.time() when the job
+    # list lacks a recognisable timestamp column so the upsert never sends NA.
     reviewed_at_val <- if (!is.null(time_col) && time_col %in% names(row)) {
-      as.POSIXct(row[[time_col]], tz = "UTC")
+      val <- as.POSIXct(row[[time_col]], tz = "UTC")
+      if (is.na(val)) Sys.time() else val
     } else {
-      as.POSIXct(NA, tz = "UTC")
+      Sys.time()
     }
 
     findings |>
@@ -613,6 +626,75 @@ upsert_roborev_findings <- function(findings_df, db_path) {
   )
 
   invisible(NULL)
+}
+
+#' Transform roborev_raw into the roborev_findings vignette contract schema
+#'
+#' Converts the output of [scrape_roborev()] into the tibble expected by
+#' [plan_roborev_vignette()]. Column mapping:
+#'
+#' | raw column    | findings column | notes                           |
+#' |---------------|-----------------|----------------------------------|
+#' | `job_id`      | `review_id`     |                                  |
+#' | `commit_sha`  | `review_commit` |                                  |
+#' | `severity`    | `severity`      | coerced to character             |
+#' | `primary_file`| `primary_file`  |                                  |
+#' | `problem_text`| `problem_text`  |                                  |
+#' | `problem_text`| `summary`       | first 80 characters              |
+#' | `reviewed_at` | `found_at`      |                                  |
+#' | —             | `resolved_at`   | `NA` (not tracked at scrape time)|
+#' | —             | `fix_commit`    | `NA` (not tracked at scrape time)|
+#' | `project`     | `project`       |                                  |
+#' | `agent`       | `agent_id`      |                                  |
+#' | —             | `finding_id`    | sequential integer               |
+#'
+#' Returns an empty tibble with the correct schema when `raw_df` has zero rows,
+#' so downstream targets degrade gracefully when roborev is unavailable.
+#'
+#' @param raw_df Tibble returned by [scrape_roborev()].
+#' @return A tibble conforming to the `roborev_findings` vignette contract.
+#' @keywords internal
+.roborev_raw_to_findings <- function(raw_df) {
+  checkmate::assert_data_frame(raw_df)
+
+  empty_schema <- tibble::tibble(
+    finding_id   = integer(),
+    review_id    = integer(),
+    review_commit = character(),
+    severity     = character(),
+    primary_file = character(),
+    problem_text = character(),
+    summary      = character(),
+    found_at     = as.POSIXct(character(), tz = "UTC"),
+    resolved_at  = as.POSIXct(character(), tz = "UTC"),
+    fix_commit   = character(),
+    project      = character(),
+    agent_id     = character()
+  )
+
+  if (nrow(raw_df) == 0L) {
+    return(empty_schema)
+  }
+
+  result <- raw_df |>
+    dplyr::mutate(
+      finding_id    = seq_len(dplyr::n()),
+      review_id     = as.integer(job_id),
+      review_commit = as.character(commit_sha),
+      severity      = as.character(severity),
+      summary       = substr(problem_text, 1L, 80L),
+      found_at      = reviewed_at,
+      resolved_at   = as.POSIXct(NA_real_, tz = "UTC"),
+      fix_commit    = NA_character_,
+      agent_id      = as.character(agent)
+    ) |>
+    dplyr::select(
+      finding_id, review_id, review_commit, severity, primary_file,
+      problem_text, summary, found_at, resolved_at, fix_commit,
+      project, agent_id
+    )
+
+  result
 }
 
 #' Migrate unified.duckdb — create roborev tables idempotently

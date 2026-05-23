@@ -7,7 +7,7 @@
 plan_roborev()
 }
 \value{
-A list of \code{\link[targets:tar_target]{targets::tar_target()}} objects.
+A list of \code{tar_target()} objects (from the \code{targets} package).
 }
 \description{
 Returns a list of targets that scrape roborev review findings and upsert
@@ -15,6 +15,13 @@ them into the unified DuckDB. Both data targets use
 \code{tar_cue(mode = "always")} so they refresh on every \code{tar_make()} call.
 }
 \details{
-Downstream agents (loop detection, dashboard vignette) read from
-\code{roborev_raw} and \code{roborev_upsert} respectively.
+Downstream agents (loop detection, dashboard vignette) consume
+\code{roborev_findings}, which conforms to the upstream contract expected by
+\code{\link[=plan_roborev_vignette]{plan_roborev_vignette()}}. \code{roborev_raw} and \code{roborev_upsert} are retained
+as intermediate targets for diagnostics and persistence.
+
+The \code{roborev_findings} target degrades gracefully: when \code{\link[=scrape_roborev]{scrape_roborev()}}
+returns zero rows (e.g. because the unified.duckdb roborev tables are absent
+or \code{roborev} binary is unavailable), it returns an empty tibble with the
+correct schema rather than hard-failing.
 }
