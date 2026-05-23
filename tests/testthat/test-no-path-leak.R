@@ -392,15 +392,20 @@ test_that("hex-encoded fields in committed extdata JSON do not decode to forbidd
   # Hex-blob detector: matches a string that looks like a long hex value.
   # We use 40+ hex chars (same length as a git SHA) as the lower bound;
   # odd-length strings cannot be valid hex pairs, so we also check even length.
+  # Case-insensitive so uppercase/mixed-case hex (e.g. "0BADF00D...") is caught.
   is_hex_blob <- function(x) {
     nchar(x) >= 40L &&
       nchar(x) %% 2L == 0L &&
-      grepl("^[0-9a-f]+$", x, perl = TRUE)
+      grepl("^[0-9a-f]+$", x, perl = TRUE, ignore.case = TRUE)
   }
 
   # Try to decode a hex string to UTF-8 text.  Returns NA_character_ on failure.
+  # tolower() normalises uppercase/mixed-case hex before byte extraction so that
+  # strtoi() receives consistent lowercase input (it is case-insensitive already,
+  # but explicit normalisation documents the intent and avoids surprises).
   hex_decode <- function(hex_str) {
     tryCatch({
+      hex_str <- tolower(hex_str)
       n <- nchar(hex_str) %/% 2L
       raw_vec <- as.raw(vapply(seq_len(n), function(i) {
         strtoi(substr(hex_str, (i - 1L) * 2L + 1L, i * 2L), base = 16L)
@@ -488,4 +493,55 @@ test_that("hex-encoded fields in committed extdata JSON do not decode to forbidd
       }
     }
   }
+})
+
+# ---------------------------------------------------------------------------
+# Regression: uppercase/mixed-case hex bypasses lowercase-only detector
+# (#163 round-3 Finding 2).
+# Proves that is_hex_blob() with ignore.case = TRUE catches uppercase hex
+# blobs, and that hex_decode() correctly decodes them after tolower().
+# ---------------------------------------------------------------------------
+
+test_that("uppercase hex blob containing forbidden path is detected and rejected (#163 round-3)", {
+  # Build a forbidden string, encode it in UPPERCASE hex.
+  leak_text <- "cwd=/Users/johngavin/docs_gh/llm"
+  hex_lower <- paste(format(as.hexmode(utf8ToInt(leak_text)), width = 2L), collapse = "")
+  hex_upper <- toupper(hex_lower)
+
+  # Sanity: hex_upper is all-uppercase and long enough to trigger the detector.
+  expect_true(nchar(hex_upper) >= 40L)
+  expect_true(nchar(hex_upper) %% 2L == 0L)
+  expect_true(grepl("^[0-9A-F]+$", hex_upper))     # uppercase chars present
+  expect_false(grepl("^[0-9a-f]+$", hex_upper))     # lowercase-only check FAILS (old behaviour)
+
+  # New behaviour: ignore.case = TRUE catches it.
+  is_hex_blob_new <- function(x) {
+    nchar(x) >= 40L &&
+      nchar(x) %% 2L == 0L &&
+      grepl("^[0-9a-f]+$", x, perl = TRUE, ignore.case = TRUE)
+  }
+  expect_true(is_hex_blob_new(hex_upper),
+    label = "is_hex_blob with ignore.case=TRUE must detect uppercase hex blob")
+
+  # Decode the uppercase blob and verify it round-trips correctly.
+  hex_decode_ci <- function(hex_str) {
+    tryCatch({
+      hex_str <- tolower(hex_str)
+      n <- nchar(hex_str) %/% 2L
+      raw_vec <- as.raw(vapply(seq_len(n), function(i) {
+        strtoi(substr(hex_str, (i - 1L) * 2L + 1L, i * 2L), base = 16L)
+      }, integer(1L)))
+      rawToChar(raw_vec)
+    }, error   = function(e) NA_character_,
+       warning = function(e) NA_character_)
+  }
+  decoded <- hex_decode_ci(hex_upper)
+  expect_false(is.na(decoded), label = "uppercase hex must decode without error")
+  expect_equal(decoded, leak_text, label = "decoded text must match original leak string")
+
+  # The forbidden pattern must be found in the decoded text.
+  expect_true(
+    grepl("/Users/", decoded, fixed = TRUE),
+    label = "decoded uppercase hex blob must contain forbidden /Users/ pattern"
+  )
 })
