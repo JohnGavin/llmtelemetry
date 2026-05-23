@@ -57,8 +57,9 @@ forbidden_patterns <- c(base_forbidden, structural_forbidden)
 #   - "/private/"     — when describing the concept (no following dir token)
 # IMPORTANT: allowlisting a token removes it from the scan for bare occurrences,
 # but path_shape_patterns() patterns are ADDED BACK unconditionally so that a
-# message containing "/Users/johngavin/..." or "/Users/alice/..." is still
-# caught via the generic "/Users/[^/[:space:]]+/" regex (#157).
+# message containing "/Users/johngavin/...", "/Users/alice/...", or even
+# "/Users/alice" (bare, no trailing slash) is still caught via the generic
+# "/Users/[^/[:space:]]+" regex (#157, round-2).
 commit_message_bare_allowlist <- c(
   "johngavin",        # bare username — OK in message context
   "JohnGavin",        # GitHub handle — OK in message context
@@ -77,10 +78,11 @@ commit_message_field_parquet <- "message"   # column name in parquet
 # 1. Start from the full forbidden set.
 # 2. Remove bare-token allowances (e.g. bare "/Users/", "/private/", "johngavin").
 # 3. Add path_shape_patterns() unconditionally — these use generic PCRE regexes
-#    ("/Users/[^/[:space:]]+/" and "/private/[^/[:space:]]+/") that catch ANY
+#    ("/Users/[^/[:space:]]+" and "/private/[^/[:space:]]+") that catch ANY
 #    user's home-dir or any non-tmp private path, not just johngavin-specific
-#    forms.  Bare concept mentions ("/Users/" alone) do not match because
-#    the generic pattern requires a following directory token.  (#157)
+#    forms.  Trailing slash is NOT required (round-2 fix): "/Users/alice" and
+#    "/Users/alice/" are both caught.  Bare concept mentions ("/Users/" alone,
+#    no username token) do not match.  (#157)
 strict_message_patterns <- unique(c(
   setdiff(forbidden_patterns, commit_message_bare_allowlist),
   path_shape_patterns()
@@ -339,6 +341,72 @@ test_that("path-shape catches non-johngavin worktree path in message field (#157
     any(vapply(strict_message_patterns, function(p)
       grepl(p, branch_ref_msg, perl = TRUE), logical(1))),
     label = "message with worktree-safety branch name must NOT match strict_message_patterns"
+  )
+})
+
+# ---------------------------------------------------------------------------
+# Round-2 regression (#157): BARE path forms (no trailing slash) must be caught.
+# The original patterns required a trailing slash, so /Users/alice and
+# /Users/johngavin (no trailing slash) bypassed the gate.
+# ---------------------------------------------------------------------------
+
+test_that("path-shape catches bare /Users/<user> (no trailing slash) in message field (#157 round-2)", {
+  # Bare home-dir path with no trailing slash — must be caught.
+  bare_alice_msg <- "commit authored at /Users/alice in a message field"
+  expect_true(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, bare_alice_msg, perl = TRUE), logical(1))),
+    label = "message with bare /Users/alice (no trailing slash) must match strict_message_patterns"
+  )
+
+  # Bare johngavin home-dir path with no trailing slash — regression case.
+  bare_jg_msg <- "session root was /Users/johngavin per log"
+  expect_true(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, bare_jg_msg, perl = TRUE), logical(1))),
+    label = "message with bare /Users/johngavin (no trailing slash) must match strict_message_patterns"
+  )
+
+  # Bare bob path with no trailing slash.
+  bare_bob_msg <- "checked /Users/bob was the problem"
+  expect_true(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, bare_bob_msg, perl = TRUE), logical(1))),
+    label = "message with bare /Users/bob (no trailing slash) must match strict_message_patterns"
+  )
+
+  # Bare /Users/ alone (no username token) — must NOT flag (benign concept mention).
+  bare_prefix_msg <- "fix: check /Users/ path handling in the logic"
+  expect_false(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, bare_prefix_msg, perl = TRUE), logical(1))),
+    label = "bare /Users/ with no username must NOT match strict_message_patterns"
+  )
+})
+
+test_that("path-shape catches bare /private/<dir> (no trailing slash) in message field (#157 round-2)", {
+  # Bare /private/etc with no trailing slash — must be caught.
+  bare_etc_msg <- "config was at /private/etc in the system"
+  expect_true(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, bare_etc_msg, perl = TRUE), logical(1))),
+    label = "message with bare /private/etc (no trailing slash) must match strict_message_patterns"
+  )
+
+  # Bare /private/var with no trailing slash — must be caught.
+  bare_var_msg <- "sandbox path /private/var was accessed"
+  expect_true(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, bare_var_msg, perl = TRUE), logical(1))),
+    label = "message with bare /private/var (no trailing slash) must match strict_message_patterns"
+  )
+
+  # Bare /private/ alone (no dir token) — must NOT flag (benign concept mention).
+  bare_private_prefix_msg <- "feat: add worktree-safety for /private/ path references"
+  expect_false(
+    any(vapply(strict_message_patterns, function(p)
+      grepl(p, bare_private_prefix_msg, perl = TRUE), logical(1))),
+    label = "bare /private/ with no dir token must NOT match strict_message_patterns"
   )
 })
 

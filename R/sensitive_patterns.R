@@ -23,11 +23,12 @@
 #' to the sanitizer, add the matching verify substring(s) here.
 #'
 #' **Message-field path-shape coverage (#157):** `path_shape_patterns()` uses
-#' generic PCRE regexes (`/Users/[^/[:space:]]+/` and
-#' `/private/[^/[:space:]]+/`) rather than johngavin-specific strings, so
-#' any-user paths (`/Users/alice/...`) and non-tmp private paths
-#' (`/private/var/folders/...`) in commit `message` fields are caught even
-#' when the bare `/Users/` and `/private/` tokens are allowlisted.
+#' generic PCRE regexes (`/Users/[^/[:space:]]+` and
+#' `/private/[^/[:space:]]+`) rather than johngavin-specific strings, so
+#' any-user paths (`/Users/alice`, `/Users/alice/...`) and non-tmp private
+#' paths (`/private/var`, `/private/var/folders/...`) in commit `message`
+#' fields are caught even when the bare `/Users/` and `/private/` tokens are
+#' allowlisted.  Trailing slash is NOT required (round-2 fix).
 #'
 #' @name sensitive_patterns
 NULL
@@ -130,13 +131,22 @@ sensitive_verify_patterns <- function() {
 #'   with no following username token (the generic pattern requires at least one
 #'   non-slash, non-space character after `/Users/`)
 #' - `"mention of /private/ in a design note"` — bare `/private/` with no
-#'   following directory token (the generic pattern requires `<dir>/`)
+#'   following directory token (the generic pattern requires at least one
+#'   non-slash, non-space character after `/private/`)
 #'
-#' The generic regexes (`/Users/[^/[:space:]]+/` and `/private/[^/[:space:]]+/`)
+#' The generic regexes (`/Users/[^/[:space:]]+` and `/private/[^/[:space:]]+`)
 #' match any real path rooted at `/Users/` or `/private/` (requiring at least one
-#' directory component after the prefix), while bare mentions like `/Users/` alone
-#' do not match.  This is the minimal change that closes the any-user gap (#157)
-#' without introducing false positives on conceptual references.
+#' non-slash, non-space character after the prefix).  The trailing slash is NOT
+#' required: `/Users/alice` (bare, no trailing slash) and `/Users/alice/docs` are
+#' both caught.  Bare mentions like `/Users/` alone (no username token) do not
+#' match.  This is the minimal change that closes the any-user gap (#157) without
+#' introducing false positives on conceptual references.
+#'
+#' Round-2 regression fix: the original patterns required a trailing slash
+#' (`/Users/[^/[:space:]]+/`), so bare forms like `/Users/alice` and
+#' `/Users/johngavin` (no trailing slash) bypassed the gate.  Dropping the
+#' mandatory trailing slash while keeping the username token requirement
+#' (`[^/[:space:]]+`) fixes this without introducing false positives.
 #'
 #' @return character vector of path-shape substrings / regexes (no anchors;
 #'   some entries are fixed strings, others are PCRE regexes — all used with
@@ -144,8 +154,8 @@ sensitive_verify_patterns <- function() {
 #' @export
 path_shape_patterns <- function() {
   c(
-    "/Users/[^/[:space:]]+/",  # any home-dir path: /Users/<anyuser>/... (#157)
-    "/private/[^/[:space:]]+/", # any /private/<dir>/ path — not just /private/tmp/ (#157)
+    "/Users/[^/[:space:]]+",  # any home-dir path: /Users/<anyuser> or /Users/<anyuser>/... (#157, round-2)
+    "/private/[^/[:space:]]+", # any /private/<dir> path — not just /private/tmp/ (#157, round-2)
     "/tmp/",                   # actual Linux tmp absolute path
     "-private-tmp-",           # dashed form of macOS tmp (in session ID fields)
     "-tmp-",                   # dashed form of Linux tmp (in session ID fields)
