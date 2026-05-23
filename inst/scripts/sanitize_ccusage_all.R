@@ -28,50 +28,54 @@ suppressPackageStartupMessages({
 })
 
 # ---------------------------------------------------------------------------
-# SENSITIVE_ID_PATTERN — broad deny-list for private filesystem identifiers
+# SENSITIVE_ID_PATTERN and SENSITIVE_VERIFY_PATTERNS — single source of truth
 # ---------------------------------------------------------------------------
-# Matches any raw project/session ID that could reveal private filesystem
-# structure.  Applied at ALL guard sites (previously only "^-Users-|^/" was
-# checked, which missed /private/tmp/ and .claude/worktrees/ forms).
+# Both constants are now derived from the canonical package functions
+# llmtelemetry::sensitive_id_pattern() and llmtelemetry::sensitive_verify_patterns()
+# defined in R/sensitive_patterns.R.
 #
-# SINGLE SOURCE OF TRUTH: Both SENSITIVE_ID_PATTERN (used by the sanitizer)
-# and SENSITIVE_VERIFY_PATTERNS (used by the final verification gate) are
-# derived from this one mapping.  Adding a new class here automatically
-# propagates to verification — they can never drift again.
+# When this script is sourced for testing (via the package), the functions are
+# already available through the package namespace.  When called as a standalone
+# Rscript (outside the package), we define fallback inline functions so the
+# script remains self-contained.
 #
-# Pattern class → sanitizer regex → verify substring
-# ---------------------------------------------------
-#   home-dir prefix  :  ^-Users-            → "Users-johngavin"
-#   absolute path    :  ^/                  → "/Users/"  (covers /Users/... and /private/...)
-#   macOS tmp        :  ^-private-tmp-      → "-private-tmp-"
-#   generic tmp      :  ^-tmp-              → "-tmp-"
-#   any worktree     :  -worktree-          → "-worktree-"
-#   named agent wt   :  worktree-agent-     → "worktree-agent-"  (belt-and-suspenders)
-#   username         :  johngavin           → "johngavin"
-SENSITIVE_ID_PATTERN <- paste0(
-  "^-Users-",           # raw home-dir prefix
-  "|^/",                # Unix absolute path
-  "|^-private-tmp-",    # macOS /private/tmp/ worktrees
-  "|^-tmp-",            # generic /tmp/ worktrees
-  "|-worktree-",        # any *-worktree-* substring (catches numeric + named)
-  "|worktree-agent-",   # .claude/worktrees/agent-... named form
-  "|johngavin"          # username anywhere (belt-and-suspenders)
-)
+# NEVER re-define SENSITIVE_ID_PATTERN or SENSITIVE_VERIFY_PATTERNS inline here.
+# If you need to change a pattern, change R/sensitive_patterns.R ONLY.
 
-# SENSITIVE_VERIFY_PATTERNS — grep-able substrings derived from SENSITIVE_ID_PATTERN.
-# Used by the final verification gate to scan file content (not just string starts),
-# so patterns here are anchor-free substrings, not anchored regexes.
-# INVARIANT: every class in SENSITIVE_ID_PATTERN has at least one entry here.
-# If you add a class above, add the matching verify substring below.
-SENSITIVE_VERIFY_PATTERNS <- c(
-  "Users-johngavin",    # home-dir prefix class  (^-Users-)
-  "/Users/",            # absolute-path class     (^/) — covers /Users/..., /private/...
-  "-private-tmp-",      # macOS tmp class         (^-private-tmp-)
-  "-tmp-",              # generic tmp class        (^-tmp-)
-  "-worktree-",         # any worktree class       (-worktree-)
-  "worktree-agent-",    # named agent worktree     (worktree-agent-)
-  "johngavin"           # username class           (johngavin)
-)
+if (!exists("sensitive_id_pattern", mode = "function")) {
+  # Standalone Rscript fallback — mirrors R/sensitive_patterns.R exactly.
+  # This block is ONLY reached when the script runs outside the package
+  # (e.g. cron refresh_and_preserve.sh).  Inside the package the namespace
+  # provides the function automatically.
+  sensitive_id_pattern <- function() {
+    paste0(
+      "^-Users-",           # raw home-dir prefix (dashed form)
+      "|^/",                # Unix absolute path: /Users/..., /private/tmp/..., /var/..., /tmp/...
+      "|^-private-tmp-",    # macOS /private/tmp/ in dashed form
+      "|^-tmp-",            # generic /tmp/ in dashed form
+      "|-worktree-",        # any *-worktree-* substring (numeric, named, generic)
+      "|worktree-agent-",   # .claude/worktrees/agent-... (belt-and-suspenders)
+      "|johngavin"          # username anywhere
+    )
+  }
+  sensitive_verify_patterns <- function() {
+    c(
+      "Users-johngavin",    # home-dir prefix class   (^-Users-)
+      "/Users/",            # absolute-path class (^/) — home dirs
+      "/private/",          # absolute-path class (^/) — macOS /private/tmp/
+      "/tmp/",              # absolute-path class (^/) — Linux /tmp/
+      "/var/",              # absolute-path class (^/) — Linux /var/
+      "-private-tmp-",      # macOS tmp class          (^-private-tmp-)
+      "-tmp-",              # generic tmp class         (^-tmp-)
+      "-worktree-",         # any worktree class        (-worktree-)
+      "worktree-agent-",    # named agent worktree      (worktree-agent-)
+      "johngavin"           # username class
+    )
+  }
+}
+
+SENSITIVE_ID_PATTERN     <- sensitive_id_pattern()
+SENSITIVE_VERIFY_PATTERNS <- sensitive_verify_patterns()
 
 # ---------------------------------------------------------------------------
 # Helpers — canonicalization (mirrors R/canonicalize.R internals)
