@@ -381,13 +381,25 @@ read_codex_log <- function(log_path, offset_path) {
   # If we stored the fingerprint of the active log last time, find that sibling
   # now (it may have been renamed to .1, .2, …) and set its stored offset to
   # recorded_offset so the sibling loop below skips it.
+  #
+  # Round-3 fix (#138/#139): use the sibling's CURRENT fingerprint as the key,
+  # not prev_active_fp$fp.  If the log was shorter than 512 bytes at the last
+  # refresh (prev_active_fp$len < 512) and then grew before rotation, the
+  # sibling's current fingerprint (fp_obj$fp) covers the full 512-byte window
+  # while prev_active_fp$fp only covers the old shorter window.  .fp_match
+  # still returns TRUE (it compares only the min-length prefix), so the match
+  # succeeds, but if we stored the offset under prev_active_fp$fp, the sibling
+  # read loop (which keys by fp_obj$fp) would find nothing and re-read from 0.
+  # Storing under fp_obj$fp makes the key consistent across both paths.
   if (!is.na(prev_active_fp$fp) && recorded_offset > 0) {
     for (sib in siblings) {
       fp_obj <- .file_fingerprint(sib)
       if (.fp_match(prev_active_fp, fp_obj)) {
         # This sibling IS the previous active log.  Mark it consumed up to
         # the byte offset that was recorded after the last refresh.
-        fp_key <- prev_active_fp$fp
+        # Key by the sibling's ACTUAL current fingerprint (fp_obj$fp) so the
+        # sibling read loop (which also uses fp_obj$fp) finds the offset.
+        fp_key <- fp_obj$fp
         if (is.null(sibling_offset_map[[fp_key]]) ||
             sibling_offset_map[[fp_key]] < recorded_offset) {
           sibling_offset_map[[fp_key]] <- recorded_offset

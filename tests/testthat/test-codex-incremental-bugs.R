@@ -587,3 +587,95 @@ test_that("#139 round-2 daily merge: NA+NA cost stays NA, known+NA and known+kno
     label = "#139 round-2 daily: known + known must sum"
   )
 })
+
+# ── Issue #138 round-3: short-then-grew log before rotation ──────────────────
+#
+# Scenario: the active log is shorter than 512 bytes at refresh #1 (so
+# prev_active_fp$len < 512).  Between refresh #1 and rotation the log grows
+# past 512 bytes.  After rotation the sibling's current fingerprint covers
+# the full 512-byte window (fp_obj$len == 512) but prev_active_fp$fp only
+# covers the shorter original prefix.  .fp_match still succeeds (it compares
+# the min-length prefix), but if the consumed offset is stored under
+# prev_active_fp$fp the sibling read loop misses it and re-reads from 0,
+# producing duplicate turns.
+#
+# Fix: store offset under fp_obj$fp (the sibling's ACTUAL fingerprint) so
+# the key used when marking and the key used when reading are consistent.
+
+test_that("#138 round-3: short-log-then-grew scenario produces NO duplicate ingestion", {
+  skip_if(
+    !exists("read_codex_log"),
+    "read_codex_log not found — script may not be installed"
+  )
+
+  td <- withr::local_tempdir()
+
+  log_path    <- file.path(td, "codex-tui.log")
+  offset_path <- file.path(td, ".codex_log_offset.txt")
+
+  # Build a turn line that is short enough that the initial log is well under
+  # 512 bytes, so prev_active_fp$len < 512 after refresh #1.
+  thread_t1 <- "11111111-1111-1111-1111-111111111111"
+  line_t1_short <- make_turn_line(thread_t1, total_tokens = 10L,
+                                  timestamp = "2026-05-23T07:00:00.000000Z")
+
+  # Verify the initial content is indeed shorter than 512 bytes.
+  expect_lt(nchar(line_t1_short, type = "bytes"), 512L,
+            label = "Precondition: initial log content must be < 512 bytes")
+
+  # ── Refresh #1: log is short (< 512 bytes) ───────────────────────────────
+  writeLines(line_t1_short, log_path)
+  r1 <- read_codex_log(log_path, offset_path)
+  expect_equal(nrow(r1$turns), 1L, label = "Refresh 1: 1 turn (T1)")
+  expect_gt(r1$offset_used, 0L,   label = "Refresh 1: offset must advance")
+
+  # Persist offset (simulates what the main block does between refreshes).
+  writeLines(as.character(r1$offset_used), offset_path)
+
+  # ── Log grows past 512 bytes before rotation ──────────────────────────────
+  # Append enough padding so the file exceeds 512 bytes.  This simulates a
+  # burst of activity that pushes the log past the fingerprint window while
+  # it is still the active file.
+  pad_line <- paste0("# padding: ", strrep("x", 600L))
+  cat(pad_line, "\n", file = log_path, append = TRUE, sep = "")
+
+  # Confirm the file is now > 512 bytes.
+  fsize_after_grow <- file.info(log_path)$size
+  expect_gt(fsize_after_grow, 512L,
+            label = "Precondition: log must exceed 512 bytes before rotation")
+
+  # ── Rotate: active log becomes sibling .1 ────────────────────────────────
+  file.rename(log_path, paste0(log_path, ".1"))
+
+  # Fresh active log with a new turn (T2).
+  thread_t2 <- "22222222-2222-2222-2222-222222222222"
+  line_t2 <- make_turn_line(thread_t2, total_tokens = 20L,
+                             timestamp = "2026-05-23T08:00:00.000000Z")
+  writeLines(line_t2, log_path)
+
+  # ── Refresh #2 ────────────────────────────────────────────────────────────
+  r2 <- read_codex_log(log_path, offset_path)
+
+  # T1 lives in the sibling .1 which was already fully consumed in refresh #1.
+  # The short-then-grew bug would cause offset lookup to miss the recorded
+  # offset (key mismatch) and re-read the sibling from byte 0, yielding 1 T1
+  # row.  The fix must produce 0 T1 rows.
+  t1_rows <- sum(r2$turns$thread_id == thread_t1, na.rm = TRUE)
+  expect_equal(
+    t1_rows, 0L,
+    label = paste(
+      "#138 round-3: sibling that grew past 512B before rotation must NOT be",
+      "re-ingested. Got", t1_rows, "T1 rows (expected 0)."
+    )
+  )
+
+  # T2 is in the new active log — it must appear exactly once.
+  t2_rows <- sum(r2$turns$thread_id == thread_t2, na.rm = TRUE)
+  expect_equal(
+    t2_rows, 1L,
+    label = paste(
+      "#138 round-3: T2 from new active must appear exactly once.",
+      "Got", t2_rows, "T2 rows (expected 1)."
+    )
+  )
+})
