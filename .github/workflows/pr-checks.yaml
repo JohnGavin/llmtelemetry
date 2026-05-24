@@ -1,0 +1,81 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  pr-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Privacy gate — block confidential projects in committed per-project JSON
+        run: |
+          python3 << 'PYEOF'
+          import json, os, sys
+
+          # Projects that must NEVER appear in committed public per-project JSON files.
+          # Mirrors the CONFIDENTIAL set in the deploy-dashboard.yaml privacy gate.
+          CONFIDENTIAL = {"mycare", "crypto", "crypto_solwatch", "crypto_swarms"}
+
+          # Per-project JSON files that carry a "project", "canonical_project", or "repo" field.
+          # These live in inst/extdata/ and are committed to the repo.
+          PER_PROJECT_FILES = [
+            "inst/extdata/cost_by_project_estimated.json",
+            "inst/extdata/tokens_by_project.json",
+            "inst/extdata/git_commits_by_project.json",
+            "inst/extdata/weekly_commits_by_project.json",
+            "inst/extdata/projects_master.json",
+            "inst/extdata/roborev_by_repo.json",
+          ]
+
+          violations = []
+
+          def project_values(obj):
+              """Extract project-name strings from a JSON object or list."""
+              vals = []
+              if isinstance(obj, list):
+                  for item in obj:
+                      if isinstance(item, dict):
+                          for key in ("project", "canonical_project", "repo"):
+                              if key in item:
+                                  vals.append(str(item[key]))
+              elif isinstance(obj, dict):
+                  for key in ("project", "canonical_project", "repo"):
+                      if key in obj:
+                          vals.append(str(obj[key]))
+              return vals
+
+          for path in PER_PROJECT_FILES:
+              if not os.path.exists(path):
+                  continue
+              try:
+                  data = json.load(open(path))
+              except Exception as e:
+                  print(f"WARN: could not parse {path}: {e}")
+                  continue
+              for pname in project_values(data):
+                  # Strip branch suffixes before comparison (mirrors deploy gate logic)
+                  base = pname.lower().split("-feat-")[0].split("-fix-")[0].split("-chore-")[0]
+                  if base in CONFIDENTIAL or pname.lower() in CONFIDENTIAL:
+                      violations.append(f"{path}: project={pname!r}")
+
+          if violations:
+              for v in violations:
+                  print(f"::error::PRIVACY GATE FAILED — confidential project in committed JSON: {v}")
+              sys.exit(1)
+          else:
+              print("Privacy gate: no confidential project names found in committed per-project JSON files")
+          PYEOF
+
+      - uses: r-lib/actions/setup-r@v2
+
+      - name: R syntax check (parse only, no package install)
+        run: >-
+          Rscript -e
+          'ok<-TRUE;
+          for (f in list.files("R", pattern="[.][Rr]$", recursive=TRUE, full.names=TRUE))
+            tryCatch(parse(f), error=function(e){cat("PARSE ERROR:",f,conditionMessage(e),"\n"); ok<<-FALSE});
+          if(!ok) quit(status=1);
+          cat("R parse OK\n")'
