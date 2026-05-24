@@ -589,6 +589,10 @@ ui <- page_navbar(
       /* Architecture diagram Mermaid sizing */
       .arch-mermaid-wrap { min-height: 560px; }
       .arch-mermaid-wrap .mermaid svg { max-width: 720px; height: auto; display: block; margin: 0 auto; }
+      /* Mermaid node label contrast fix — black text on light node fill (issue: white-on-white) */
+      .arch-mermaid-wrap .mermaid .nodeLabel, .arch-mermaid-wrap .mermaid span { color: #000 !important; }
+      .arch-mermaid-wrap .mermaid text { fill: #000 !important; }
+      .arch-mermaid-wrap .mermaid .edgeLabel { background-color: #fff !important; color: #000 !important; }
       /* Tippy theme overrides — force >=1rem per hover-popup-standard rule */
       .tippy-box[data-theme~='arch'] { font-size: 1rem !important; max-width: 380px !important; }
       .tippy-box[data-theme~='arch'] a { color: #7cb5ec; }
@@ -613,8 +617,20 @@ ui <- page_navbar(
           mermaid.initialize({
             startOnLoad: false,
             securityLevel: 'loose',
-            theme: 'dark',
-            themeVariables: { fontSize: '16px', lineColor: '#7cb5ec' }
+            theme: 'base',
+            themeVariables: {
+              fontSize: '16px',
+              primaryColor: '#e8eef5',
+              primaryTextColor: '#000000',
+              primaryBorderColor: '#4ea8de',
+              lineColor: '#9fb3c8',
+              secondaryColor: '#dde6f0',
+              tertiaryColor: '#eef3f8',
+              tertiaryTextColor: '#000000',
+              secondaryTextColor: '#000000',
+              edgeLabelBackground: '#ffffff',
+              textColor: '#000000'
+            }
           });
           // Store original definition text in data-mmd-src for safe re-render
           document.querySelectorAll('.arch-mermaid-wrap .mermaid').forEach(function(el) {
@@ -1523,7 +1539,7 @@ flowchart TB
         card(card_header("Datasets — Committed Data Files"),
           tags$div(class = "p-3 arch-mermaid-wrap",
             tags$div(class = "mermaid", "
-flowchart TB
+flowchart LR
     ExtData[\"inst/extdata/ — committed data root\"]
     CCDaily[\"ccusage_daily_all.json — daily cost & tokens\"]
     CCSess[\"ccusage_sessions_all.json — per-session records\"]
