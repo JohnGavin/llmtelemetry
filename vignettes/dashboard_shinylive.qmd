@@ -594,10 +594,16 @@ ui <- page_navbar(
       /* Mermaid node label contrast fix — black text on light node fill (issue: white-on-white) */
       /* Each diagram uses mermaid classDef to force color:#000000 (primary fix). */
       /* This CSS is a backstop covering all label-rendering paths mermaid might use. */
+      .arch-mermaid-wrap .mermaid foreignObject div,
+      .arch-mermaid-wrap .mermaid foreignObject span,
+      .arch-mermaid-wrap .mermaid foreignObject p,
       .arch-mermaid-wrap .mermaid .nodeLabel,
       .arch-mermaid-wrap .mermaid .nodeLabel *,
       .arch-mermaid-wrap .mermaid span.nodeLabel,
-      .arch-mermaid-wrap .mermaid p { color:#000000 !important; }
+      .arch-mermaid-wrap .mermaid p {
+        color: #000000 !important;
+        white-space: normal !important;
+      }
       .arch-mermaid-wrap .mermaid g.node text,
       .arch-mermaid-wrap .mermaid .label text,
       .arch-mermaid-wrap .mermaid text.nodeLabel { fill:#000000 !important; }
@@ -1364,13 +1370,13 @@ ui <- page_navbar(
             tags$div(class = "mermaid", "
 flowchart TB
     classDef default fill:#999999,stroke:#CC0000,stroke-width:1px,color:#000000;
-    Logs[\"Claude / Codex / Gemini usage logs (~/.claude)\"]
-    Cron[\"Refresh cron — exec/refresh_and_preserve.sh (every 12h)\"]
+    Logs[\"Claude / Codex / Gemini<br/>usage logs (~/.claude)\"]
+    Cron[\"Refresh cron —<br/>refresh_and_preserve.sh<br/>(every 12h)\"]
     Tools[\"ccusage CLI · Gemini API · Codex\"]
-    Data[\"Committed data — inst/extdata/*.json, *.duckdb\"]
-    CI[\"CI render — deploy-dashboard.yaml\"]
-    Dash[\"Shinylive dashboard (this page)\"]
-    Email[\"Daily email — send_daily_email.R (08:00 UTC)\"]
+    Data[\"Committed data —<br/>inst/extdata/*.json, *.duckdb\"]
+    CI[\"CI render —<br/>deploy-dashboard.yaml\"]
+    Dash[\"Shinylive dashboard<br/>(this page)\"]
+    Email[\"Daily email —<br/>send_daily_email.R<br/>(08:00 UTC)\"]
     Logs --> Cron
     Cron --> Tools
     Tools --> Data
@@ -1487,15 +1493,15 @@ flowchart TB
             tags$div(class = "mermaid", "
 flowchart TB
     classDef default fill:#999999,stroke:#CC0000,stroke-width:1px,color:#000000;
-    Cron12h[\"Cron (every 12h) — refresh_and_preserve.sh\"]
-    FetchCC[\"ccusage fetch — Claude session logs\"]
-    FetchGem[\"Gemini API fetch — token usage\"]
-    FetchCodex[\"Codex export — OpenAI usage\"]
+    Cron12h[\"Cron (every 12h) —<br/>refresh_and_preserve.sh\"]
+    FetchCC[\"ccusage fetch —<br/>Claude session logs\"]
+    FetchGem[\"Gemini API fetch —<br/>token usage\"]
+    FetchCodex[\"Codex export —<br/>OpenAI usage\"]
     Sanitize[\"Sanitize & redact (privacy)\"]
-    Commit[\"git commit + push — inst/extdata\"]
-    CI[\"GitHub Actions — deploy-dashboard.yaml\"]
-    Pages[\"GitHub Pages — static Shinylive site\"]
-    Email[\"send_daily_email.R (08:00 UTC)\"]
+    Commit[\"git commit + push —<br/>inst/extdata\"]
+    CI[\"GitHub Actions —<br/>deploy-dashboard.yaml\"]
+    Pages[\"GitHub Pages —<br/>static Shinylive site\"]
+    Email[\"send_daily_email.R<br/>(08:00 UTC)\"]
     Cron12h --> FetchCC
     Cron12h --> FetchGem
     Cron12h --> FetchCodex
@@ -1593,14 +1599,14 @@ flowchart TB
             tags$div(class = "mermaid", "
 flowchart LR
     classDef default fill:#999999,stroke:#CC0000,stroke-width:1px,color:#000000;
-    ExtData[\"inst/extdata/ — committed data root\"]
-    CCDaily[\"ccusage_daily_all.json — daily cost & tokens\"]
-    CCSess[\"ccusage_sessions_all.json — per-session records\"]
-    GemDB[\"gemini_usage.duckdb — Gemini token history\"]
-    UsageDB[\"llm_usage_history.duckdb — unified usage store\"]
-    Roborev[\"roborev_summary.json — code review metrics\"]
-    Preds[\"predictions.json — calibration log\"]
-    Cmonitor[\"cmonitor_daily.txt — system cost monitor\"]
+    ExtData[\"inst/extdata/ —<br/>committed data root\"]
+    CCDaily[\"ccusage_daily_all.json —<br/>daily cost & tokens\"]
+    CCSess[\"ccusage_sessions_all.json —<br/>per-session records\"]
+    GemDB[\"gemini_usage.duckdb —<br/>Gemini token history\"]
+    UsageDB[\"llm_usage_history.duckdb —<br/>unified usage store\"]
+    Roborev[\"roborev_summary.json —<br/>code review metrics\"]
+    Preds[\"predictions.json —<br/>calibration log\"]
+    Cmonitor[\"cmonitor_daily.txt —<br/>system cost monitor\"]
     ExtData --> CCDaily
     ExtData --> CCSess
     ExtData --> GemDB
