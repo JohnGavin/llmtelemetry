@@ -96,11 +96,17 @@ if [ "$ORIGINAL_BRANCH" != "$MAIN_BRANCH" ]; then
     git checkout "$MAIN_BRANCH" 2>&1 | tee -a "$LOG_FILE"
 fi
 
-# Pull latest changes
-log "Pulling latest changes from origin..."
-if ! git pull origin "$MAIN_BRANCH" 2>&1 | tee -a "$LOG_FILE"; then
-    error_log "Failed to pull from origin"
-    # Continue anyway - we can still update locally
+# Fetch and hard-reset to origin — data is fully regenerated on every run so
+# any local-only auto-refresh commits are disposable.  This self-heals a
+# diverged local branch and prevents non-fast-forward push failures.
+log "Fetching origin/$MAIN_BRANCH and resetting local to match (data regenerated below)..."
+git fetch origin "$MAIN_BRANCH" 2>&1 | tee -a "$LOG_FILE"
+fetch_rc=${PIPESTATUS[0]}
+if [ "$fetch_rc" -ne 0 ]; then
+    error_log "Failed to fetch origin/$MAIN_BRANCH (exit $fetch_rc) — continuing with local state"
+else
+    git reset --hard "origin/$MAIN_BRANCH" 2>&1 | tee -a "$LOG_FILE"
+    log "Reset local $MAIN_BRANCH to origin/$MAIN_BRANCH"
 fi
 
 # 1. Archive current JSON files (in case something goes wrong)
@@ -317,19 +323,23 @@ Total cost: \$$TOTAL_COST
 
 🤖 Automated via launchd (12-hourly)"
 
-    if git commit -m "$commit_msg" 2>&1 | tee -a "$LOG_FILE"; then
+    git commit -m "$commit_msg" 2>&1 | tee -a "$LOG_FILE"
+    commit_rc=${PIPESTATUS[0]}
+    if [ "$commit_rc" -eq 0 ]; then
         log "✓ Commit successful"
 
         # Push to remote
         log "Pushing to remote..."
-        if git push origin "$MAIN_BRANCH" 2>&1 | tee -a "$LOG_FILE"; then
+        git push origin "$MAIN_BRANCH" 2>&1 | tee -a "$LOG_FILE"
+        push_rc=${PIPESTATUS[0]}
+        if [ "$push_rc" -eq 0 ]; then
             log "✓ Push successful"
         else
-            error_log "Push failed - may need manual intervention"
+            error_log "Push FAILED (git exit $push_rc) — origin/$MAIN_BRANCH may have diverged; refresh data NOT published"
             # Don't exit with error - local commit still succeeded
         fi
     else
-        error_log "Commit failed"
+        error_log "Commit failed (git exit $commit_rc)"
     fi
 fi
 
