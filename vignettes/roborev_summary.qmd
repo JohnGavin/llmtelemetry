@@ -24,7 +24,19 @@ execute:
 ---
 
 ```{r setup}
-library(llmtelemetry)
+# Load llmtelemetry: installed in CI via local::., loaded from source in dev.
+# here::here() resolves to the package root regardless of render cwd.
+if (!requireNamespace("llmtelemetry", quietly = TRUE)) {
+  pkg_root <- tryCatch(here::here(), error = function(e) dirname(getwd()))
+  if (requireNamespace("pkgload", quietly = TRUE) && file.exists(file.path(pkg_root, "DESCRIPTION"))) {
+    pkgload::load_all(pkg_root, quiet = TRUE)
+  } else {
+    stop("llmtelemetry is not installed and pkgload::load_all() is not available. ",
+         "Install the package or run devtools::load_all() first.")
+  }
+} else {
+  library(llmtelemetry)
+}
 library(DT)
 library(plotly)
 
