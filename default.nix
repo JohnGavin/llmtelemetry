@@ -29,7 +29,7 @@
 #  > ide = "none",
 #  > project_path = ".",
 #  > overwrite = TRUE,
-#  > shell_hook = "echo 'Welcome to llmtelemetry app shell'; source $PWD/.nix-shellhook.sh 2>/dev/null || true",
+#  > shell_hook = "echo 'Welcome to llmtelemetry app shell'; source $PWD/scripts/nix-shellhook.sh 2>/dev/null || true",
 #  > r_ver = "4.5.2")
 # It uses the `rstats-on-nix` fork of `nixpkgs` which provides improved
 # compatibility with older R versions and R packages for Linux/WSL and
@@ -85,7 +85,7 @@ let
     
     buildInputs = [ rpkgs system_packages ];
     shellHook = ''
-    echo 'Welcome to llmtelemetry app shell'; source $PWD/.nix-shellhook.sh 2>/dev/null || true
+    echo 'Welcome to llmtelemetry app shell'; source $PWD/scripts/nix-shellhook.sh 2>/dev/null || true
   '';
   }; 
 in

@@ -1,6 +1,6 @@
 # package.nix - Build llmtelemetry as an installable R package derivation
 #
-# Used by push_to_cachix.sh to build and push to johngavin cachix.
+# Used by scripts/push_to_cachix.sh to build and push to johngavin cachix.
 # Uses same rstats-on-nix pin as default.nix (2026-01-05).
 #
 # Usage:
