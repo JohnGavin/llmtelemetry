@@ -10,7 +10,7 @@
 # Step 5 of 9-step workflow. Builds from package.nix, pushes ONE derivation.
 #
 # Usage:
-#   ./push_to_cachix.sh
+#   ./scripts/push_to_cachix.sh
 #
 # Exit codes:
 #   0 - Success

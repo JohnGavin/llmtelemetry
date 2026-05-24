@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# .nix-shellhook.sh — Fix R_LIBS_SITE for nested nix-shell
+# scripts/nix-shellhook.sh — Fix R_LIBS_SITE for nested nix-shell
 # Prevents segfault from ABI mismatch when entering this shell
 # from inside another nix-shell (e.g., global dev shell).
 # See nix-nested-shell-isolation rule.

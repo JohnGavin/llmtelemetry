@@ -13,5 +13,5 @@ rix(
   date = "2026-01-05",
   project_path = ".",
   overwrite = TRUE,
-  shell_hook = "echo 'Welcome to llmtelemetry app shell'; source $PWD/.nix-shellhook.sh 2>/dev/null || true"
+  shell_hook = "echo 'Welcome to llmtelemetry app shell'; source $PWD/scripts/nix-shellhook.sh 2>/dev/null || true"
 )
