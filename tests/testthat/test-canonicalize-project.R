@@ -153,3 +153,19 @@ test_that("vectorised call over a column works correctly", {
   result   <- canonicalize_project(input)
   expect_equal(result, expected)
 })
+
+# ── Fragment-noise and hex-hash suppression (fix: project-name-canonicalization)
+
+test_that("bare hex agent worktree hashes return NA", {
+  expect_equal(canonicalize_project("ab6f701adcaed79e9"), NA_character_)
+  expect_equal(canonicalize_project("af82a624c38fab7a"),  NA_character_)
+})
+
+test_that("fragment-noise tokens return NA", {
+  noise <- c("cc", "feat", "fix", "chore", "wt", "scope", "worker",
+             "network", "repo", "docs", "eval", "project", "ClaudeProbe")
+  for (tok in noise) {
+    expect_equal(canonicalize_project(tok), NA_character_,
+                 info = sprintf("'%s' should be NA", tok))
+  }
+})

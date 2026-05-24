@@ -100,13 +100,35 @@ parse_cmonitor_time <- function(t) {
   sprintf("%s %02d:%02d:%02d", d, t[3], t[4], t[5])
 }
 
+# Branch/worktree suffixes that, when appended to a project name with a dash,
+# indicate the project itself and not a separate sub-entity.
+# Pattern: <project>-<SUFFIX>-<anything>
+# Examples: llmtelemetry-feat-cc-20260524-102501 -> llmtelemetry
+#           llm-wt-193 -> llm
+#           llm-sonnet -> llm (bare suffix, no trailing tokens)
+.BRANCH_SUFFIX_RE_EXPORT <- paste0(
+  "-(feat|fix|chore|docs|refactor|test|ci|perf|style|build|revert|wt|",
+  "sonnet|haiku|opus|worktree)(-.*)?$"
+)
+
 # Helper: shorten project path to last meaningful component (kept for legacy use)
 shorten_project <- function(x) {
+  if (is.null(x) || is.na(x)) return(NA_character_)
+
+  # Handle .claude/worktrees/agent-<hex> paths: ephemeral agent checkouts.
+  if (grepl("^[.]claude/worktrees/agent-", x) ||
+      grepl("[-/]claude[-/]worktrees[-/]agent-", x)) {
+    return(".claude/worktrees/agent")
+  }
+
   x |>
     # NHS/personal path prefix (double-dash form):
     # "-Users-johngavin-docs--pers-NHS-health-data-antigravity-<project>"
     gsub("^-Users-johngavin-docs--pers-NHS-health-data-antigravity-", "", x = _) |>
     gsub("^-Users-johngavin-docs[-_]gh-", "", x = _) |>
+    # Strip branch/worktree suffixes BEFORE stripping the "llm-" prefix.
+    # Without this, "llm-feat-cc-..." becomes "feat-cc-..." -> first segment "feat".
+    sub(.BRANCH_SUFFIX_RE_EXPORT, "", x = _, perl = TRUE, ignore.case = TRUE) |>
     gsub("^llm-", "", x = _) |>
     gsub("^proj-", "", x = _) |>
     gsub("-", "/", x = _)
@@ -118,20 +140,34 @@ shorten_project <- function(x) {
 canonicalize_project <- function(name) {
   if (is.null(name) || is.na(name) || !nzchar(name)) return(NA_character_)
 
-  # 0. Reject worktree-suffixed names (e.g. "roborev-worktree-3047898692",
+  # 0a. Reject worktree-suffixed names (e.g. "roborev-worktree-3047898692",
   #    "llm-worktree-1234567890", or paths containing "/worktree/").
   #    These are ephemeral agent checkout directories, not real projects.
   if (grepl("-worktree-\\d+", name) || grepl("/worktree/\\d+", name)) {
     return(NA_character_)
   }
 
+  # 0b. Reject bare hex-hash strings (12+ lowercase hex chars) — these are
+  #     agent worktree hashes recorded as project names by some hooks.
+  if (grepl("^[0-9a-f]{12,}$", name)) return(NA_character_)
+
   # 1. Drop pure meta-names (agent dirs, generic worktree marker, and
   #    top-level container directories that are not real projects).
+  #    meta_only_noise added in this fix: branch fragment tokens, tool names,
+  #    single-char tokens, and ephemeral names observed in telemetry data.
   meta_only <- c(
+    # Original set:
     "sonnet", "roborev", "worktree",
     "antigravity", "crypto", "data", "github", "hello",
     "knowledge", "simulations", "sport", "subagents",
-    "t", "io", "urban_planning", "notmineraft", "telemetry", "football"
+    "t", "io", "urban_planning", "notmineraft", "telemetry", "football",
+    # Added: branch fragment tokens
+    "cc", "feat", "fix", "chore", "ci", "perf", "style", "build", "revert",
+    "wt", "scope", "worker", "network", "repo", "docs", "eval", "project",
+    # Added: ephemeral/tool names not associated with any persistent project
+    "ClaudeProbe",
+    # Added: .claude/worktrees/agent sentinel from shorten_project()
+    ".claude/worktrees/agent"
   )
   if (name %in% meta_only) return(NA_character_)
 

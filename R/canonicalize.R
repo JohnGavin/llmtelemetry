@@ -10,14 +10,41 @@
 #
 # TODO: replace with a proper exported function once epic #83 stabilises.
 
+# Branch/worktree suffixes that, when appended to a project name with a dash,
+# indicate the project itself and not a separate sub-entity.
+# Pattern: <project>-<SUFFIX_BRANCH_RE>-<anything>
+# Examples: llmtelemetry-feat-cc-20260524-102501 -> llmtelemetry
+#           llm-wt-193 -> llm
+#           llm-sonnet -> llm (bare suffix, no trailing tokens)
+.BRANCH_SUFFIX_RE <- paste0(
+  "-(feat|fix|chore|docs|refactor|test|ci|perf|style|build|revert|wt|",
+  "sonnet|haiku|opus|worktree)(-.*)?$"
+)
+
 #' @keywords internal
 .shorten_project_local <- function(x) {
   if (is.null(x) || is.na(x)) return(NA_character_)
+
+  # Handle .claude/worktrees/agent-<hex> paths: these are ephemeral agent
+  # checkout directories, not real projects.  Return a sentinel that the
+  # canonicalize scalar will drop as NA.
+  if (grepl("^[.]claude/worktrees/agent-", x) ||
+      grepl("[-/]claude[-/]worktrees[-/]agent-", x)) {
+    return(".claude/worktrees/agent")
+  }
+
   # Special NHS/personal path prefix (double-dash form):
   # "-Users-johngavin-docs--pers-NHS-health-data-antigravity-<project>"
   x <- gsub("^-Users-johngavin-docs--pers-NHS-health-data-antigravity-", "", x)
   x <- gsub("^-Users-johngavin-docs[-_]gh-", "", x)
   x <- gsub("^docs[-_]gh[-_]",               "", x)
+
+  # Strip branch/worktree suffixes BEFORE stripping the "llm-" prefix.
+  # Without this, "llm-feat-cc-20260524-102501" becomes "feat-cc-..." which
+  # yields "feat" as the first segment — the root cause of cc/feat/wt noise.
+  # Apply to the dash-form string before any dash→slash conversion.
+  x <- sub(.BRANCH_SUFFIX_RE, "", x, perl = TRUE, ignore.case = TRUE)
+
   x <- gsub("^llm-",                          "", x)
   x <- gsub("^proj-",                         "", x)
   # Convert dash separators to slash (dash-form hook output -> slash-form).
@@ -51,13 +78,31 @@
   # Convert dash-form project names emitted by the hook to slash-form first
   name <- .shorten_project_local(name)
 
+  # Noise/meta-only tokens that should never appear as canonical project names.
+  # Split into two groups for clarity:
+  #   meta_only_original — in the list before this fix
+  #   meta_only_noise    — added by this fix (branch fragments, tool names,
+  #                        single-char tokens, ephemeral names)
   meta_only <- c(
+    # Original set:
     "sonnet", "roborev", "worktree",
     "antigravity", "crypto", "data", "github", "hello",
     "knowledge", "simulations", "sport", "subagents",
-    "t", "io", "urban_planning", "notmineraft", "telemetry", "football"
+    "t", "io", "urban_planning", "notmineraft", "telemetry", "football",
+    # Added: branch fragment tokens (appear when suffix-stripping fails or raw
+    # branch-type fragments are recorded as project names by hooks)
+    "cc", "feat", "fix", "chore", "ci", "perf", "style", "build", "revert",
+    "wt", "scope", "worker", "network", "repo", "docs", "eval", "project",
+    # Added: ephemeral/tool names not associated with any persistent project
+    "ClaudeProbe",
+    # Added: .claude/worktrees/agent sentinel returned by .shorten_project_local
+    ".claude/worktrees/agent"
   )
   if (name %in% meta_only) return(NA_character_)
+
+  # Reject bare hex strings of 12+ characters — these are agent worktree hashes
+  # (e.g. "ab6f701adcaed79e9") recorded directly as project names by some hooks.
+  if (grepl("^[0-9a-f]{12,}$", name)) return(NA_character_)
 
   name <- sub("^[A-Za-z0-9_]{8,}/repo/?", "", name)
   if (!nzchar(name)) return(NA_character_)

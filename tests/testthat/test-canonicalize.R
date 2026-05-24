@@ -158,3 +158,81 @@ test_that(".shorten_project_local snapshot — output for known forms is stable"
   result <- vapply(inputs, .shorten_project_local, character(1L), USE.NAMES = FALSE)
   expect_snapshot(result)
 })
+
+# ── Branch/worktree-suffix stripping (fix: project-name-canonicalization) ─────
+#
+# Before this fix, "llm-feat-cc-20260521-092847" -> "feat" (wrong) because
+# .shorten_project_local() stripped "llm-" first, leaving "feat/cc/...".
+# After the fix, branch suffixes are stripped BEFORE the "llm-" strip.
+
+test_that("branch-suffixed llm paths strip to llm", {
+  # "llm-feat-cc-20260521-092847" must give "llm", not "feat"
+  expect_equal(.canonicalize_project_local("llm-feat-cc-20260521-092847"), "llm")
+  expect_equal(.canonicalize_project_local("llm-sonnet"),                  "llm")
+  expect_equal(.canonicalize_project_local("llm-wt-193"),                  "llm")
+  expect_equal(.canonicalize_project_local("llm-wt-198"),                  "llm")
+})
+
+test_that("branch-suffixed llmtelemetry paths strip to llmtelemetry", {
+  expect_equal(.canonicalize_project_local("llmtelemetry-feat-cc-20260524-102501"),
+               "llmtelemetry")
+  expect_equal(
+    .canonicalize_project_local("docs-gh-llmtelemetry-feat-cc-20260524-102501"),
+    "llmtelemetry"
+  )
+  expect_equal(
+    .canonicalize_project_local("-Users-johngavin-docs-gh-llmtelemetry-feat-cc-20260524-102501"),
+    "llmtelemetry"
+  )
+})
+
+# ── .claude/worktrees/agent-<hex> paths → NA ─────────────────────────────────
+
+test_that(".claude/worktrees/agent-<hex> path returns NA", {
+  expect_equal(.canonicalize_project_local(".claude/worktrees/agent-ab6f701adcaed79e9"),
+               NA_character_)
+})
+
+# ── Bare hex-hash strings → NA ───────────────────────────────────────────────
+
+test_that("bare hex agent hash of 12+ chars returns NA", {
+  expect_equal(.canonicalize_project_local("ab6f701adcaed79e9"), NA_character_)
+  expect_equal(.canonicalize_project_local("af82a624c38fab7a"),  NA_character_)
+})
+
+# ── Fragment-noise tokens → NA ────────────────────────────────────────────────
+# These tokens appeared in telemetry as canonicalized project names despite
+# being branch fragments or ephemeral process names, not real projects.
+
+test_that("branch fragment tokens (cc, feat, wt, scope, etc.) return NA", {
+  noise <- c("cc", "feat", "fix", "chore", "wt", "scope", "worker",
+             "network", "repo", "docs", "eval", "project", "ClaudeProbe")
+  for (tok in noise) {
+    expect_equal(.canonicalize_project_local(tok), NA_character_,
+                 info = sprintf("'%s' should be NA", tok))
+  }
+})
+
+# ── Regression: real projects must not be affected ───────────────────────────
+
+test_that("real project names are unaffected by the fix", {
+  expect_equal(.canonicalize_project_local("llm"),                     "llm")
+  expect_equal(.canonicalize_project_local("llmtelemetry"),            "llmtelemetry")
+  expect_equal(.canonicalize_project_local("footbet"),                 "footbet")
+  expect_equal(.canonicalize_project_local("randomwalk"),              "randomwalk")
+  expect_equal(.canonicalize_project_local("acd_area_climate_design"), "acd_area_climate_design")
+  expect_equal(.canonicalize_project_local("irish_buoy_network"),      "irish_buoy_network")
+})
+
+test_that("vectorised branch-suffix stripping works across a mixed column", {
+  input <- c(
+    "llm-feat-cc-20260521-092847",   # should give llm
+    "llm-wt-193",                     # should give llm
+    "llmtelemetry-feat-cc-20260524-102501", # should give llmtelemetry
+    "cc",                             # pure noise -> NA
+    "ab6f701adcaed79e9",              # hex hash -> NA
+    "footbet"                         # real project unchanged
+  )
+  expected <- c("llm", "llm", "llmtelemetry", NA_character_, NA_character_, "footbet")
+  expect_equal(.canonicalize_project_local(input), expected)
+})
