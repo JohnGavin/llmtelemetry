@@ -592,8 +592,15 @@ ui <- page_navbar(
       .arch-mermaid-wrap { min-height: 560px; }
       .arch-mermaid-wrap .mermaid svg { max-width: 720px; height: auto; display: block; margin: 0 auto; }
       /* Mermaid node label contrast fix — black text on light node fill (issue: white-on-white) */
-      .arch-mermaid-wrap .mermaid .nodeLabel, .arch-mermaid-wrap .mermaid span { color: #000 !important; }
-      .arch-mermaid-wrap .mermaid text { fill: #000 !important; }
+      /* Each diagram uses mermaid classDef to force color:#000000 (primary fix). */
+      /* This CSS is a backstop covering all label-rendering paths mermaid might use. */
+      .arch-mermaid-wrap .mermaid .nodeLabel,
+      .arch-mermaid-wrap .mermaid .nodeLabel *,
+      .arch-mermaid-wrap .mermaid span.nodeLabel,
+      .arch-mermaid-wrap .mermaid p { color:#000000 !important; }
+      .arch-mermaid-wrap .mermaid g.node text,
+      .arch-mermaid-wrap .mermaid .label text,
+      .arch-mermaid-wrap .mermaid text.nodeLabel { fill:#000000 !important; }
       .arch-mermaid-wrap .mermaid .edgeLabel { background-color: #fff !important; color: #000 !important; }
       /* Tippy theme overrides — force >=1rem per hover-popup-standard rule */
       .tippy-box[data-theme~='arch'] { font-size: 1rem !important; max-width: 380px !important; }
@@ -1335,6 +1342,7 @@ ui <- page_navbar(
             # Mermaid diagram: refresh-cron -> committed-data -> CI-render -> dashboard/email
             tags$div(class = "mermaid", "
 flowchart TB
+    classDef default fill:#eaf1fb,stroke:#37516b,stroke-width:1px,color:#000000;
     Logs[\"Claude / Codex / Gemini usage logs (~/.claude)\"]
     Cron[\"Refresh cron — exec/refresh_and_preserve.sh (every 12h)\"]
     Tools[\"ccusage CLI · Gemini API · Codex\"]
@@ -1457,6 +1465,7 @@ flowchart TB
           tags$div(class = "p-3 arch-mermaid-wrap",
             tags$div(class = "mermaid", "
 flowchart TB
+    classDef default fill:#eaf1fb,stroke:#37516b,stroke-width:1px,color:#000000;
     Cron12h[\"Cron (every 12h) — refresh_and_preserve.sh\"]
     FetchCC[\"ccusage fetch — Claude session logs\"]
     FetchGem[\"Gemini API fetch — token usage\"]
@@ -1562,6 +1571,7 @@ flowchart TB
           tags$div(class = "p-3 arch-mermaid-wrap",
             tags$div(class = "mermaid", "
 flowchart LR
+    classDef default fill:#eaf1fb,stroke:#37516b,stroke-width:1px,color:#000000;
     ExtData[\"inst/extdata/ — committed data root\"]
     CCDaily[\"ccusage_daily_all.json — daily cost & tokens\"]
     CCSess[\"ccusage_sessions_all.json — per-session records\"]
