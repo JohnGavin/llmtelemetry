@@ -749,23 +749,33 @@ ui <- page_navbar(
     # Type module gives us top-level await; the Shiny message handler is registered
     # after shiny:connected fires so the message bus is ready.
     # Embedded JS — literal quotes MUST be escaped (single-quoted R string): use \' for each JS '
+    # PARQUET_URL: use the same base-path strategy as load_json() in R — origin-absolute
+    # "/llmtelemetry/data/v1/sessions.parquet". This avoids Shinylive iframe location
+    # ambiguity that made new URL("data/v1/sessions.parquet", window.location.href)
+    # resolve to a wrong path when window.location inside the Shinylive context does
+    # not end with a directory slash (e.g. ".../index.html" drops "data/" prefix).
     tags$script(type = "module", HTML('
-      const PARQUET_URL = new URL("data/v1/sessions.parquet", window.location.href).href;
-      const duckdb = await import("https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/+esm");
-      const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
-      const worker = new Worker(
-        URL.createObjectURL(new Blob(
-          ["importScripts(\\"" + bundle.mainWorker + "\\");"],
-          {type:"text/javascript"}
-        ))
-      );
-      const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
-      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-      await db.registerFileURL(
-        "sessions.parquet", PARQUET_URL,
-        duckdb.DuckDBDataProtocol.HTTP, false
-      );
-      const conn = await db.connect();
+      const PARQUET_URL = window.location.origin + "/llmtelemetry/data/v1/sessions.parquet";
+      let conn = null;
+      try {
+        const duckdb = await import("https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/+esm");
+        const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+        const worker = new Worker(
+          URL.createObjectURL(new Blob(
+            ["importScripts(\\"" + bundle.mainWorker + "\\");"],
+            {type:"text/javascript"}
+          ))
+        );
+        const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
+        await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+        await db.registerFileURL(
+          "sessions.parquet", PARQUET_URL,
+          duckdb.DuckDBDataProtocol.HTTP, false
+        );
+        conn = await db.connect();
+      } catch(initErr) {
+        console.error("DuckDB-WASM init failed:", initErr, "PARQUET_URL:", PARQUET_URL);
+      }
 
       let _chart = null;
 
@@ -780,6 +790,17 @@ ui <- page_navbar(
             new ResizeObserver(function() { _chart.resize(); }).observe(el);
           }
           _chart.setOption({ backgroundColor:"#1a1a1a", series:[{type:"bar",data:[]}] }, true);
+          return;
+        }
+        // Graceful empty state if DuckDB-WASM failed to initialise.
+        if (!conn) {
+          const el = document.getElementById("proj_sessions_ec");
+          if (el) {
+            if (!_chart) { _chart = echarts.init(el, "dark"); new ResizeObserver(function(){_chart.resize();}).observe(el); }
+            _chart.setOption({ backgroundColor:"#1a1a1a",
+              title:{text:"Sessions data unavailable",textStyle:{color:"#ccc",fontSize:13}},
+              series:[] }, true);
+          }
           return;
         }
         // projects is null (All — no IN filter, includes live projects absent from master)
