@@ -24,20 +24,36 @@ execute:
 ---
 
 ```{r setup}
-library(llmtelemetry)
+# Load the package — pkgload::load_all() when running from source (dev / CI
+# before install), otherwise fall back to library(). This avoids a hard
+# install dependency while still exercising the real package code in CI.
+pkg_loaded <- tryCatch({
+  pkgload::load_all(quiet = TRUE)
+  TRUE
+}, error = function(e) {
+  tryCatch({ library(llmtelemetry); TRUE }, error = function(e2) FALSE)
+})
+
 library(DT)
 library(plotly)
 
 # safe_tar_read: reads a named RDS from inst/extdata/vignettes/ if it exists,
 # otherwise falls back to the fixture generator for local development.
-# In CI the targets pipeline writes RDS files to inst/extdata/vignettes/
-# before the vignette is rendered.
+# In CI the refresh_roborev_vignette_rds.R script writes RDS files before render.
 safe_tar_read <- function(name, fixture_fn = NULL) {
+  # Try installed package path first (CI after pak::local_install)
   rds_path <- system.file(
     file.path("extdata", "vignettes", paste0(name, ".rds")),
     package = "llmtelemetry"
   )
-  if (nchar(rds_path) > 0 && file.exists(rds_path)) {
+  # Fallback: look relative to the vignette working directory (source checkout)
+  if (!nzchar(rds_path) || !file.exists(rds_path)) {
+    candidate <- file.path(
+      here::here(), "inst", "extdata", "vignettes", paste0(name, ".rds")
+    )
+    if (file.exists(candidate)) rds_path <- candidate
+  }
+  if (nzchar(rds_path) && file.exists(rds_path)) {
     return(readRDS(rds_path))
   }
   # Fallback: use fixture generator if provided
@@ -45,70 +61,70 @@ safe_tar_read <- function(name, fixture_fn = NULL) {
     return(fixture_fn())
   }
   stop(paste0("Target '", name, "' not found. ",
-              "Run tar_make() or provide a fixture_fn."))
+              "Run refresh_roborev_vignette_rds.R or provide a fixture_fn."))
 }
 
-# Load fixture helpers for local development
+# Load real findings + loops data (written by refresh_roborev_vignette_rds.R).
+# Falls back to synthetic fixtures when the RDS is absent (pure-offline dev).
 fixture_path <- system.file(
   "testthat/fixtures/roborev_page_fixture.R",
   package = "llmtelemetry"
 )
-if (nchar(fixture_path) == 0) {
-  # Running from source
+if (!nzchar(fixture_path) || !file.exists(fixture_path)) {
   fixture_path <- file.path(
     here::here(), "tests", "testthat", "fixtures", "roborev_page_fixture.R"
   )
 }
 if (file.exists(fixture_path)) source(fixture_path)
 
-# Load pre-computed targets (falls back to fixtures in dev)
+# ----- Load underlying data tibbles (real or synthetic) -----
+roborev_findings_data <- safe_tar_read(
+  "vig_roborev_findings",
+  fixture_fn = if (exists("make_roborev_findings")) make_roborev_findings else NULL
+)
+
+roborev_loops_data <- safe_tar_read(
+  "vig_roborev_loops",
+  fixture_fn = if (exists("make_roborev_loops")) make_roborev_loops else NULL
+)
+
+# ----- Build or load vignette objects -----
+# Pre-built plot RDS (produced locally if plotly was available during refresh).
+# If absent, build at render time from the data tibbles (CI path after pak install).
+
 vig_roborev_pulse <- safe_tar_read(
   "vig_roborev_pulse",
-  fixture_fn = if (exists("make_roborev_findings")) function() {
-    build_pulse_table(make_roborev_findings(), make_roborev_loops())
-  } else NULL
+  fixture_fn = function() build_pulse_table(roborev_findings_data, roborev_loops_data)
 )
 
 vig_roborev_trend <- safe_tar_read(
   "vig_roborev_trend",
-  fixture_fn = if (exists("make_roborev_findings")) function() {
-    plot_open_findings_trend(make_roborev_findings())
-  } else NULL
+  fixture_fn = function() plot_open_findings_trend(roborev_findings_data)
 )
 
 vig_roborev_top <- safe_tar_read(
   "vig_roborev_top",
-  fixture_fn = if (exists("make_roborev_findings")) function() {
-    plot_top_files(make_roborev_findings())
-  } else NULL
+  fixture_fn = function() plot_top_files(roborev_findings_data)
 )
 
 vig_roborev_loops <- safe_tar_read(
-  "vig_roborev_loops",
-  fixture_fn = if (exists("make_roborev_loops")) function() {
-    plot_loops_table(make_roborev_loops())
-  } else NULL
+  "vig_roborev_loops_widget",   # distinct name to avoid collision with data tibble
+  fixture_fn = function() plot_loops_table(roborev_loops_data)
 )
 
 vig_roborev_inflow <- safe_tar_read(
   "vig_roborev_inflow",
-  fixture_fn = if (exists("make_roborev_findings")) function() {
-    plot_inflow_outflow(make_roborev_findings())
-  } else NULL
+  fixture_fn = function() plot_inflow_outflow(roborev_findings_data)
 )
 
 vig_roborev_resolution <- safe_tar_read(
   "vig_roborev_resolution",
-  fixture_fn = if (exists("make_roborev_findings")) function() {
-    plot_resolution_time(make_roborev_findings())
-  } else NULL
+  fixture_fn = function() plot_resolution_time(roborev_findings_data)
 )
 
 vig_roborev_recent <- safe_tar_read(
   "vig_roborev_recent",
-  fixture_fn = if (exists("make_roborev_findings")) function() {
-    build_recent_table(make_roborev_findings(), days = 30L)
-  } else NULL
+  fixture_fn = function() build_recent_table(roborev_findings_data, days = 30L)
 )
 
 # Convenience helpers for inline prose
@@ -226,23 +242,21 @@ if (!is.null(vig_roborev_recent)) vig_roborev_recent
 
 This vignette displays the current state of the
 <a href="https://github.com/JohnGavin/llm/issues/144"><abbr title="roborev: automated code-review system that tracks findings across review rounds">roborev</abbr></a>
-review pipeline. It reads seven pre-computed targets — `vig_roborev_pulse`,
-`vig_roborev_trend`, `vig_roborev_top`, `vig_roborev_loops`, `vig_roborev_inflow`,
-`vig_roborev_resolution`, and `vig_roborev_recent` — built by
-`plan_roborev_vignette()` from the `roborev_findings` and `roborev_loops` upstream
-targets. Zero inline computation is performed in this vignette: all aggregations
-and chart objects are produced by the pipeline and served as RDS files from
-`inst/extdata/vignettes/` in CI.
+review pipeline. It reads real findings data from `vig_roborev_findings.rds`
+(built from `roborev_review_lifecycle` in `~/.claude/logs/unified.duckdb` by
+`inst/scripts/refresh_roborev_vignette_rds.R`), then builds seven visualisations:
+`vig_roborev_pulse`, `vig_roborev_trend`, `vig_roborev_top`, `vig_roborev_loops`,
+`vig_roborev_inflow`, `vig_roborev_resolution`, and `vig_roborev_recent`.
 
 ### Data sources
 
-- `roborev_findings` target: produced by Agent 1's `plan_roborev.R`; sourced from
-  the `roborev_findings` table in `~/.claude/logs/unified.duckdb`, refreshed on
-  every `critic` + `fixer` agent run.
-- `roborev_loops` target: produced by Agent 2's loop-detection plan; written to
-  `~/.claude/logs/unified.duckdb` by the `detect_loops()` function run after each
-  review cycle.
-- During local development and testing: `tests/testthat/fixtures/roborev_page_fixture.R`
+- `vig_roborev_findings.rds`: 4 465 review rows from `roborev_review_lifecycle`
+  in `~/.claude/logs/unified.duckdb`, spanning 2026-03-13 to 2026-05-24.
+  Each row is one roborev review job; `severity_max` maps to finding severity.
+- `vig_roborev_loops.rds`: empty tibble — no loop-detection table exists in
+  `unified.duckdb` yet; the Loop Detector section shows the "No loops detected"
+  message until loop detection is wired up.
+- During local development without the RDS files: `tests/testthat/fixtures/roborev_page_fixture.R`
   provides synthetic data with the same shape as production.
 
 ### AI disclosure

@@ -116,6 +116,21 @@ jobs:
         working-directory: vignettes
         run: quarto render dashboard_shinylive.qmd
 
+      # -----------------------------------------------------------------------
+      # Guarded roborev page: install deps + render AFTER QA gate (#185 redo).
+      # Both steps carry continue-on-error: true so a failure here CANNOT
+      # empty the git_* exports, fail the QA gate, or block the dashboard deploy.
+      # setup-r-dependencies package list is intentionally left unchanged.
+      # -----------------------------------------------------------------------
+      - name: Install package (for roborev_summary render)
+        continue-on-error: true
+        run: Rscript -e 'pak::local_install(".", ask = FALSE, dependencies = TRUE)'
+
+      - name: Render roborev_summary.qmd
+        continue-on-error: true
+        working-directory: vignettes
+        run: quarto render roborev_summary.qmd
+
       - name: Stage parquet assets for Shinylive DuckDB-WASM
         run: |
           PARQUET_SRC="inst/extdata/telemetry/v1/sessions.parquet"
@@ -141,6 +156,11 @@ jobs:
           cp vignettes/shinylive-sw.js _site/ 2>/dev/null || true
           cp -r vignettes/shinylive _site/ 2>/dev/null || true
           cp -r vignettes/data _site/data 2>/dev/null || true
+          # Stage roborev summary page if render succeeded (guarded; does not
+          # fail the artifact step when the file is absent — continue-on-error
+          # on the render step already prevents that). Fixes #185.
+          cp vignettes/roborev_summary.html _site/ 2>/dev/null || true
+          cp -r vignettes/roborev_summary_files _site/ 2>/dev/null || true
 
       - name: Download missing WebR assets
         run: |
