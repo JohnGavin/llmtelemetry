@@ -190,11 +190,32 @@ accent_blue <- "#4fc3f7"
 accent_purple <- "#bb86fc"
 accent_orange <- "#ff9800"
 
-# Get cache timestamp
-cache_time <- if (!is.null(session_raw$generatedAt)) {
-  session_raw$generatedAt
-} else if (file.exists("inst/extdata/ccusage_session_all.json")) {
-  format(file.info("inst/extdata/ccusage_session_all.json")$mtime, "%Y-%m-%d %H:%M:%S")
+# Get data-age timestamp — reflects the newest record in the data, not the
+# file mtime (which equals checkout time in CI and would mask staleness).
+# Priority: generatedAt from session JSON → latest block actualEndTime/endTime
+#           → latest daily date → "Unknown".
+cache_time <- if (!is.null(session_raw$generatedAt) &&
+                  nchar(as.character(session_raw$generatedAt)) > 0) {
+  as.character(session_raw$generatedAt)
+} else if (!is.null(blocks_raw$blocks) && nrow(blocks_raw$blocks) > 0) {
+  # Use the most recent block end time present in the data
+  blocks_df_ts <- as_tibble(blocks_raw$blocks)
+  end_col <- if ("actualEndTime" %in% names(blocks_df_ts)) "actualEndTime" else "endTime"
+  max_ts <- tryCatch(
+    max(lubridate::ymd_hms(blocks_df_ts[[end_col]], quiet = TRUE), na.rm = TRUE),
+    error = function(e) NA
+  )
+  if (!is.na(max_ts) && is.finite(max_ts)) {
+    format(max_ts, "%Y-%m-%d %H:%M:%S")
+  } else {
+    "Unknown"
+  }
+} else if (!is.null(daily_data) && nrow(daily_data) > 0 && "date" %in% names(daily_data)) {
+  max_date <- tryCatch(
+    max(safe_date(daily_data$date), na.rm = TRUE),
+    error = function(e) NA
+  )
+  if (!is.na(max_date)) as.character(max_date) else "Unknown"
 } else {
   "Unknown"
 }
@@ -581,7 +602,7 @@ if (!has_data) {
 
   email_header <- sprintf('\n<div style="background-color: %s; color: %s; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
 <h2 style="color: %s; margin-bottom: 5px;">LLM Usage Report - %s</h2>
-<p style="color: %s; font-size: 12px; margin-top: 0;">Data cached: %s</p>
+<p style="color: %s; font-size: 12px; margin-top: 0;">Data through: %s</p>
 
 <!-- Embedded Dashboard Link -->
 <div style="margin-bottom: 20px;">
