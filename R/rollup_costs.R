@@ -248,3 +248,12 @@ append_costs_from_staging <- function(
 
   invisible(nrow(new_rows))
 }
+
+# TODO(#83 Phase A): add costs_amendments.parquet SCD2 correction log — each
+# amendment emits a new row with valid_from/valid_to/reason, never
+# UPDATE/DELETE.  Mirror the design from the epic schema.
+#
+# TODO(#83 Phase A): add a scheduled "drain staging → append → commit parquet"
+# step (launchd/cron or /schedule routine) so valid_from reflects real arrival
+# time rather than a single bulk seed timestamp.  Concurrency guard needed:
+# check for an in-progress .tmp file before starting a new drain.
