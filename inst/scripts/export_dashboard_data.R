@@ -23,6 +23,71 @@ local({
 
 cmonitor_bin <- "/Users/johngavin/.cargo/bin/cmonitor-rs"
 
+# ---------------------------------------------------------------------------
+# Privacy exclusion / remap constants (#83 Phase B)
+# ---------------------------------------------------------------------------
+# Projects whose names must NEVER appear in public dashboard output.
+EXCLUDED_DASHBOARD_PROJECTS <- c(
+  "mycare", "crypto", "crypto_solwatch", "crypto_swarms",
+  "my_t_project", "hello_t", "t_demos"
+)
+# Subset that is privacy-gated (used by the CI gate to match per-project JSON fields).
+CONFIDENTIAL_PROJECTS <- c("mycare", "crypto", "crypto_solwatch", "crypto_swarms")
+
+# Name-folding remap: fold suffixed aliases into their canonical parent project,
+# then re-aggregate so their rows merge into the parent's totals.
+PROJECT_REMAP <- c("llmtelemetry-hook-sync" = "llmtelemetry")
+
+#' Clean per-project data frame before writing to public output.
+#'
+#' Applies three steps in order:
+#'   1. Normalise worktree/branch-suffixed names to their base project
+#'      (delegated to canonicalize_project / canonicalize_session_project which
+#'      are defined later in this script; can also be called post-definition).
+#'   2. Apply PROJECT_REMAP (fold aliases into canonical parents).
+#'   3. Drop rows whose project matches EXCLUDED_DASHBOARD_PROJECTS.
+#'
+#' Matching is case-insensitive and handles suffix variants like
+#' "mycare-feat-something" by checking whether the base name (before the first
+#' "-feat-", "-fix-", or agent-worktree suffix) matches an excluded entry.
+#'
+#' @param df        A data frame with a project column.
+#' @param project_col  Name of the project column (default "project").
+#' @return The filtered/remapped data frame.
+clean_projects <- function(df, project_col = "project") {
+  if (!is.data.frame(df) || nrow(df) == 0L) return(df)
+  if (!project_col %in% names(df)) return(df)
+
+  proj <- df[[project_col]]
+
+  # Step 1: base-name extraction (strip branch/worktree suffixes to reveal root).
+  # Matches suffixes like "-feat-foo", "-fix-foo", "-worktree-NNN", "-YYYYMMDD-...",
+  # and the "-hook-sync" suffix so we can check the base against the remap table.
+  base_proj <- sub(
+    "-(?:feat|fix|chore|docs|refactor|test|ci|perf|style|build|revert|worktree)-.*$",
+    "",
+    proj,
+    ignore.case = TRUE
+  )
+
+  # Step 2: apply PROJECT_REMAP on the base name (case-insensitive key lookup).
+  remap_keys_lower <- tolower(names(PROJECT_REMAP))
+  for (i in seq_along(PROJECT_REMAP)) {
+    hits <- tolower(base_proj) == remap_keys_lower[i] |
+            tolower(proj)      == remap_keys_lower[i]
+    proj[hits]      <- PROJECT_REMAP[[i]]
+    base_proj[hits] <- PROJECT_REMAP[[i]]
+  }
+  df[[project_col]] <- proj
+
+  # Step 3: drop rows whose BASE project name matches EXCLUDED_DASHBOARD_PROJECTS
+  # (case-insensitive). This catches both exact matches ("mycare") and suffixed
+  # variants ("mycare-feat-something").
+  excluded_lower <- tolower(EXCLUDED_DASHBOARD_PROJECTS)
+  keep <- !tolower(base_proj) %in% excluded_lower
+  df[keep, , drop = FALSE]
+}
+
 # Helper: convert cmonitor-rs time array to "YYYY-MM-DD HH:MM:SS" string
 # t = c(year, day_of_year, hour, min, sec, nanosec, ...)
 parse_cmonitor_time <- function(t) {
@@ -559,6 +624,8 @@ if (length(proj_commits_list) > 0) {
     mutate(canonical_project = canonicalize_project(project))
   # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
   proj_commits_df <- sanitize_for_public(proj_commits_df)
+  # Exclude confidential/demo projects from public output (#83 Phase B)
+  proj_commits_df <- clean_projects(proj_commits_df)
   write_json(proj_commits_df, file.path(out_dir, "git_commits_by_project.json"), auto_unbox = TRUE)
   write_json(proj_commits_df, file.path(extdata, "git_commits_by_project.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d commits across %d projects\n",
@@ -591,6 +658,8 @@ if (exists("proj_commits_df") && nrow(proj_commits_df) > 0) {
     arrange(project, iso_week)
   # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
   weekly_commits <- sanitize_for_public(weekly_commits)
+  # Exclude confidential/demo projects from public output (#83 Phase B)
+  weekly_commits <- clean_projects(weekly_commits)
   write_json(weekly_commits, file.path(out_dir, "weekly_commits_by_project.json"), auto_unbox = TRUE)
   write_json(weekly_commits, file.path(extdata, "weekly_commits_by_project.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d project-week rows across %d projects\n",
@@ -620,6 +689,8 @@ if (exists("proj_commits_df") && nrow(proj_commits_df) > 0) {
         arrange(project, iso_week)
       # Sanitize before public commit (#936)
       weekly_commits <- sanitize_for_public(weekly_commits)
+      # Exclude confidential/demo projects from public output (#83 Phase B)
+      weekly_commits <- clean_projects(weekly_commits)
       write_json(weekly_commits, file.path(out_dir, "weekly_commits_by_project.json"), auto_unbox = TRUE)
       write_json(weekly_commits, file.path(extdata, "weekly_commits_by_project.json"), auto_unbox = TRUE)
       cat(sprintf("  -> %d project-week rows (CI fallback)\n", nrow(weekly_commits)))
@@ -775,6 +846,8 @@ if (length(churn_list) > 0) {
     mutate(canonical_project = canonicalize_project(project))
   # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
   file_churn_df <- sanitize_for_public(file_churn_df)
+  # Exclude confidential/demo projects from public output (#83 Phase B)
+  file_churn_df <- clean_projects(file_churn_df)
   write_json(file_churn_df, file.path(out_dir, "file_churn.json"), auto_unbox = TRUE)
   write_json(file_churn_df, file.path(extdata, "file_churn.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d files across %d projects\n",
@@ -882,6 +955,8 @@ if (length(coupling_list) > 0) {
     mutate(canonical_project = canonicalize_project(project))
   # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
   coupling_df <- sanitize_for_public(coupling_df)
+  # Exclude confidential/demo projects from public output (#83 Phase B)
+  coupling_df <- clean_projects(coupling_df)
   write_json(coupling_df, file.path(out_dir, "change_coupling.json"), auto_unbox = TRUE)
   write_json(coupling_df, file.path(extdata, "change_coupling.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d file pairs across %d projects\n",
@@ -1084,6 +1159,8 @@ if (file.exists(unified_db)) {
   # Sanitize before public commit: replace raw project with canonical, drop
   # orphans, remove session_id (raw filesystem path) (#936)
   u_sess_pub <- sanitize_for_public(u_sess)
+  # Exclude confidential/demo projects from public output (#83 Phase B)
+  u_sess_pub <- clean_projects(u_sess_pub)
   cat(sprintf("  -> dropped %d orphan/worktree sessions; %d kept\n",
               nrow(u_sess) - nrow(u_sess_pub), nrow(u_sess_pub)))
   # Write to both locations: inst/extdata (commit) + vignettes/data (preview)
@@ -1144,6 +1221,8 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
   out_data$project <- out_data$canonical_project
   # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
   out_data <- sanitize_for_public(out_data)
+  # Exclude confidential/demo projects from public output (#83 Phase B)
+  out_data <- clean_projects(out_data)
   write_json(out_data, file.path(out_dir, "cost_by_project_estimated.json"), auto_unbox = TRUE)
   write_json(out_data, file.path(extdata, "cost_by_project_estimated.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d project-day cost estimates (written to inst/extdata + vignettes/data)\n", nrow(out_data)))
@@ -1174,6 +1253,8 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
     )
     out_tok$project <- out_tok$canonical_project
     out_tok <- sanitize_for_public(out_tok)
+    # Exclude confidential/demo projects from public output (#83 Phase B)
+    out_tok <- clean_projects(out_tok)
     write_json(out_tok, file.path(out_dir, "tokens_by_project.json"), auto_unbox = TRUE)
     write_json(out_tok, file.path(extdata, "tokens_by_project.json"), auto_unbox = TRUE)
     cat(sprintf("  -> %d project-day token estimates (written to inst/extdata + vignettes/data)\n",
@@ -1811,6 +1892,9 @@ if (!is.null(pm_all) && nrow(pm_all) > 0L) {
   projects_master$first_seen <- substr(projects_master$first_seen, 1L, 10L)
   projects_master$last_seen  <- substr(projects_master$last_seen,  1L, 10L)
 
+  # Exclude confidential/demo projects from public master list (#83 Phase B)
+  projects_master <- clean_projects(projects_master, project_col = "canonical_project")
+
   write_json(projects_master, file.path(out_dir, "projects_master.json"),
              auto_unbox = TRUE)
   write_json(projects_master, file.path(extdata, "projects_master.json"),
@@ -1946,6 +2030,91 @@ tryCatch({
     file.path(out_dir, "roborev_summary.json"),
     auto_unbox = TRUE
   )
+})
+
+# --- 8d. Export roborev_by_repo.json (per-repo review counts, #146) -----------
+# Contract: [{repo, n_total, n_high, n_resolved, n_open}, ...] sorted by n_total desc.
+# Codex pattern: regenerate from unified.duckdb when available, else copy committed
+# inst/extdata/roborev_by_repo.json.  Always copy committed source to vignettes/data/.
+cat("Exporting roborev_by_repo.json...\n")
+tryCatch({
+  roborev_by_repo_src  <- file.path(extdata, "roborev_by_repo.json")
+  roborev_by_repo_dst  <- file.path(out_dir, "roborev_by_repo.json")
+
+  if (file.exists(unified_db)) {
+    rcon2 <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(rcon2, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    rbtbls2 <- dbListTables(rcon2)
+
+    if ("roborev_review_lifecycle" %in% rbtbls2) {
+      rl2 <- dbReadTable(rcon2, "roborev_review_lifecycle")
+
+      # repo column: fall back to "project" if "repo" is absent
+      repo_col <- if ("repo" %in% names(rl2)) "repo" else "project"
+
+      if (repo_col %in% names(rl2)) {
+        is_open2 <- is.na(rl2$close_reason) | !nzchar(as.character(rl2$close_reason))
+        is_high  <- !is.na(rl2$severity_max) & rl2$severity_max %in% c("High", "Critical")
+
+        rl2$repo_name   <- rl2[[repo_col]]
+        rl2$is_open     <- as.integer(is_open2)
+        rl2$is_high     <- as.integer(is_high)
+        rl2$is_resolved <- as.integer(!is_open2)
+
+        by_repo_agg <- aggregate(
+          cbind(n_high     = is_high,
+                n_resolved = is_resolved,
+                n_open     = is_open) ~ repo_name,
+          data = rl2,
+          FUN  = sum
+        )
+        by_repo_agg$n_total <- by_repo_agg$n_resolved + by_repo_agg$n_open
+
+        by_repo <- by_repo_agg
+        names(by_repo)[names(by_repo) == "repo_name"] <- "repo"
+        by_repo <- by_repo[order(-by_repo$n_total), ]
+        # Keep columns in contract order: repo, n_total, n_high, n_resolved, n_open
+        by_repo <- by_repo[, c("repo", "n_total", "n_high", "n_resolved", "n_open")]
+
+        row.names(by_repo) <- NULL
+
+        # Apply clean_projects to remove confidential repos and apply remap (#83 Phase B)
+        by_repo <- clean_projects(by_repo, project_col = "repo")
+        # Re-aggregate in case remap merged two rows (e.g. llmtelemetry-hook-sync -> llmtelemetry)
+        by_repo <- aggregate(
+          cbind(n_total, n_high, n_resolved, n_open) ~ repo,
+          data = by_repo,
+          FUN  = sum
+        )
+        by_repo <- by_repo[order(-by_repo$n_total), ]
+        row.names(by_repo) <- NULL
+
+        write_json(by_repo, roborev_by_repo_src, auto_unbox = TRUE)
+        cat(sprintf("  -> inst/extdata/roborev_by_repo.json: %d repos\n", nrow(by_repo)))
+      } else {
+        cat("  -> roborev_review_lifecycle has no repo/project column; skipping\n")
+      }
+    } else {
+      cat("  -> roborev_review_lifecycle not found; skipping roborev_by_repo\n")
+    }
+    tryCatch(dbDisconnect(rcon2, shutdown = TRUE), error = function(e) NULL)
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  # Always copy committed source to vignettes/data/
+  if (file.exists(roborev_by_repo_src)) {
+    file.copy(roborev_by_repo_src, roborev_by_repo_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_by_repo.json -> vignettes/data/ (%d bytes)\n",
+                file.info(roborev_by_repo_src)$size))
+  } else {
+    write_json(list(), roborev_by_repo_dst, auto_unbox = TRUE)
+    cat("  -> wrote empty roborev_by_repo.json (no source available)\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_by_repo.json export error: %s\n", conditionMessage(e)))
+  write_json(list(), file.path(out_dir, "roborev_by_repo.json"), auto_unbox = TRUE)
 })
 
 # --- 9. QA validation — fail early on empty critical data ---------------------

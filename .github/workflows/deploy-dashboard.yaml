@@ -162,6 +162,65 @@ jobs:
           cp vignettes/roborev_summary.html _site/ 2>/dev/null || true
           cp -r vignettes/roborev_summary_files _site/ 2>/dev/null || true
 
+      - name: Privacy gate — block confidential projects from deploy (#83 Phase B)
+        run: |
+          python3 << 'PYEOF'
+          import json, os, sys
+
+          # Projects that must NEVER appear in deployed per-project JSON files.
+          CONFIDENTIAL = {"mycare", "crypto", "crypto_solwatch", "crypto_swarms"}
+
+          # Per-project JSON files that carry a "project" or "canonical_project" field.
+          PER_PROJECT_FILES = [
+            "cost_by_project_estimated.json",
+            "tokens_by_project.json",
+            "git_commits_by_project.json",
+            "weekly_commits_by_project.json",
+            "projects_master.json",
+            "roborev_by_repo.json",
+          ]
+
+          data_dir = "_site/data"
+          violations = []
+
+          def project_values(obj):
+              """Extract project-name strings from a JSON object or list."""
+              vals = []
+              if isinstance(obj, list):
+                  for item in obj:
+                      if isinstance(item, dict):
+                          for key in ("project", "canonical_project", "repo"):
+                              if key in item:
+                                  vals.append(str(item[key]))
+              elif isinstance(obj, dict):
+                  for key in ("project", "canonical_project", "repo"):
+                      if key in obj:
+                          vals.append(str(obj[key]))
+              return vals
+
+          for fname in PER_PROJECT_FILES:
+              path = os.path.join(data_dir, fname)
+              if not os.path.exists(path):
+                  continue
+              try:
+                  data = json.load(open(path))
+              except Exception as e:
+                  print(f"WARN: could not parse {fname}: {e}")
+                  continue
+              for pname in project_values(data):
+                  # Check the base name before any branch suffix
+                  base = pname.lower().split("-feat-")[0].split("-fix-")[0].split("-chore-")[0]
+                  if base in CONFIDENTIAL or pname.lower() in CONFIDENTIAL:
+                      violations.append(f"{fname}: project={pname!r}")
+
+          if violations:
+              for v in violations:
+                  print(f"::error::PRIVACY GATE FAILED — confidential project in deploy: {v}")
+              sys.exit(1)
+          else:
+              print("Privacy gate: no confidential project names found in per-project JSON files")
+          PYEOF
+
       - name: Download missing WebR assets
         run: |
           # Shinylive 0.9.1 uses WebR v0.4.2 but the versioned CDN returns 403
