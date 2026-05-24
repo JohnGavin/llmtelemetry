@@ -39,6 +39,8 @@ format:
       - data/cost_per_commit.json
       - data/file_churn.json
       - data/change_coupling.json
+      - data/roborev_summary.json
+      - data/roborev_by_repo.json
       - data/v1/sessions.parquet
 filters:
   - shinylive
@@ -1035,6 +1037,16 @@ ui <- page_navbar(
         layout_columns(col_widths = c(12),
           card(card_header("Cost per Commit Trend"), uiOutput("cost_per_commit_chart"),
             card_footer(class = "text-muted small", "Estimated cost per commit (USD) over time by project. Lower = more efficient sessions per code change. Granularity toggle applies."))
+        ),
+        layout_columns(col_widths = c(12),
+          card(card_header("Cross-Tool Daily Cost (Claude vs Codex vs Gemini)"),
+            uiOutput("cross_tool_daily_cost"),
+            card_footer(class = "text-muted small",
+              "Daily API spend (USD) across all three tools: Claude (ccusage), Codex (OpenAI estimated), ",
+              "and Gemini (billing API). Each tool uses the project's canonical cost column — ",
+              "totalCost for Claude, est_cost_usd for Codex, and total_cost for Gemini. ",
+              "Time horizon slider applies. Absent or zero data for a tool renders gracefully without error. ",
+              "Source: ccusage_daily.json, codex_daily.json, gemini_daily.json."))
         )
       ),
       nav_panel("Token Analysis", value = "Token Analysis",
@@ -1272,6 +1284,16 @@ ui <- page_navbar(
             card_footer(class = "text-muted small",
               "Counts sourced from unified.duckdb roborev_findings and roborev_loops tables.")
           )
+        ),
+        layout_columns(col_widths = c(12),
+          card(card_header("High-Severity Findings by Repo"),
+            uiOutput("rv_by_repo_chart"),
+            card_footer(class = "text-muted small",
+              "Cleveland dot chart showing the number of high-severity roborev findings per repository, ",
+              "sorted descending by finding count. Each dot represents one repository; the x-axis shows ",
+              "the total high-severity finding count (n_high from roborev_by_repo.json). ",
+              "Data sourced from the roborev pipeline export — refreshed on each tar_make() run. ",
+              "Chart is hidden gracefully when roborev_by_repo.json is not yet available."))
         ),
         layout_columns(col_widths = c(12),
           card(card_header("Active Loops"), DTOutput("rv_loops_table"),
@@ -3233,10 +3255,66 @@ server <- function(input, output, session) {
       rownames = FALSE)
   })
 
+  # --- Cross-tool daily cost (Cost Trends sub-tab) ----------------------------
+  # Panel 2 of #146: stacked/grouped daily cost by Claude, Codex, Gemini.
+  # Reads from the already-loaded cc_daily, codex_daily, gem_daily data frames.
+  # Degrades gracefully: any absent source is simply omitted from the chart.
+  output$cross_tool_daily_cost <- renderUI({
+    has_cc  <- has_rows(cc_d()) && "totalCost" %in% names(cc_d())
+    has_cx  <- has_rows(codex_d()) && "est_cost_usd" %in% names(codex_d())
+    has_gem <- has_rows(gem_d()) && "total_cost" %in% names(gem_d())
+    if (!has_cc && !has_cx && !has_gem)
+      return(ec_empty("No cross-tool cost data available", h = "300px"))
+
+    rows <- list()
+    if (has_cc) {
+      a <- aggregate(totalCost ~ date, data = cc_d(), FUN = sum, na.rm = TRUE)
+      names(a)[2] <- "cost"
+      a$source <- "Claude"
+      rows[[length(rows) + 1]] <- a
+    }
+    if (has_cx) {
+      a <- aggregate(est_cost_usd ~ date, data = codex_d(), FUN = sum, na.rm = TRUE)
+      names(a)[2] <- "cost"
+      a$source <- "Codex"
+      rows[[length(rows) + 1]] <- a
+    }
+    if (has_gem) {
+      a <- aggregate(total_cost ~ date, data = gem_d(), FUN = sum, na.rm = TRUE)
+      names(a)[2] <- "cost"
+      a$source <- "Gemini"
+      rows[[length(rows) + 1]] <- a
+    }
+    if (length(rows) == 0) return(ec_empty("No cross-tool cost data available", h = "300px"))
+
+    d <- do.call(rbind, rows)
+    all_dates <- sort(unique(d$date))
+    src_color <- c(Claude = SOURCE_PALETTE[["claude"]],
+                   Codex  = SOURCE_PALETTE[["codex"]],
+                   Gemini = SOURCE_PALETTE[["gemini"]])
+    sources <- unique(d$source)
+    series <- lapply(sources, function(s) {
+      sd <- d[d$source == s, ]
+      vals <- rep(0, length(all_dates))
+      vals[match(sd$date, all_dates)] <- round(sd$cost, 4)
+      list(name = s, type = "line",
+           data = I(vals),
+           areaStyle = list(opacity = 0.15),
+           itemStyle = list(color = unname(src_color[s])),
+           lineStyle  = list(color = unname(src_color[s])))
+    })
+    ec_line(all_dates, series, h = "300px", y_name = "Cost (USD)",
+            aria_label = "Grouped line chart: daily API cost by tool (Claude, Codex, Gemini)")
+  })
+
   # --- Reviews tab: roborev pipeline health -----------------------------------
   # Data loaded from roborev_summary.json (pre-computed by export_dashboard_data.R).
   # Falls back gracefully when the file is not available (no roborev data yet).
   roborev_summary_raw <- load_json("roborev_summary.json")
+  # roborev_by_repo.json — per-repo high-severity counts for Panel 1 of #146.
+  # Contract: [{"repo":"llm","n_total":120,"n_high":40,"n_resolved":80,"n_open":40}, ...]
+  # Produced by the parallel exclusion PR; degrade gracefully when absent.
+  roborev_by_repo_raw <- load_json("roborev_by_repo.json")
 
   rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
     roborev_summary_raw$pulse
@@ -3265,6 +3343,38 @@ server <- function(input, output, session) {
     v <- safe_rv("wasted_usd", default = NA)
     if (is.na(v)) return("—")
     tryCatch(sprintf("$%.2f", as.numeric(v)), error = function(e) "—")
+  })
+
+  # Panel 1 of #146: per-repo high-severity findings — Cleveland dot chart.
+  # Reads roborev_by_repo.json. Degrades to "no data yet" message when absent.
+  output$rv_by_repo_chart <- renderUI({
+    d <- as_df(roborev_by_repo_raw)
+    if (!has_rows(d) || !"repo" %in% names(d))
+      return(ec_empty("No per-repo roborev data yet — roborev_by_repo.json not deployed", h = "300px"))
+    # Use n_high if present, else fall back to n_total
+    val_col <- if ("n_high" %in% names(d)) "n_high" else if ("n_total" %in% names(d)) "n_total" else NULL
+    if (is.null(val_col))
+      return(ec_empty("roborev_by_repo.json missing n_high/n_total columns", h = "300px"))
+    # Sort ascending (Cleveland dot: lowest at bottom, highest at top)
+    d <- d[order(d[[val_col]], decreasing = FALSE), ]
+    axis_label <- if (val_col == "n_high") "High-severity findings" else "Total findings"
+    ec(list(
+      tooltip = list(trigger = "axis", axisPointer = list(type = "shadow")),
+      grid = list(left = 120, containLabel = FALSE),
+      xAxis = list(type = "value", name = axis_label,
+                   nameLocation = "middle", nameGap = 25,
+                   axisLabel = list(color = "#ccc"),
+                   nameTextStyle = list(color = "#ccc")),
+      yAxis = list(type = "category", data = I(d$repo),
+                   axisLabel = list(color = "#ccc", fontSize = 11)),
+      series = list(list(
+        type = "scatter",
+        data = I(as.numeric(d[[val_col]])),
+        symbolSize = 12,
+        itemStyle = list(color = "#f08080")   # danger red from accessibility palette
+      ))
+    ), h = "300px",
+    aria_label = paste0("Cleveland dot chart: ", tolower(axis_label), " per repository, sorted descending"))
   })
 
   output$rv_loops_table <- renderDT({
