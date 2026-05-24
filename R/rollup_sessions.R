@@ -279,3 +279,10 @@ append_sessions_from_staging <- function(
 
   invisible(nrow(new_rows))
 }
+
+# TODO(#83 Phase A): add sessions_amendments.parquet SCD2 correction log —
+# each amendment emits a new row with valid_from/valid_to/reason, never
+# UPDATE/DELETE.
+#
+# TODO(#83 Phase A): add a scheduled "drain staging → append → commit parquet"
+# step so valid_from reflects real arrival time rather than a bulk seed.
