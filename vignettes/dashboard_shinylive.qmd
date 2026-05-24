@@ -597,16 +597,41 @@ ui <- page_navbar(
     ")),
     tags$script(HTML("
       // Mermaid + Tippy init for architecture diagram (Glossary tab, issue #176)
-      function initMermaid() {
-        if (typeof mermaid === 'undefined') { setTimeout(initMermaid, 300); return; }
-        mermaid.initialize({
-          startOnLoad: true,
-          securityLevel: 'loose',
-          theme: 'dark',
-          themeVariables: { fontSize: '14px', lineColor: '#7cb5ec' }
+      // Fix: startOnLoad:false prevents premature render while tab is display:none.
+      // Rendering is deferred to renderVisibleMermaid(), which is called on
+      // shown.bs.tab (Bootstrap 5 tab-show event) and after Shinylive injects the DOM.
+      var _mermaidInitialized = false;
+      function ensureMermaidInit() {
+        if (typeof mermaid === 'undefined') { return false; }
+        if (!_mermaidInitialized) {
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'loose',
+            theme: 'dark',
+            themeVariables: { fontSize: '14px', lineColor: '#7cb5ec' }
+          });
+          _mermaidInitialized = true;
+        }
+        return true;
+      }
+      function renderVisibleMermaid() {
+        if (!ensureMermaidInit()) {
+          // CDN script not yet loaded — retry shortly
+          setTimeout(renderVisibleMermaid, 300);
+          return;
+        }
+        var blocks = document.querySelectorAll('.arch-mermaid-wrap .mermaid');
+        blocks.forEach(function(el) {
+          // Only render blocks that are currently visible (not in a display:none container)
+          if (el.offsetParent === null) { return; }
+          // Clear premature 'data-processed' marker set while block was hidden
+          if (el.getAttribute('data-processed') === 'true' && !el.querySelector('svg')) {
+            el.removeAttribute('data-processed');
+          }
+          // Skip if already rendered (has an SVG child)
+          if (el.querySelector('svg')) { return; }
+          mermaid.run({ nodes: [el] });
         });
-        // Re-run on any newly added .mermaid blocks
-        try { mermaid.contentLoaded(); } catch(e) {}
       }
       function initArchTippy() {
         if (typeof tippy === 'undefined') { setTimeout(initArchTippy, 300); return; }
@@ -622,14 +647,29 @@ ui <- page_navbar(
           });
         });
       }
-      // Run on DOMContentLoaded and again after shiny:connected (Shinylive timing)
-      window.addEventListener('DOMContentLoaded', function() {
-        setTimeout(initMermaid, 200);
-        setTimeout(initArchTippy, 800);
+      // Render when any Bootstrap 5 tab becomes visible (covers Reference tab and Glossary inner tab)
+      document.addEventListener('shown.bs.tab', function() {
+        setTimeout(renderVisibleMermaid, 100);
       });
+      // After Shinylive injects the app DOM, attempt render and Tippy init.
+      // MutationObserver fires once when child nodes are added to body (app shell appears).
+      var _archObserver = new MutationObserver(function(mutations, obs) {
+        var hasApp = document.querySelector('.arch-mermaid-wrap');
+        if (hasApp) {
+          obs.disconnect();
+          setTimeout(renderVisibleMermaid, 200);
+          setTimeout(initArchTippy, 800);
+        }
+      });
+      _archObserver.observe(document.body, { childList: true, subtree: true });
+      // Fallback: also try on shiny:connected and shiny:idle in case observer misses
       document.addEventListener('shiny:connected', function() {
-        setTimeout(initMermaid, 200);
+        setTimeout(renderVisibleMermaid, 400);
         setTimeout(initArchTippy, 600);
+      });
+      document.addEventListener('shiny:idle', function() {
+        renderVisibleMermaid();
+        initArchTippy();
       });
     ")),
     # Phase 2B: DuckDB-WASM — initialise once, expose queryAndRenderSessions() globally.
@@ -1060,18 +1100,14 @@ ui <- page_navbar(
         layout_columns(col_widths = c(12),
           card(min_height = "400px", card_header("Lines Changed per Commit"), uiOutput("commit_hist"),
             card_footer(class = "text-muted small", "Distribution of total lines changed per commit (selected repo)"))
-        ),
+        )
+      ),
+      nav_panel("Commit Patterns",
         layout_columns(col_widths = c(6, 6),
           card(min_height = "400px", card_header("Lines Changed Over Time"), uiOutput("commit_scatter_time"),
             card_footer(class = "text-muted small", "Lines changed per commit over time, sized by files changed")),
           card(min_height = "400px", card_header("Additions vs Deletions"), uiOutput("commit_scatter_add_del"),
             card_footer(class = "text-muted small", "Lines added vs deleted per commit"))
-        ),
-        layout_columns(col_widths = c(6, 6),
-          card(min_height = "400px", card_header("Bus Factor (All Time)"), uiOutput("rh_bus_all"),
-            card_footer(class = "text-muted small", "Contributor commit share — 1 person at 60%+ = risk")),
-          card(min_height = "400px", card_header("Bus Factor (6 Months)"), uiOutput("rh_bus_6mo"),
-            card_footer(class = "text-muted small", "Recent contributor concentration"))
         ),
         layout_columns(col_widths = c(6, 6),
           card(min_height = "400px", card_header("Velocity Trend"), uiOutput("rh_velocity"),
@@ -1082,6 +1118,14 @@ ui <- page_navbar(
         layout_columns(col_widths = c(12),
           card(min_height = "400px", card_header("File Growth (6-Month Rolling)"), uiOutput("rh_file_growth"),
             card_footer(class = "text-muted small", "6-month rolling aggregate of files added vs deleted — green = additions, red = deletions"))
+        )
+      ),
+      nav_panel("Contributors & Activity",
+        layout_columns(col_widths = c(6, 6),
+          card(min_height = "400px", card_header("Bus Factor (All Time)"), uiOutput("rh_bus_all"),
+            card_footer(class = "text-muted small", "Contributor commit share — 1 person at 60%+ = risk")),
+          card(min_height = "400px", card_header("Bus Factor (6 Months)"), uiOutput("rh_bus_6mo"),
+            card_footer(class = "text-muted small", "Recent contributor concentration"))
         ),
         layout_columns(col_widths = c(12),
           card(min_height = "400px", card_header("GitHub Issue Activity (Last 30 Days)"), uiOutput("gh_events_chart"),
