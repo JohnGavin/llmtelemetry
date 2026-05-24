@@ -1591,6 +1591,24 @@ api_index <- list(
         n_cochanges       = "integer",
         weight_normalised = "number"
       )
+    ),
+    list(
+      path        = "/roborev_summary.json",
+      description = "Roborev code-review pipeline health: pulse KPIs + active loops",
+      type        = "object",
+      source      = "~/.claude/logs/unified.duckdb (roborev_review_lifecycle, roborev_loops)",
+      schema      = list(
+        pulse = list(
+          n_open     = "integer",
+          n_critical = "integer",
+          n_high     = "integer",
+          n_resolved = "integer",
+          n_loops    = "integer",
+          n_escalate = "integer",
+          wasted_usd = "number"
+        ),
+        loops = "array of {tier, cycles, severity, primary_file, summary, first_seen, last_seen, estimated_wasted_usd}"
+      )
     )
   )
 )
@@ -1804,6 +1822,116 @@ if (!is.null(pm_all) && nrow(pm_all) > 0L) {
   write_json(list(), file.path(extdata, "projects_master.json"))
   cat("  -> no project data available, writing empty projects_master.json\n")
 }
+
+# --- 8c. Export roborev_summary.json (Reviews tab in dashboard) ---------------
+# Produces the JSON consumed by the dashboard Reviews tab (load_json("roborev_summary.json")).
+# Contract (from dashboard_shinylive.qmd, rv_* reactives):
+#   pulse: {n_open, n_critical, n_high, n_resolved, n_loops, n_escalate, wasted_usd}
+#   loops: [{tier, cycles, severity, primary_file, summary,
+#             first_seen, last_seen, estimated_wasted_usd}]
+# Degrades gracefully when unified.duckdb is absent or tables are missing.
+cat("Exporting roborev_summary.json...\n")
+tryCatch({
+  roborev_json_path <- file.path(out_dir, "roborev_summary.json")
+  unified_db_path   <- file.path(Sys.getenv("HOME"), ".claude/logs/unified.duckdb")
+
+  if (!file.exists(unified_db_path)) {
+    cat("  -> unified.duckdb not found; writing empty roborev_summary.json\n")
+    write_json(
+      list(
+        pulse = list(n_open = 0L, n_critical = 0L, n_high = 0L,
+                     n_resolved = 0L, n_loops = 0L, n_escalate = 0L,
+                     wasted_usd = 0),
+        loops = list()
+      ),
+      roborev_json_path,
+      auto_unbox = TRUE
+    )
+  } else {
+    rcon <- dbConnect(duckdb(), dbdir = unified_db_path, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(rcon, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+
+    rbtbls <- dbListTables(rcon)
+
+    # --- pulse from roborev_review_lifecycle ---
+    if ("roborev_review_lifecycle" %in% rbtbls) {
+      rl <- dbReadTable(rcon, "roborev_review_lifecycle")
+
+      # "open" = no close_reason (closed_at is not populated in production)
+      is_open <- is.na(rl$close_reason) | !nzchar(as.character(rl$close_reason))
+
+      n_open     <- sum(is_open)
+      n_resolved <- sum(!is_open)
+
+      # severity_max values in production: "High", "Medium", "Low" (no "Critical")
+      # Map: High -> critical KPI, Medium -> high KPI for dashboard display
+      n_high     <- sum(!is.na(rl$severity_max) & rl$severity_max == "High"   & is_open)
+      n_critical <- sum(!is.na(rl$severity_max) & rl$severity_max == "Medium" & is_open)
+    } else {
+      n_open <- n_resolved <- n_high <- n_critical <- 0L
+      cat("  -> roborev_review_lifecycle not found; pulse will be zero\n")
+    }
+
+    # --- loops from roborev_loops (if present) ---
+    if ("roborev_loops" %in% rbtbls) {
+      loops_df    <- dbReadTable(rcon, "roborev_loops")
+      n_loops     <- nrow(loops_df)
+      n_escalate  <- sum(!is.na(loops_df$tier) & loops_df$tier == "escalate")
+      wasted_usd  <- round(sum(loops_df$estimated_wasted_usd, na.rm = TRUE), 4)
+
+      # Shape loops array for dashboard: keep only the columns the dashboard uses
+      loop_cols <- c("tier", "cycles", "severity", "primary_file", "summary",
+                     "first_seen", "last_seen", "estimated_wasted_usd")
+      loops_export <- loops_df[, intersect(loop_cols, names(loops_df)), drop = FALSE]
+      # Coerce timestamps to character for JSON serialisation
+      for (col in c("first_seen", "last_seen")) {
+        if (col %in% names(loops_export)) {
+          loops_export[[col]] <- as.character(loops_export[[col]])
+        }
+      }
+      loops_list <- lapply(seq_len(nrow(loops_export)), function(i) {
+        as.list(loops_export[i, , drop = FALSE])
+      })
+    } else {
+      n_loops    <- 0L
+      n_escalate <- 0L
+      wasted_usd <- 0
+      loops_list <- list()
+      cat("  -> roborev_loops not found; loops array will be empty\n")
+    }
+
+    roborev_summary <- list(
+      pulse = list(
+        n_open     = as.integer(n_open),
+        n_critical = as.integer(n_critical),
+        n_high     = as.integer(n_high),
+        n_resolved = as.integer(n_resolved),
+        n_loops    = as.integer(n_loops),
+        n_escalate = as.integer(n_escalate),
+        wasted_usd = wasted_usd
+      ),
+      loops = loops_list
+    )
+
+    write_json(roborev_summary, roborev_json_path, auto_unbox = TRUE)
+    cat(sprintf("  -> roborev_summary.json: pulse={n_open=%d, n_high=%d, n_resolved=%d, n_loops=%d}\n",
+                n_open, n_high, n_resolved, n_loops))
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_summary.json export error: %s\n", conditionMessage(e)))
+  cat("  -> writing empty roborev_summary.json as fallback\n")
+  write_json(
+    list(
+      pulse = list(n_open = 0L, n_critical = 0L, n_high = 0L,
+                   n_resolved = 0L, n_loops = 0L, n_escalate = 0L,
+                   wasted_usd = 0),
+      loops = list()
+    ),
+    file.path(out_dir, "roborev_summary.json"),
+    auto_unbox = TRUE
+  )
+})
 
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
