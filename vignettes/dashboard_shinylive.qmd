@@ -587,7 +587,8 @@ ui <- page_navbar(
     tags$link(rel = "stylesheet", href = "https://unpkg.com/tippy.js@6/dist/tippy.css"),
     tags$style(HTML("
       /* Architecture diagram Mermaid sizing */
-      .arch-mermaid-wrap .mermaid svg { max-width: 100%; height: auto; }
+      .arch-mermaid-wrap { min-height: 560px; }
+      .arch-mermaid-wrap .mermaid svg { max-width: 720px; height: auto; display: block; margin: 0 auto; }
       /* Tippy theme overrides — force >=1rem per hover-popup-standard rule */
       .tippy-box[data-theme~='arch'] { font-size: 1rem !important; max-width: 380px !important; }
       .tippy-box[data-theme~='arch'] a { color: #7cb5ec; }
@@ -661,9 +662,12 @@ ui <- page_navbar(
         _archIntervalId = setInterval(function() {
           _archIntervalAttempts++;
           renderArchMermaid();
-          // Stop once SVG rendered OR after ~30 attempts (~18 s)
-          var rendered = document.querySelector('.arch-mermaid-wrap .mermaid svg');
-          if (rendered || _archIntervalAttempts >= 30) { stopArchInterval(); }
+          // Stop once ALL visible diagrams are rendered OR after ~30 attempts (~18 s)
+          var blocks = document.querySelectorAll('.arch-mermaid-wrap .mermaid');
+          var allRendered = blocks.length > 0 && Array.from(blocks).every(function(b) {
+            return b.offsetParent === null || b.querySelector('svg');
+          });
+          if (allRendered || _archIntervalAttempts >= 30) { stopArchInterval(); }
         }, 600);
       }
 
@@ -1270,7 +1274,7 @@ ui <- page_navbar(
       ),
       nav_panel("Glossary", value = "Glossary", icon = icon("book"),
         # Architecture card — issue #176 increment 1
-        # Approach: Mermaid flowchart LR with clickable nodes (securityLevel loose)
+        # Approach: Mermaid flowchart TB (top-to-bottom) with clickable nodes (securityLevel loose)
         # + definition list with Tippy hover popups (body-size, >=2 sentences, >=1 link)
         # DL fallback chosen over Tippy-on-SVG-node because SVG node IDs are unstable
         # in WebAssembly/Shinylive context (Mermaid ID generation timing).
@@ -1278,7 +1282,7 @@ ui <- page_navbar(
           tags$div(class = "p-3 arch-mermaid-wrap",
             # Mermaid diagram: refresh-cron -> committed-data -> CI-render -> dashboard/email
             tags$div(class = "mermaid", "
-flowchart LR
+flowchart TB
     Logs[\"Claude / Codex / Gemini usage logs (~/.claude)\"]
     Cron[\"Refresh cron — exec/refresh_and_preserve.sh (every 12h)\"]
     Tools[\"ccusage CLI · Gemini API · Codex\"]
@@ -1394,6 +1398,222 @@ flowchart LR
           card_footer(class = "text-muted small",
             "Architecture of the llmtelemetry refresh pipeline. ",
             "Click nodes in the diagram to open the relevant GitHub source or dataset.")
+        ),
+        # Workflow card — issue #176 increment 2
+        # Shows the end-to-end refresh lifecycle: cron triggers -> data pipeline -> CI -> publish
+        card(card_header("Workflow — Refresh Lifecycle"),
+          tags$div(class = "p-3 arch-mermaid-wrap",
+            tags$div(class = "mermaid", "
+flowchart TB
+    Cron12h[\"Cron (every 12h) — refresh_and_preserve.sh\"]
+    FetchCC[\"ccusage fetch — Claude session logs\"]
+    FetchGem[\"Gemini API fetch — token usage\"]
+    FetchCodex[\"Codex export — OpenAI usage\"]
+    Sanitize[\"Sanitize & redact (privacy)\"]
+    Commit[\"git commit + push — inst/extdata\"]
+    CI[\"GitHub Actions — deploy-dashboard.yaml\"]
+    Pages[\"GitHub Pages — static Shinylive site\"]
+    Email[\"send_daily_email.R (08:00 UTC)\"]
+    Cron12h --> FetchCC
+    Cron12h --> FetchGem
+    Cron12h --> FetchCodex
+    FetchCC --> Sanitize
+    FetchGem --> Sanitize
+    FetchCodex --> Sanitize
+    Sanitize --> Commit
+    Commit --> CI
+    CI --> Pages
+    Commit --> Email
+    click Cron12h \"https://github.com/JohnGavin/llmtelemetry/blob/main/exec/refresh_and_preserve.sh\" \"View refresh script\" _blank
+    click CI \"https://github.com/JohnGavin/llmtelemetry/blob/main/.github/workflows/deploy-dashboard.yaml\" \"View CI workflow\" _blank
+    click Pages \"https://johngavin.github.io/llmtelemetry/\" \"Open live dashboard\" _blank
+    click Email \"https://github.com/JohnGavin/llmtelemetry/blob/main/inst/scripts/send_daily_email.R\" \"View email script\" _blank
+            "),
+            tags$p(class = "text-muted small mt-2",
+              "Click highlighted nodes to open the relevant source or workflow. ",
+              "Hover over component names below for descriptions."),
+            tags$dl(class = "arch-dl mt-3", style = "color: #e0e0e0; font-size: 0.95em;",
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>Cron (every 12h) — refresh_and_preserve.sh</b> — A shell script triggered ",
+                  "every 12 hours that orchestrates all data fetching, sanitization, and committing steps. ",
+                  "It preserves existing data before overwriting, ensuring no telemetry is lost. ",
+                  "See <a href='https://github.com/JohnGavin/llmtelemetry/blob/main/exec/refresh_and_preserve.sh' ",
+                  "target='_blank' rel='noopener'>refresh_and_preserve.sh on GitHub</a>."
+                ),
+                "12h Refresh Cron"
+              ),
+              tags$dd("Shell script run every 12 hours — orchestrates fetch, sanitize, commit, and push."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>ccusage fetch</b> — Calls the ccusage CLI to read Claude Code session JSON logs ",
+                  "from <code>~/.claude/</code> and export them as structured JSON (daily, sessions, blocks). ",
+                  "ccusage parses raw Claude Code telemetry into cost and token summaries. ",
+                  "See <a href='https://github.com/ryoppippi/ccusage' target='_blank' rel='noopener'>",
+                  "ccusage on GitHub</a>."
+                ),
+                "ccusage Fetch"
+              ),
+              tags$dd("Reads Claude Code logs from ~/.claude and exports daily/sessions/blocks JSON."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>Gemini API fetch</b> — Queries the Google Gemini API to retrieve token usage statistics ",
+                  "for Gemini CLI sessions. Results are stored in <code>gemini_usage.duckdb</code>. ",
+                  "See <a href='https://ai.google.dev/gemini-api/docs' target='_blank' rel='noopener'>",
+                  "Gemini API docs</a>."
+                ),
+                "Gemini API Fetch"
+              ),
+              tags$dd("Queries Google Gemini API for token usage; stored in gemini_usage.duckdb."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>Sanitize & redact</b> — Removes personally identifiable information and confidential ",
+                  "project paths from the telemetry before committing to the public repository. ",
+                  "This step ensures GDPR and privacy compliance for the published data. ",
+                  "See the <a href='https://github.com/JohnGavin/llmtelemetry/blob/main/exec/refresh_and_preserve.sh' ",
+                  "target='_blank' rel='noopener'>sanitize logic in refresh_and_preserve.sh</a>."
+                ),
+                "Sanitize & Redact"
+              ),
+              tags$dd("Removes PII and confidential paths before committing to the public repo."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>GitHub Actions — deploy-dashboard.yaml</b> — Triggered on every push to main, ",
+                  "this workflow renders the Quarto Shinylive document and deploys it to GitHub Pages. ",
+                  "It also runs R CMD check and validates the output. ",
+                  "See <a href='https://github.com/JohnGavin/llmtelemetry/blob/main/.github/workflows/deploy-dashboard.yaml' ",
+                  "target='_blank' rel='noopener'>deploy-dashboard.yaml on GitHub</a>."
+                ),
+                "CI Render & Deploy"
+              ),
+              tags$dd("GitHub Actions renders Quarto Shinylive and deploys to GitHub Pages on every push."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>send_daily_email.R (08:00 UTC)</b> — An R script scheduled at 08:00 UTC that reads ",
+                  "the latest committed data, computes a daily cost/token/commit summary, and sends it as ",
+                  "an HTML email to the configured recipients. Runs independently of the dashboard CI. ",
+                  "See <a href='https://github.com/JohnGavin/llmtelemetry/blob/main/inst/scripts/send_daily_email.R' ",
+                  "target='_blank' rel='noopener'>send_daily_email.R on GitHub</a>."
+                ),
+                "Daily Email (08:00 UTC)"
+              ),
+              tags$dd("R script (08:00 UTC) reads committed data and sends an HTML daily summary email.")
+            )
+          ),
+          card_footer(class = "text-muted small",
+            "End-to-end refresh lifecycle for llmtelemetry. ",
+            "Click nodes in the diagram to open the relevant source or workflow.")
+        ),
+        # Datasets card — issue #176 increment 2
+        # Shows the committed data files in inst/extdata and what each holds
+        card(card_header("Datasets — Committed Data Files"),
+          tags$div(class = "p-3 arch-mermaid-wrap",
+            tags$div(class = "mermaid", "
+flowchart TB
+    ExtData[\"inst/extdata/ — committed data root\"]
+    CCDaily[\"ccusage_daily_all.json — daily cost & tokens\"]
+    CCSess[\"ccusage_sessions_all.json — per-session records\"]
+    GemDB[\"gemini_usage.duckdb — Gemini token history\"]
+    UsageDB[\"llm_usage_history.duckdb — unified usage store\"]
+    Roborev[\"roborev_summary.json — code review metrics\"]
+    Preds[\"predictions.json — calibration log\"]
+    Cmonitor[\"cmonitor_daily.txt — system cost monitor\"]
+    ExtData --> CCDaily
+    ExtData --> CCSess
+    ExtData --> GemDB
+    ExtData --> UsageDB
+    ExtData --> Roborev
+    ExtData --> Preds
+    ExtData --> Cmonitor
+    click ExtData \"https://github.com/JohnGavin/llmtelemetry/tree/main/inst/extdata\" \"Browse all data files\" _blank
+    click CCDaily \"https://github.com/JohnGavin/llmtelemetry/tree/main/inst/extdata\" \"Browse extdata\" _blank
+    click GemDB \"https://github.com/JohnGavin/llmtelemetry/tree/main/inst/extdata\" \"Browse extdata\" _blank
+    click UsageDB \"https://github.com/JohnGavin/llmtelemetry/tree/main/inst/extdata\" \"Browse extdata\" _blank
+            "),
+            tags$p(class = "text-muted small mt-2",
+              "Click highlighted nodes to browse the data files on GitHub. ",
+              "Hover over file names below for descriptions."),
+            tags$dl(class = "arch-dl mt-3", style = "color: #e0e0e0; font-size: 0.95em;",
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>ccusage_daily_all.json</b> — Daily aggregated cost and token totals exported by ccusage. ",
+                  "Each record covers one calendar day and includes input, output, cache-creation, and ",
+                  "cache-read tokens plus total cost in USD. Powers the Cost and Tokens dashboard tabs. ",
+                  "Browse at <a href='https://github.com/JohnGavin/llmtelemetry/tree/main/inst/extdata' ",
+                  "target='_blank' rel='noopener'>inst/extdata on GitHub</a>."
+                ),
+                "ccusage_daily_all.json"
+              ),
+              tags$dd("Daily cost and token aggregates from ccusage. Powers Cost and Tokens tabs."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>ccusage_sessions_all.json</b> — Per-API-conversation records from ccusage. Each record ",
+                  "represents a single Claude Code conversation with start time, duration, token counts, ",
+                  "project, and model. Powers the Sessions dashboard tab. ",
+                  "Browse at <a href='https://github.com/JohnGavin/llmtelemetry/tree/main/inst/extdata' ",
+                  "target='_blank' rel='noopener'>inst/extdata on GitHub</a>."
+                ),
+                "ccusage_sessions_all.json"
+              ),
+              tags$dd("Per-API-conversation records: start, duration, tokens, model, project."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>gemini_usage.duckdb</b> — DuckDB database holding Gemini CLI token usage history. ",
+                  "Queried by duckplyr in the dashboard to show Gemini cost alongside Claude costs. ",
+                  "Updated every 12 hours by the refresh cron. ",
+                  "See <a href='https://duckdb.org/' target='_blank' rel='noopener'>DuckDB</a> for the format."
+                ),
+                "gemini_usage.duckdb"
+              ),
+              tags$dd("DuckDB file: Gemini CLI token usage history, updated every 12 hours."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>llm_usage_history.duckdb</b> — Unified DuckDB store combining Claude, Gemini, and Codex ",
+                  "usage records into a single queryable database. Supports cross-provider cost comparison ",
+                  "in the dashboard. ",
+                  "See <a href='https://duckdb.org/' target='_blank' rel='noopener'>DuckDB</a> for the format."
+                ),
+                "llm_usage_history.duckdb"
+              ),
+              tags$dd("Unified DuckDB: all providers (Claude, Gemini, Codex) in one queryable store."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>roborev_summary.json</b> — JSON export of code-review metrics from the roborev tool. ",
+                  "Includes review counts, open/closed findings, and per-project severity breakdown. ",
+                  "Powers the Git/Commits dashboard tab. ",
+                  "See <a href='https://github.com/JohnGavin/llmtelemetry' target='_blank' rel='noopener'>",
+                  "llmtelemetry on GitHub</a>."
+                ),
+                "roborev_summary.json"
+              ),
+              tags$dd("Code-review metrics from roborev: counts, findings, severity by project."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>predictions.json</b> — The calibration log: each record is a stated prediction with ",
+                  "confidence, resolution date, actual outcome, and notes. Used to compute Brier score and ",
+                  "the reliability diagram in the Calibration tab. ",
+                  "See <a href='https://en.wikipedia.org/wiki/Calibration_(statistics)' ",
+                  "target='_blank' rel='noopener'>statistical calibration on Wikipedia</a>."
+                ),
+                "predictions.json"
+              ),
+              tags$dd("Calibration log: predictions with confidence, outcome, and notes for Brier score."),
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>cmonitor_daily.txt</b> — Daily system-level cost-monitor output (plain text). Captures ",
+                  "total API spend and burn rate at a system level, independent of ccusage. Provides a ",
+                  "cross-check against the ccusage daily totals. ",
+                  "See the <a href='https://github.com/JohnGavin/llmtelemetry/blob/main/exec/refresh_and_preserve.sh' ",
+                  "target='_blank' rel='noopener'>refresh script</a> for how it is generated."
+                ),
+                "cmonitor_daily.txt"
+              ),
+              tags$dd("System-level daily cost monitor output — cross-checks ccusage totals.")
+            )
+          ),
+          card_footer(class = "text-muted small",
+            "All data files committed to inst/extdata/ on every 12-hour refresh. ",
+            "Click nodes to browse on GitHub.")
         ),
         card(card_header("Metric Definitions"),
           tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
