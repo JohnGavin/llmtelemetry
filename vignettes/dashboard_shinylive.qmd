@@ -1099,7 +1099,7 @@ ui <- page_navbar(
           "Roborev pipeline health summary. Data refreshed on each tar_make() run.")
       )
     ),
-    layout_columns(col_widths = c(4),
+    layout_columns(col_widths = c(12),
       card(
         card_header("Roborev Pulse"),
         tags$table(class = "table table-sm table-dark mb-0",
