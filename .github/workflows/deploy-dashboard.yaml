@@ -48,6 +48,12 @@ jobs:
             any::rmarkdown
             any::DT
             any::lubridate
+            any::plotly
+            any::purrr
+            any::pak
+
+      - name: Install llmtelemetry package
+        run: Rscript -e 'pak::local_install(".", ask = FALSE)'
 
       - uses: quarto-dev/quarto-actions/setup@v2
 
@@ -116,6 +122,10 @@ jobs:
         working-directory: vignettes
         run: quarto render dashboard_shinylive.qmd
 
+      - name: Render roborev summary page
+        working-directory: vignettes
+        run: quarto render roborev_summary.qmd
+
       - name: Stage parquet assets for Shinylive DuckDB-WASM
         run: |
           PARQUET_SRC="inst/extdata/telemetry/v1/sessions.parquet"
@@ -141,6 +151,8 @@ jobs:
           cp vignettes/shinylive-sw.js _site/ 2>/dev/null || true
           cp -r vignettes/shinylive _site/ 2>/dev/null || true
           cp -r vignettes/data _site/data 2>/dev/null || true
+          cp vignettes/roborev_summary.html _site/ 2>/dev/null || true
+          cp -r vignettes/roborev_summary_files _site/ 2>/dev/null || true
 
       - name: Download missing WebR assets
         run: |

@@ -1824,30 +1824,31 @@ if (!is.null(pm_all) && nrow(pm_all) > 0L) {
 }
 
 # --- 8c. Export roborev_summary.json (Reviews tab in dashboard) ---------------
-# Produces the JSON consumed by the dashboard Reviews tab (load_json("roborev_summary.json")).
+# Codex pattern: when unified.duckdb is present (local runs), regenerate the
+# committed source at inst/extdata/roborev_summary.json.  Always copy the
+# committed source to vignettes/data/ so CI serves real data even without the DB.
+#
 # Contract (from dashboard_shinylive.qmd, rv_* reactives):
 #   pulse: {n_open, n_critical, n_high, n_resolved, n_loops, n_escalate, wasted_usd}
 #   loops: [{tier, cycles, severity, primary_file, summary,
 #             first_seen, last_seen, estimated_wasted_usd}]
-# Degrades gracefully when unified.duckdb is absent or tables are missing.
 cat("Exporting roborev_summary.json...\n")
 tryCatch({
+  # Committed source (checked in; regenerated locally, copied by CI)
+  roborev_src      <- file.path(extdata, "roborev_summary.json")
+  # Output location served by the dashboard
   roborev_json_path <- file.path(out_dir, "roborev_summary.json")
   unified_db_path   <- file.path(Sys.getenv("HOME"), ".claude/logs/unified.duckdb")
 
-  if (!file.exists(unified_db_path)) {
-    cat("  -> unified.duckdb not found; writing empty roborev_summary.json\n")
-    write_json(
-      list(
-        pulse = list(n_open = 0L, n_critical = 0L, n_high = 0L,
-                     n_resolved = 0L, n_loops = 0L, n_escalate = 0L,
-                     wasted_usd = 0),
-        loops = list()
-      ),
-      roborev_json_path,
-      auto_unbox = TRUE
-    )
-  } else {
+  empty_roborev <- list(
+    pulse = list(n_open = 0L, n_critical = 0L, n_high = 0L,
+                 n_resolved = 0L, n_loops = 0L, n_escalate = 0L,
+                 wasted_usd = 0),
+    loops = list()
+  )
+
+  if (file.exists(unified_db_path)) {
+    # Local run: read DB and (re)generate the committed source
     rcon <- dbConnect(duckdb(), dbdir = unified_db_path, read_only = TRUE)
     on.exit(tryCatch(dbDisconnect(rcon, shutdown = TRUE), error = function(e) NULL),
             add = TRUE)
@@ -1914,9 +1915,23 @@ tryCatch({
       loops = loops_list
     )
 
-    write_json(roborev_summary, roborev_json_path, auto_unbox = TRUE)
-    cat(sprintf("  -> roborev_summary.json: pulse={n_open=%d, n_high=%d, n_resolved=%d, n_loops=%d}\n",
+    # Write committed source (local regeneration)
+    write_json(roborev_summary, roborev_src, auto_unbox = TRUE)
+    cat(sprintf("  -> inst/extdata/roborev_summary.json written: pulse={n_open=%d, n_high=%d, n_resolved=%d, n_loops=%d}\n",
                 n_open, n_high, n_resolved, n_loops))
+  } else {
+    cat("  -> unified.duckdb not found; skipping committed source regeneration\n")
+  }
+
+  # Always: copy committed source to vignettes/data/ (works in CI without the DB)
+  if (file.exists(roborev_src)) {
+    file.copy(roborev_src, roborev_json_path, overwrite = TRUE)
+    cat(sprintf("  -> copied inst/extdata/roborev_summary.json -> vignettes/data/ (%d bytes)\n",
+                file.info(roborev_src)$size))
+  } else {
+    # Neither DB nor committed source: write graceful empty (does not overwrite a present source)
+    cat("  -> no committed source found; writing empty roborev_summary.json placeholder\n")
+    write_json(empty_roborev, roborev_json_path, auto_unbox = TRUE)
   }
 }, error = function(e) {
   cat(sprintf("  -> roborev_summary.json export error: %s\n", conditionMessage(e)))
