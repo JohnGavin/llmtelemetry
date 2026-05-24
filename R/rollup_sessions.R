@@ -69,6 +69,9 @@ rollup_sessions <- function(
     ) |>
     dplyr::collect()
 
+  # privacy: PIT store must never contain confidential projects (#83)
+  out <- drop_confidential_projects(out)
+
   # --- 3. Atomic write via DuckDB COPY TO (no arrow dependency) --------------
   tmp_path <- paste0(output_path, ".tmp")
 
