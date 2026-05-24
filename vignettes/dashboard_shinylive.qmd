@@ -579,6 +579,59 @@ ui <- page_navbar(
   ),
   header = tagList(
     tags$script(src = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"),
+    # Mermaid — architecture diagram in Glossary tab (issue #176)
+    tags$script(src = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"),
+    # Tippy.js + Popper — body-size hover popups (hover-popup-standard rule, >=1rem)
+    tags$script(src = "https://unpkg.com/@popperjs/core@2/dist/umd/popper.min.js"),
+    tags$script(src = "https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"),
+    tags$link(rel = "stylesheet", href = "https://unpkg.com/tippy.js@6/dist/tippy.css"),
+    tags$style(HTML("
+      /* Architecture diagram Mermaid sizing */
+      .arch-mermaid-wrap .mermaid svg { max-width: 100%; height: auto; }
+      /* Tippy theme overrides — force >=1rem per hover-popup-standard rule */
+      .tippy-box[data-theme~='arch'] { font-size: 1rem !important; max-width: 380px !important; }
+      .tippy-box[data-theme~='arch'] a { color: #7cb5ec; }
+      /* DL hover targets */
+      .arch-dl dt { cursor: help; border-bottom: 1px dashed #555; display: inline-block; }
+      .arch-dl dt:hover { color: #7cb5ec; }
+    ")),
+    tags$script(HTML("
+      // Mermaid + Tippy init for architecture diagram (Glossary tab, issue #176)
+      function initMermaid() {
+        if (typeof mermaid === 'undefined') { setTimeout(initMermaid, 300); return; }
+        mermaid.initialize({
+          startOnLoad: true,
+          securityLevel: 'loose',
+          theme: 'dark',
+          themeVariables: { fontSize: '14px', lineColor: '#7cb5ec' }
+        });
+        // Re-run on any newly added .mermaid blocks
+        try { mermaid.contentLoaded(); } catch(e) {}
+      }
+      function initArchTippy() {
+        if (typeof tippy === 'undefined') { setTimeout(initArchTippy, 300); return; }
+        document.querySelectorAll('[data-arch-tip]').forEach(function(el) {
+          if (el._tippy) return;  // already attached
+          tippy(el, {
+            content: el.getAttribute('data-arch-tip'),
+            allowHTML: true,
+            placement: 'top',
+            theme: 'arch',
+            interactive: true,
+            appendTo: document.body
+          });
+        });
+      }
+      // Run on DOMContentLoaded and again after shiny:connected (Shinylive timing)
+      window.addEventListener('DOMContentLoaded', function() {
+        setTimeout(initMermaid, 200);
+        setTimeout(initArchTippy, 800);
+      });
+      document.addEventListener('shiny:connected', function() {
+        setTimeout(initMermaid, 200);
+        setTimeout(initArchTippy, 600);
+      });
+    ")),
     # Phase 2B: DuckDB-WASM — initialise once, expose queryAndRenderSessions() globally.
     # Type module gives us top-level await; the Shiny message handler is registered
     # after shiny:connected fires so the message bus is ready.
@@ -1128,6 +1181,132 @@ ui <- page_navbar(
         )
       ),
       nav_panel("Glossary", value = "Glossary", icon = icon("book"),
+        # Architecture card — issue #176 increment 1
+        # Approach: Mermaid flowchart LR with clickable nodes (securityLevel loose)
+        # + definition list with Tippy hover popups (body-size, >=2 sentences, >=1 link)
+        # DL fallback chosen over Tippy-on-SVG-node because SVG node IDs are unstable
+        # in WebAssembly/Shinylive context (Mermaid ID generation timing).
+        card(card_header("Architecture — Data & Build Flow"),
+          tags$div(class = "p-3 arch-mermaid-wrap",
+            # Mermaid diagram: refresh-cron -> committed-data -> CI-render -> dashboard/email
+            tags$div(class = "mermaid", "
+flowchart LR
+    Logs[\"Claude / Codex / Gemini usage logs (~/.claude)\"]
+    Cron[\"Refresh cron — exec/refresh_and_preserve.sh (every 12h)\"]
+    Tools[\"ccusage CLI · Gemini API · Codex\"]
+    Data[\"Committed data — inst/extdata/*.json, *.duckdb\"]
+    CI[\"CI render — deploy-dashboard.yaml\"]
+    Dash[\"Shinylive dashboard (this page)\"]
+    Email[\"Daily email — send_daily_email.R (08:00 UTC)\"]
+    Logs --> Cron
+    Cron --> Tools
+    Tools --> Data
+    Data --> CI
+    CI --> Dash
+    Data --> Email
+    click Cron \"https://github.com/JohnGavin/llmtelemetry/blob/main/exec/refresh_and_preserve.sh\" \"View refresh script\" _blank
+    click Data \"https://github.com/JohnGavin/llmtelemetry/tree/main/inst/extdata\" \"Browse committed data\" _blank
+    click CI \"https://github.com/JohnGavin/llmtelemetry/blob/main/.github/workflows/deploy-dashboard.yaml\" \"View CI workflow\" _blank
+    click Dash \"https://johngavin.github.io/llmtelemetry/\" \"Open live dashboard\" _blank
+    click Email \"https://github.com/JohnGavin/llmtelemetry/blob/main/inst/scripts/send_daily_email.R\" \"View email script\" _blank
+            "),
+            tags$p(class = "text-muted small mt-2",
+              "Click highlighted nodes to open the relevant source or dataset. ",
+              "Hover over component names below for descriptions."),
+            # Definition list with Tippy hover popups — hover-popup-standard rule compliance:
+            # each term has >=2 sentences, >=1 embedded link, font-size 1rem (via arch theme CSS)
+            tags$dl(class = "arch-dl mt-3", style = "color: #e0e0e0; font-size: 0.95em;",
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>Claude / Codex / Gemini usage logs</b> — Raw telemetry written by Claude Code, ",
+                  "OpenAI Codex, and Gemini CLI as JSON/text to <code>~/.claude/</code> and related dirs. ",
+                  "These are the primary input to the entire pipeline — without them no cost or session ",
+                  "data can be derived. ",
+                  "See <a href='https://github.com/ryoppippi/ccusage' target='_blank' rel='noopener'>ccusage</a> ",
+                  "for how they are read."
+                ),
+                "Usage Logs"
+              ),
+              tags$dd("Raw JSON / text telemetry from Claude Code, Codex, and Gemini CLI (~/.claude). Primary pipeline input."),
+
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>Refresh cron — exec/refresh_and_preserve.sh</b> — A shell script scheduled every 12 hours ",
+                  "that calls ccusage, the Gemini API, and Codex exporters, then commits the resulting JSON and ",
+                  "DuckDB files to the repository. ",
+                  "See <a href='https://github.com/JohnGavin/llmtelemetry/blob/main/exec/refresh_and_preserve.sh' ",
+                  "target='_blank' rel='noopener'>refresh_and_preserve.sh on GitHub</a>."
+                ),
+                "Refresh Cron"
+              ),
+              tags$dd("Shell script (every 12h) that runs data exporters and commits the results."),
+
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>ccusage CLI · Gemini API · Codex</b> — The three data-extraction tools: ccusage reads ",
+                  "Claude Code session logs, the Gemini API returns token usage, and Codex export parses ",
+                  "OpenAI usage. Each produces structured JSON that the cron commits. ",
+                  "See <a href='https://github.com/ryoppippi/ccusage' target='_blank' rel='noopener'>ccusage on GitHub</a> ",
+                  "for Claude Code extraction details."
+                ),
+                "Extraction Tools"
+              ),
+              tags$dd("ccusage CLI (Claude), Gemini API, and Codex exporter — produce the committed JSON data."),
+
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>Committed data — inst/extdata/*.json, *.duckdb</b> — The authoritative data store: JSON ",
+                  "files (daily, sessions, blocks, calibration, git-recon) and DuckDB files committed to the ",
+                  "repository by the refresh cron. These files are the single source of truth for all dashboard ",
+                  "tabs. ",
+                  "Browse at <a href='https://github.com/JohnGavin/llmtelemetry/tree/main/inst/extdata' ",
+                  "target='_blank' rel='noopener'>inst/extdata on GitHub</a>."
+                ),
+                "Committed Data"
+              ),
+              tags$dd("JSON + DuckDB files committed to inst/extdata/ — the dashboard's single source of truth."),
+
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>CI render — deploy-dashboard.yaml</b> — A GitHub Actions workflow that runs on every push, ",
+                  "renders this Quarto Shinylive document, and deploys it to GitHub Pages. The workflow also ",
+                  "validates the Mermaid syntax and runs R CMD check. ",
+                  "See <a href='https://github.com/JohnGavin/llmtelemetry/blob/main/.github/workflows/deploy-dashboard.yaml' ",
+                  "target='_blank' rel='noopener'>deploy-dashboard.yaml on GitHub</a>."
+                ),
+                "CI Render"
+              ),
+              tags$dd("GitHub Actions workflow: renders and deploys the dashboard to GitHub Pages on every push."),
+
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>Shinylive dashboard (this page)</b> — A Shiny app compiled to WebAssembly and served as a ",
+                  "static page via GitHub Pages — no R server required. All data is fetched from the committed ",
+                  "JSON files at load time. ",
+                  "Live at <a href='https://johngavin.github.io/llmtelemetry/' target='_blank' rel='noopener'>",
+                  "johngavin.github.io/llmtelemetry</a>."
+                ),
+                "Shinylive Dashboard"
+              ),
+              tags$dd("This page — a static Shinylive/WebAssembly app served from GitHub Pages. No server required."),
+
+              tags$dt(
+                `data-arch-tip` = paste0(
+                  "<b>Daily email — send_daily_email.R (08:00 UTC)</b> — An R script scheduled at 08:00 UTC that ",
+                  "reads the committed data, computes a daily summary (cost, tokens, commits), and sends it as an ",
+                  "HTML email. Runs independently of the dashboard render. ",
+                  "See <a href='https://github.com/JohnGavin/llmtelemetry/blob/main/inst/scripts/send_daily_email.R' ",
+                  "target='_blank' rel='noopener'>send_daily_email.R on GitHub</a>."
+                ),
+                "Daily Email"
+              ),
+              tags$dd("R script (08:00 UTC) — reads committed data and sends an HTML daily summary email.")
+            )
+          ),
+          card_footer(class = "text-muted small",
+            "Architecture of the llmtelemetry refresh pipeline. ",
+            "Click nodes in the diagram to open the relevant GitHub source or dataset.")
+        ),
         card(card_header("Metric Definitions"),
           tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
             tags$h5("Cost Metrics"),
