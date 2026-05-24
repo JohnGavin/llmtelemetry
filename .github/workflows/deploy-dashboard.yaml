@@ -162,6 +162,59 @@ jobs:
           cp vignettes/roborev_summary.html _site/ 2>/dev/null || true
           cp -r vignettes/roborev_summary_files _site/ 2>/dev/null || true
 
+      - name: Privacy gate — scan staged parquet for confidential projects (#83)
+        run: |
+          Rscript - << 'REOF'
+          # Fail-closed: scan all staged parquet files in _site/data/ for
+          # confidential project names before they are uploaded to Pages.
+          # Uses DuckDB (already in package deps) — no Python needed for parquet.
+          library(DBI)
+          library(duckdb)
+
+          CONFIDENTIAL <- c("mycare", "crypto", "crypto_solwatch", "crypto_swarms",
+                             "solwatch", "swarms")
+
+          conf_filter <- paste0(
+            "lower(project) LIKE '%mycare%' OR lower(project) LIKE '%crypto%' OR ",
+            "lower(project) IN ('solwatch','swarms') OR ",
+            "(canonical_project IS NOT NULL AND (",
+            "lower(canonical_project) LIKE '%mycare%' OR ",
+            "lower(canonical_project) LIKE '%crypto%' OR ",
+            "lower(canonical_project) IN ('solwatch','swarms')))"
+          )
+
+          parquet_files <- list.files("_site/data", pattern = "\\.parquet$",
+                                       recursive = TRUE, full.names = TRUE)
+          cat(sprintf("Scanning %d parquet file(s) in _site/data/\n", length(parquet_files)))
+
+          violations <- 0L
+          for (pf in parquet_files) {
+            con <- dbConnect(duckdb(), dbdir = ":memory:")
+            tryCatch({
+              n <- dbGetQuery(
+                con,
+                sprintf("SELECT count(*) n FROM read_parquet('%s') WHERE %s",
+                        pf, conf_filter)
+              )[["n"]]
+              if (n > 0L) {
+                cat(sprintf("::error::PRIVACY GATE FAILED — %d confidential row(s) in %s\n", n, pf))
+                violations <- violations + 1L
+              } else {
+                cat(sprintf("OK: %s (0 confidential rows)\n", pf))
+              }
+            }, error = function(e) {
+              cat(sprintf("::warning::Could not scan %s: %s\n", pf, conditionMessage(e)))
+            })
+            dbDisconnect(con, shutdown = TRUE)
+          }
+          if (violations > 0L) {
+            cat(sprintf("::error::Parquet privacy gate FAILED — %d file(s) contain confidential data\n",
+                        violations))
+            quit(status = 1L)
+          }
+          cat("Parquet privacy gate: PASSED\n")
+          REOF
+
       - name: Privacy gate — block confidential projects from deploy (#83 Phase B)
         run: |
           python3 << 'PYEOF'

@@ -29,10 +29,13 @@ cmonitor_bin <- "/Users/johngavin/.cargo/bin/cmonitor-rs"
 # Projects whose names must NEVER appear in public dashboard output.
 EXCLUDED_DASHBOARD_PROJECTS <- c(
   "mycare", "crypto", "crypto_solwatch", "crypto_swarms",
+  "solwatch", "swarms",    # short-form aliases of crypto_solwatch / crypto_swarms
   "my_t_project", "hello_t", "t_demos"
 )
 # Subset that is privacy-gated (used by the CI gate to match per-project JSON fields).
-CONFIDENTIAL_PROJECTS <- c("mycare", "crypto", "crypto_solwatch", "crypto_swarms")
+# TODO(#83): unify with R/confidential_projects.R to avoid list drift
+CONFIDENTIAL_PROJECTS <- c("mycare", "crypto", "crypto_solwatch", "crypto_swarms",
+                            "solwatch", "swarms")
 
 # Name-folding remap: fold suffixed aliases into their canonical parent project,
 # then re-aggregate so their rows merge into the parent's totals.
