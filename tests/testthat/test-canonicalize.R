@@ -213,6 +213,12 @@ test_that("branch fragment tokens (cc, feat, wt, scope, etc.) return NA", {
   }
 })
 
+test_that("user-confirmed noise tokens (demos, wiki) return NA", {
+  # Confirmed as noise by user 2026-05-24: demos = demo content, wiki = internal wiki.
+  expect_equal(.canonicalize_project_local("demos"), NA_character_)
+  expect_equal(.canonicalize_project_local("wiki"),  NA_character_)
+})
+
 # ── Regression: real projects must not be affected ───────────────────────────
 
 test_that("real project names are unaffected by the fix", {
@@ -222,6 +228,14 @@ test_that("real project names are unaffected by the fix", {
   expect_equal(.canonicalize_project_local("randomwalk"),              "randomwalk")
   expect_equal(.canonicalize_project_local("acd_area_climate_design"), "acd_area_climate_design")
   expect_equal(.canonicalize_project_local("irish_buoy_network"),      "irish_buoy_network")
+})
+
+test_that("user-confirmed real projects (hartree, maps, tlang) are PRESERVED", {
+  # Regression guard: user confirmed 2026-05-24 that these are real projects.
+  # A future change that accidentally adds them to meta_only must fail here.
+  expect_equal(.canonicalize_project_local("hartree"), "hartree")
+  expect_equal(.canonicalize_project_local("maps"),    "maps")
+  expect_equal(.canonicalize_project_local("tlang"),   "tlang")
 })
 
 test_that("vectorised branch-suffix stripping works across a mixed column", {

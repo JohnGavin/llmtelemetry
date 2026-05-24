@@ -95,6 +95,8 @@
     "wt", "scope", "worker", "network", "repo", "docs", "eval", "project",
     # Added: ephemeral/tool names not associated with any persistent project
     "ClaudeProbe",
+    # Added: user-confirmed noise (demos = demo content, wiki = internal wiki)
+    "demos", "wiki",
     # Added: .claude/worktrees/agent sentinel returned by .shorten_project_local
     ".claude/worktrees/agent"
   )

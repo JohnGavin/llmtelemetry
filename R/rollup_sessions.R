@@ -69,6 +69,12 @@ rollup_sessions <- function(
     ) |>
     dplyr::collect()
 
+  # Re-apply canonicalization to catch any stale pre-computed values in the JSON
+  # that were labelled as projects before the noise list was updated
+  # (e.g. "demos", "wiki" confirmed as noise 2026-05-24).
+  out$canonical_project <- .canonicalize_project_local(out$canonical_project)
+  out <- out[!is.na(out$canonical_project), , drop = FALSE]
+
   # privacy: PIT store must never contain confidential projects (#83)
   out <- drop_confidential_projects(out)
 
