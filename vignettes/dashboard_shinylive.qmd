@@ -582,14 +582,14 @@ ui <- page_navbar(
   header = tagList(
     tags$script(src = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"),
     # Mermaid — architecture diagram in Glossary tab (issue #176)
-    tags$script(src = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"),
+    tags$script(src = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"),
     # Tippy.js + Popper — body-size hover popups (hover-popup-standard rule, >=1rem)
     tags$script(src = "https://unpkg.com/@popperjs/core@2/dist/umd/popper.min.js"),
     tags$script(src = "https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"),
     tags$link(rel = "stylesheet", href = "https://unpkg.com/tippy.js@6/dist/tippy.css"),
     tags$style(HTML("
       /* Architecture diagram Mermaid sizing */
-      .arch-mermaid-wrap { min-height: 560px; }
+      .arch-mermaid-wrap { min-height: 560px; background:#000000; border-radius:6px; padding:8px; }
       .arch-mermaid-wrap .mermaid svg { max-width: 720px; height: auto; display: block; margin: 0 auto; }
       /* Mermaid node label contrast fix — black text on light node fill (issue: white-on-white) */
       /* Each diagram uses mermaid classDef to force color:#000000 (primary fix). */
@@ -629,15 +629,15 @@ ui <- page_navbar(
             theme: 'base',
             themeVariables: {
               fontSize: '16px',
-              primaryColor: '#e8eef5',
+              background: '#000000',
+              primaryColor: '#999999',
               primaryTextColor: '#000000',
-              primaryBorderColor: '#4ea8de',
-              lineColor: '#9fb3c8',
-              secondaryColor: '#dde6f0',
-              tertiaryColor: '#eef3f8',
-              tertiaryTextColor: '#000000',
+              primaryBorderColor: '#CC0000',
+              lineColor: '#CC0000',
+              secondaryColor: '#999999',
+              tertiaryColor: '#999999',
               secondaryTextColor: '#000000',
-              edgeLabelBackground: '#ffffff',
+              tertiaryTextColor: '#000000',
               textColor: '#000000'
             }
           });
@@ -1342,7 +1342,7 @@ ui <- page_navbar(
             # Mermaid diagram: refresh-cron -> committed-data -> CI-render -> dashboard/email
             tags$div(class = "mermaid", "
 flowchart TB
-    classDef default fill:#eaf1fb,stroke:#37516b,stroke-width:1px,color:#000000;
+    classDef default fill:#999999,stroke:#CC0000,stroke-width:1px,color:#000000;
     Logs[\"Claude / Codex / Gemini usage logs (~/.claude)\"]
     Cron[\"Refresh cron — exec/refresh_and_preserve.sh (every 12h)\"]
     Tools[\"ccusage CLI · Gemini API · Codex\"]
@@ -1465,7 +1465,7 @@ flowchart TB
           tags$div(class = "p-3 arch-mermaid-wrap",
             tags$div(class = "mermaid", "
 flowchart TB
-    classDef default fill:#eaf1fb,stroke:#37516b,stroke-width:1px,color:#000000;
+    classDef default fill:#999999,stroke:#CC0000,stroke-width:1px,color:#000000;
     Cron12h[\"Cron (every 12h) — refresh_and_preserve.sh\"]
     FetchCC[\"ccusage fetch — Claude session logs\"]
     FetchGem[\"Gemini API fetch — token usage\"]
@@ -1571,7 +1571,7 @@ flowchart TB
           tags$div(class = "p-3 arch-mermaid-wrap",
             tags$div(class = "mermaid", "
 flowchart LR
-    classDef default fill:#eaf1fb,stroke:#37516b,stroke-width:1px,color:#000000;
+    classDef default fill:#999999,stroke:#CC0000,stroke-width:1px,color:#000000;
     ExtData[\"inst/extdata/ — committed data root\"]
     CCDaily[\"ccusage_daily_all.json — daily cost & tokens\"]
     CCSess[\"ccusage_sessions_all.json — per-session records\"]
