@@ -765,10 +765,10 @@ ui <- page_navbar(
         if (!title) return;
         var txt = title.textContent.toLowerCase();
         var targetTab = null;
-        if (txt.includes('cost')) targetTab = 'Cost Trends';
-        else if (txt.includes('token')) targetTab = 'Token Analysis';
-        else if (txt.includes('session')) targetTab = 'Sessions';
-        else if (txt.includes('day')) targetTab = 'Cost Trends';
+        if (txt.includes('cost')) targetTab = 'Usage';
+        else if (txt.includes('token')) targetTab = 'Usage';
+        else if (txt.includes('session')) targetTab = 'Usage';
+        else if (txt.includes('day')) targetTab = 'Usage';
         else if (txt.includes('commit') || txt.includes('lines')) targetTab = 'Git';
         if (targetTab) {
           // Find and click the nav link for the target tab
@@ -788,7 +788,7 @@ ui <- page_navbar(
     sliderInput("horizon", "Time Horizon (days)",
       min = 1, max = 30, value = 30, step = 1),
     conditionalPanel(
-      condition = "input.tabs == 'Cost Trends' || input.tabs == 'Token Analysis' || input.tabs == 'Sessions' || input.tabs == 'By Project'",
+      condition = "input.tabs == 'Usage'",
       selectInput(
         "selected_projects",
         "Projects:",
@@ -805,11 +805,11 @@ ui <- page_navbar(
       )
     ),
     conditionalPanel(
-      condition = "input.tabs == 'Sessions'",
+      condition = "input.tabs == 'Usage' && input.usage_tabs == 'Sessions'",
       numericInput("top_n", "Top N sessions", value = 10, min = 5, max = 50)
     ),
     conditionalPanel(
-      condition = "input.tabs == 'Time Blocks'",
+      condition = "input.tabs == 'Usage' && input.usage_tabs == 'Time Blocks'",
       sliderInput("block_days", "Block window (days)",
         min = 1, max = 60, value = 14, step = 1)
     ),
@@ -860,115 +860,115 @@ ui <- page_navbar(
     )
   ),
 
-  nav_panel("Cost Trends", value = "Cost Trends",
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Daily Cost by Project (Estimated)"), uiOutput("cost_by_project"),
-        card_footer(class = "text-muted small", "Estimated daily cost by project using session duration as allocation key")),
-      card(card_header("Cumulative Cost"), uiOutput("cost_cumulative"),
-        card_footer(class = "text-muted small", "Running total of cost over time by source"))
-    ),
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Weekly Cost by Source"), uiOutput("cost_weekly"),
-        card_footer(class = "text-muted small", "Weekly cost grouped by Claude, Gemini, and Codex")),
-      card(card_header("Weekly Cost by Model"), uiOutput("cost_by_model"),
-        card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
-    ),
-    layout_columns(col_widths = c(12),
-      card(card_header("Cost per Commit Trend"), uiOutput("cost_per_commit_chart"),
-        card_footer(class = "text-muted small", "Estimated cost per commit (USD) over time by project. Lower = more efficient sessions per code change. Granularity toggle applies."))
-    )
-  ),
-
-  nav_panel("Token Analysis", value = "Token Analysis",
-    layout_columns(col_widths = c(12),
-      card(card_header("Daily Tokens"), uiOutput("token_daily"),
-        card_footer(class = "text-muted small", "Daily token consumption across all sources"))
-    ),
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Token Composition"), uiOutput("token_comp"),
-        card_footer(class = "text-muted small", "Stacked bars: input, output, cache-create, and cache-read tokens")),
-      card(card_header("Weekly Tokens by Source"), uiOutput("token_weekly"),
-        card_footer(class = "text-muted small", "Weekly token usage by source — Claude, Gemini, and Codex"))
-    )
-  ),
-
-  nav_panel("Sessions", value = "Sessions",
-    layout_columns(col_widths = c(12),
-      card(
-        card_header("Sessions Summary"),
-        tags$table(class = "table table-sm table-dark mb-0",
-          tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
-          tags$tbody(
-            tooltip(
-              tags$tr(tags$td("API Conversations"), tags$td(textOutput("vb_sess_count", inline = TRUE))),
-              "Count of Claude Code conversations (each restart = new session)"
+  nav_panel("Usage", value = "Usage",
+    navset_tab(id = "usage_tabs",
+      nav_panel("Cost Trends", value = "Cost Trends",
+        layout_columns(col_widths = c(6, 6),
+          card(card_header("Daily Cost by Project (Estimated)"), uiOutput("cost_by_project"),
+            card_footer(class = "text-muted small", "Estimated daily cost by project using session duration as allocation key")),
+          card(card_header("Cumulative Cost"), uiOutput("cost_cumulative"),
+            card_footer(class = "text-muted small", "Running total of cost over time by source"))
+        ),
+        layout_columns(col_widths = c(6, 6),
+          card(card_header("Weekly Cost by Source"), uiOutput("cost_weekly"),
+            card_footer(class = "text-muted small", "Weekly cost grouped by Claude, Gemini, and Codex")),
+          card(card_header("Weekly Cost by Model"), uiOutput("cost_by_model"),
+            card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
+        ),
+        layout_columns(col_widths = c(12),
+          card(card_header("Cost per Commit Trend"), uiOutput("cost_per_commit_chart"),
+            card_footer(class = "text-muted small", "Estimated cost per commit (USD) over time by project. Lower = more efficient sessions per code change. Granularity toggle applies."))
+        )
+      ),
+      nav_panel("Token Analysis", value = "Token Analysis",
+        layout_columns(col_widths = c(12),
+          card(card_header("Daily Tokens"), uiOutput("token_daily"),
+            card_footer(class = "text-muted small", "Daily token consumption across all sources"))
+        ),
+        layout_columns(col_widths = c(6, 6),
+          card(card_header("Token Composition"), uiOutput("token_comp"),
+            card_footer(class = "text-muted small", "Stacked bars: input, output, cache-create, and cache-read tokens")),
+          card(card_header("Weekly Tokens by Source"), uiOutput("token_weekly"),
+            card_footer(class = "text-muted small", "Weekly token usage by source — Claude, Gemini, and Codex"))
+        )
+      ),
+      nav_panel("Time Blocks", value = "Time Blocks",
+        layout_columns(col_widths = c(12),
+          card(card_header("Block Activity"), DTOutput("block_table"),
+            card_footer(class = "text-muted small", "Claude coding blocks with cost and efficiency metrics"))
+        ),
+        layout_columns(col_widths = c(6, 6),
+          card(card_header("Block Timeline"), uiOutput("block_timeline"),
+            card_footer(class = "text-muted small", "Cost per block, dot size = duration")),
+          card(card_header("Hourly Activity Heatmap"), uiOutput("block_heatmap"),
+            card_footer(class = "text-muted small", "Cost heatmap by day of week and hour"))
+        )
+      ),
+      nav_panel("Sessions", value = "Sessions",
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Sessions Summary"),
+            tags$table(class = "table table-sm table-dark mb-0",
+              tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
+              tags$tbody(
+                tooltip(
+                  tags$tr(tags$td("API Conversations"), tags$td(textOutput("vb_sess_count", inline = TRUE))),
+                  "Count of Claude Code conversations (each restart = new session)"
+                ),
+                tooltip(
+                  tags$tr(tags$td("Total Duration"), tags$td(textOutput("vb_sess_duration", inline = TRUE))),
+                  "Sum of all conversation durations (minutes)"
+                ),
+                tooltip(
+                  tags$tr(tags$td("Avg Duration"), tags$td(textOutput("vb_sess_avg", inline = TRUE))),
+                  "Average conversation length (minutes)"
+                )
+              )
             ),
-            tooltip(
-              tags$tr(tags$td("Total Duration"), tags$td(textOutput("vb_sess_duration", inline = TRUE))),
-              "Sum of all conversation durations (minutes)"
-            ),
-            tooltip(
-              tags$tr(tags$td("Avg Duration"), tags$td(textOutput("vb_sess_avg", inline = TRUE))),
-              "Average conversation length (minutes)"
-            )
+            card_footer(class = "text-muted small",
+              "Session counts from Claude Code hook telemetry (unified.duckdb). A session = one continuous coding session; each restart or context compaction creates a new entry.")
           )
         ),
-        card_footer(class = "text-muted small",
-          "Session counts from Claude Code hook telemetry (unified.duckdb). A session = one continuous coding session; each restart or context compaction creates a new entry.")
+        layout_columns(col_widths = c(6, 6),
+          card(card_header("Recent API Conversations"), DTOutput("sess_claude"),
+            card_footer(class = "text-muted small", "⚠ These are API conversations, not work sessions. Each Claude Code restart = new conversation. Short durations are normal.")),
+          card(card_header("Top Gemini Sessions"), DTOutput("sess_gemini"),
+            card_footer(class = "text-muted small", "Most expensive Gemini sessions by total cost"))
+        ),
+        layout_columns(col_widths = c(6, 6),
+          card(card_header("Conversation Duration Distribution"), uiOutput("sess_hist"),
+            card_footer(class = "text-muted small", "Histogram of API conversation durations (minutes)")),
+          card(card_header("Conversations Over Time"), uiOutput("sess_scatter"),
+            card_footer(class = "text-muted small", "Daily conversation count, bubble size = total minutes"))
+        )
+      ),
+      nav_panel("By Project", value = "By Project",
+        layout_columns(col_widths = c(6, 6),
+          card(card_header("Estimated Cost by Project"), uiOutput("proj_cost_total"),
+            card_footer(class = "text-muted small", "Session-weighted cost estimate (⚠ approximate)")),
+          card(card_header("Sessions by Project"),
+            tags$div(id="proj_sessions_ec", class="echart-div", style="width:100%;height:300px;"),
+            card_footer(class = "text-muted small", "Session count per project · powered by DuckDB-WASM"))
+        ),
+        layout_columns(col_widths = c(12),
+          card(card_header("Daily Cost Trend by Project"), uiOutput("proj_cost_daily"),
+            card_footer(class = "text-muted small", "Stacked area chart of estimated daily costs"))
+        ),
+        layout_columns(col_widths = c(12),
+          card(card_header("Cumulative Daily Cost Trend by Project"), uiOutput("proj_cost_cumulative"),
+            card_footer(class = "text-muted small", "Running total of estimated daily costs by project"))
+        ),
+        layout_columns(col_widths = c(6, 6),
+          card(card_header("Session Duration by Project"), uiOutput("proj_duration"),
+            card_footer(class = "text-muted small", "Total session minutes per project")),
+          card(card_header("Cost Share by Date"), uiOutput("proj_share_heatmap"),
+            card_footer(class = "text-muted small", "Heatmap: project cost share by date"))
+        ),
+        layout_columns(col_widths = c(12),
+          card(card_header("Weekly Commit Heatmap"), uiOutput("proj_weekly_heatmap"),
+            card_footer(class = "text-muted small", "Weekly commit counts across tracked repos. X = ISO week, Y = project, colour = commit count. Default view: last 13 weeks."))
+        )
       )
-    ),
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Recent API Conversations"), DTOutput("sess_claude"),
-        card_footer(class = "text-muted small", "⚠ These are API conversations, not work sessions. Each Claude Code restart = new conversation. Short durations are normal.")),
-      card(card_header("Top Gemini Sessions"), DTOutput("sess_gemini"),
-        card_footer(class = "text-muted small", "Most expensive Gemini sessions by total cost"))
-    ),
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Conversation Duration Distribution"), uiOutput("sess_hist"),
-        card_footer(class = "text-muted small", "Histogram of API conversation durations (minutes)")),
-      card(card_header("Conversations Over Time"), uiOutput("sess_scatter"),
-        card_footer(class = "text-muted small", "Daily conversation count, bubble size = total minutes"))
-    )
-  ),
-
-  nav_panel("By Project", value = "By Project",
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Estimated Cost by Project"), uiOutput("proj_cost_total"),
-        card_footer(class = "text-muted small", "Session-weighted cost estimate (⚠ approximate)")),
-      card(card_header("Sessions by Project"),
-        tags$div(id="proj_sessions_ec", class="echart-div", style="width:100%;height:300px;"),
-        card_footer(class = "text-muted small", "Session count per project · powered by DuckDB-WASM"))
-    ),
-    layout_columns(col_widths = c(12),
-      card(card_header("Daily Cost Trend by Project"), uiOutput("proj_cost_daily"),
-        card_footer(class = "text-muted small", "Stacked area chart of estimated daily costs"))
-    ),
-    layout_columns(col_widths = c(12),
-      card(card_header("Cumulative Daily Cost Trend by Project"), uiOutput("proj_cost_cumulative"),
-        card_footer(class = "text-muted small", "Running total of estimated daily costs by project"))
-    ),
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Session Duration by Project"), uiOutput("proj_duration"),
-        card_footer(class = "text-muted small", "Total session minutes per project")),
-      card(card_header("Cost Share by Date"), uiOutput("proj_share_heatmap"),
-        card_footer(class = "text-muted small", "Heatmap: project cost share by date"))
-    ),
-    layout_columns(col_widths = c(12),
-      card(card_header("Weekly Commit Heatmap"), uiOutput("proj_weekly_heatmap"),
-        card_footer(class = "text-muted small", "Weekly commit counts across tracked repos. X = ISO week, Y = project, colour = commit count. Default view: last 13 weeks."))
-    )
-  ),
-
-  nav_panel("Time Blocks", value = "Time Blocks",
-    layout_columns(col_widths = c(12),
-      card(card_header("Block Activity"), DTOutput("block_table"),
-        card_footer(class = "text-muted small", "Claude coding blocks with cost and efficiency metrics"))
-    ),
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Block Timeline"), uiOutput("block_timeline"),
-        card_footer(class = "text-muted small", "Cost per block, dot size = duration")),
-      card(card_header("Hourly Activity Heatmap"), uiOutput("block_heatmap"),
-        card_footer(class = "text-muted small", "Cost heatmap by day of week and hour"))
     )
   ),
 
@@ -1056,145 +1056,147 @@ ui <- page_navbar(
           card(min_height = "400px", card_header("Change Coupling Graph (Phase 2)"), uiOutput("change_coupling_graph"),
             card_footer(class = "text-muted small", "Files that frequently change together. Hover an edge to see co-change count. Highly-coupled clusters suggest hidden module boundaries. Filter by Repo in sidebar."))
         )
-      )
-    )
-  ),
-
-  nav_panel("Calibration", value = "Calibration",
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Reliability Diagram"), uiOutput("cal_reliability"),
-        card_footer(class = "text-muted small", "Predicted confidence vs actual accuracy by bucket. Diagonal = perfect calibration.")),
-      card(card_header("Brier Score Trend"), uiOutput("cal_brier"),
-        card_footer(class = "text-muted small", "Rolling Brier score over time (0 = perfect, 0.25 = uninformative)"))
-    ),
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Accuracy by Task Type"), uiOutput("cal_by_type"),
-        card_footer(class = "text-muted small", "Success rate per task category")),
-      card(card_header("Accuracy by Project"), uiOutput("cal_by_project"),
-        card_footer(class = "text-muted small", "Success rate per project · sparse data expected (only resolved predictions logged)"))
-    ),
-    layout_columns(col_widths = c(12),
-      card(card_header("Prediction Log"), DTOutput("cal_log"),
-        card_footer(class = "text-muted small", "All predictions with stated confidence, outcome, and notes"))
-    )
-  ),
-
-  nav_panel("Reviews", value = "Reviews",
-    layout_columns(col_widths = c(12),
-      card(
-        card_header("Roborev — Automated Code Review Health"),
-        tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
-          tags$p(
-            "The roborev pipeline runs ", tags$code("critic"), " and ",
-            tags$code("fixer"), " agents on every commit, then tracks whether
-            findings recur across review rounds. Loops = findings fixed and
-            re-opened more than once. Data sourced from ",
-            tags$code("unified.duckdb"), ". For the full interactive summary ",
-            "see the ",
-            tags$a(href = "roborev_summary.html", target = "_blank",
-                   style = "color:#7cb5ec;", "roborev_summary vignette"), "."
+      ),
+      nav_panel("Reviews", value = "Reviews",
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Roborev — Automated Code Review Health"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "The roborev pipeline runs ", tags$code("critic"), " and ",
+                tags$code("fixer"), " agents on every commit, then tracks whether
+                findings recur across review rounds. Loops = findings fixed and
+                re-opened more than once. Data sourced from ",
+                tags$code("unified.duckdb"), ". For the full interactive summary ",
+                "see the ",
+                tags$a(href = "roborev_summary.html", target = "_blank",
+                       style = "color:#7cb5ec;", "roborev_summary vignette"), "."
+              )
+            ),
+            card_footer(class = "text-muted small",
+              "Roborev pipeline health summary. Data refreshed on each tar_make() run.")
           )
         ),
-        card_footer(class = "text-muted small",
-          "Roborev pipeline health summary. Data refreshed on each tar_make() run.")
-      )
-    ),
-    layout_columns(col_widths = c(12),
-      card(
-        card_header("Roborev Pulse"),
-        tags$table(class = "table table-sm table-dark mb-0",
-          tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
-          tags$tbody(
-            tags$tr(tags$td("Open findings"), tags$td(textOutput("rv_n_open", inline = TRUE))),
-            tags$tr(tags$td("  Critical"),    tags$td(textOutput("rv_n_critical", inline = TRUE))),
-            tags$tr(tags$td("  High"),         tags$td(textOutput("rv_n_high", inline = TRUE))),
-            tags$tr(tags$td("Resolved"),       tags$td(textOutput("rv_n_resolved", inline = TRUE))),
-            tags$tr(tags$td("Active loops"),   tags$td(textOutput("rv_n_loops", inline = TRUE))),
-            tags$tr(tags$td("  Escalate (no ack)"),
-                    tags$td(textOutput("rv_n_escalate", inline = TRUE))),
-            tags$tr(tags$td("Est. wasted USD"),
-                    tags$td(textOutput("rv_wasted_usd", inline = TRUE)))
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Roborev Pulse"),
+            tags$table(class = "table table-sm table-dark mb-0",
+              tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
+              tags$tbody(
+                tags$tr(tags$td("Open findings"), tags$td(textOutput("rv_n_open", inline = TRUE))),
+                tags$tr(tags$td("  Critical"),    tags$td(textOutput("rv_n_critical", inline = TRUE))),
+                tags$tr(tags$td("  High"),         tags$td(textOutput("rv_n_high", inline = TRUE))),
+                tags$tr(tags$td("Resolved"),       tags$td(textOutput("rv_n_resolved", inline = TRUE))),
+                tags$tr(tags$td("Active loops"),   tags$td(textOutput("rv_n_loops", inline = TRUE))),
+                tags$tr(tags$td("  Escalate (no ack)"),
+                        tags$td(textOutput("rv_n_escalate", inline = TRUE))),
+                tags$tr(tags$td("Est. wasted USD"),
+                        tags$td(textOutput("rv_wasted_usd", inline = TRUE)))
+              )
+            ),
+            card_footer(class = "text-muted small",
+              "Counts sourced from unified.duckdb roborev_findings and roborev_loops tables.")
           )
         ),
-        card_footer(class = "text-muted small",
-          "Counts sourced from unified.duckdb roborev_findings and roborev_loops tables.")
+        layout_columns(col_widths = c(12),
+          card(card_header("Active Loops"), DTOutput("rv_loops_table"),
+            card_footer(class = "text-muted small",
+              "Recurring review loops. Row colour: red=escalate, orange=block, yellow=watch. Sorted by cycles descending."))
+        )
       )
-    ),
-    layout_columns(col_widths = c(12),
-      card(card_header("Active Loops"), DTOutput("rv_loops_table"),
-        card_footer(class = "text-muted small",
-          "Recurring review loops. Row colour: red=escalate, orange=block, yellow=watch. Sorted by cycles descending."))
     )
   ),
 
-  nav_panel("Glossary", value = "Glossary", icon = icon("book"),
-    card(card_header("Metric Definitions"),
-      tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
-        tags$h5("Cost Metrics"),
-        tags$dl(
-          tags$dt("Total Cost ($)"), tags$dd("Sum of API charges for input, output, and cache tokens. ",
-            tags$a(href = "https://docs.anthropic.com/en/docs/about-claude/models/overview#api-models", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Anthropic pricing]")),
-          tags$dt("Cost per MTok"), tags$dd("Cost per million tokens — efficiency metric comparing model tiers."),
-          tags$dt("Cumulative Cost"), tags$dd("Running total of spend over time. Useful for burn-rate forecasting."),
-          tags$dt("Est. Cost by Project"), tags$dd("⚠ Approximate: daily cost × (project session time / total session time). No per-project billing from API.")
+  nav_panel("Reference", value = "Reference",
+    navset_tab(
+      nav_panel("Calibration", value = "Calibration",
+        layout_columns(col_widths = c(6, 6),
+          card(card_header("Reliability Diagram"), uiOutput("cal_reliability"),
+            card_footer(class = "text-muted small", "Predicted confidence vs actual accuracy by bucket. Diagonal = perfect calibration.")),
+          card(card_header("Brier Score Trend"), uiOutput("cal_brier"),
+            card_footer(class = "text-muted small", "Rolling Brier score over time (0 = perfect, 0.25 = uninformative)"))
         ),
-        tags$h5("Token Metrics"),
-        tags$dl(
-          tags$dt("Input Tokens"), tags$dd("Tokens sent to the model (prompts, context)."),
-          tags$dt("Output Tokens"), tags$dd("Tokens generated by the model (responses)."),
-          tags$dt("Cache Creation"), tags$dd("Tokens written to prompt cache (first use). Billed at 25% of base input rate. ",
-            tags$a(href = "https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Anthropic caching docs]")),
-          tags$dt("Cache Read"), tags$dd("Tokens retrieved from cache (subsequent uses). Billed at 10% of base input rate — significant cost saving for repeated context. ",
-            tags$a(href = "https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Anthropic caching docs]"))
+        layout_columns(col_widths = c(6, 6),
+          card(card_header("Accuracy by Task Type"), uiOutput("cal_by_type"),
+            card_footer(class = "text-muted small", "Success rate per task category")),
+          card(card_header("Accuracy by Project"), uiOutput("cal_by_project"),
+            card_footer(class = "text-muted small", "Success rate per project · sparse data expected (only resolved predictions logged)"))
         ),
-        tags$h5("Session Metrics"),
-        tags$dl(
-          tags$dt("API Conversation"), tags$dd("Single Claude Code conversation. Short durations (0-5 min) are normal — each context compaction or restart creates a new conversation. ",
-            tags$a(href = "https://docs.anthropic.com/en/docs/claude-code/overview", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Claude Code docs]")),
-          tags$dt("Duration (min)"), tags$dd("Time from conversation start to end. NOT user work time — excludes idle periods between messages."),
-          tags$dt("Block"), tags$dd("Contiguous coding period from ccusage; gaps >30 min create new blocks. More meaningful than API conversations as a work-session metric. ",
-            tags$a(href = "https://github.com/ryoppippi/ccusage", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[ccusage]"))
-        ),
-        tags$h5("Repo Health Metrics"),
-        tags$dl(
-          tags$dt("Bus Factor"), tags$dd("Risk metric: if 1 person has >60% of commits, project is at risk if they leave. Low bus factor = knowledge concentration. ",
-            tags$a(href = "https://en.wikipedia.org/wiki/Bus_factor", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Wikipedia]")),
-          tags$dt("Velocity Trend"), tags$dd("Commits per month — indicates project momentum. Declining velocity may signal reduced activity or scope completion."),
-          tags$dt("Commit Timing"), tags$dd("Heatmap of when commits happen by hour and day. Shows work patterns and potential burnout signals."),
-          tags$dt("File Growth"), tags$dd("6-month rolling aggregate of files added vs deleted. Net positive = codebase growing."),
-          tags$dt("Churn Hotspots"), tags$dd("Files modified most often. High churn = refactoring candidates or unstable design. ",
-            tags$a(href = "https://en.wikipedia.org/wiki/Software_entropy", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Software entropy]")),
-          tags$dt("Bug Hotspots"), tags$dd("Files frequently touched by fix/bug commits. May indicate code quality issues."),
-          tags$dt("TODO/FIXME Debt"), tags$dd("Count of TODO, FIXME, HACK markers. Technical debt that should be tracked and resolved. ",
-            tags$a(href = "https://en.wikipedia.org/wiki/Technical_debt", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Technical debt]")),
-          tags$dt("Crisis Commits"), tags$dd("Reverts, hotfixes, emergency commits. High count = unstable releases or reactive development culture.")
-        ),
-        tags$h5("Calibration Metrics"),
-        tags$dl(
-          tags$dt("Calibration"), tags$dd("How well predicted confidence matches actual outcomes. 80% confident predictions should succeed ~80% of the time. ",
-            tags$a(href = "https://en.wikipedia.org/wiki/Calibration_(statistics)", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Wikipedia]")),
-          tags$dt("Brier Score"), tags$dd("Mean squared error of probabilistic predictions. 0 = perfect, 0.25 = no better than guessing 50%. Lower is better. ",
-            tags$a(href = "https://en.wikipedia.org/wiki/Brier_score", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Wikipedia]")),
-          tags$dt("Reliability Diagram"), tags$dd("Plot of predicted confidence vs actual success rate. Points on diagonal = perfectly calibrated. Above = overconfident. Below = underconfident."),
-          tags$dt("Overconfidence"), tags$dd("Predictions above the reliability diagram diagonal — stated confidence exceeds actual accuracy."),
-          tags$dt("Underconfidence"), tags$dd("Predictions below the diagonal — actual accuracy exceeds stated confidence (rare but possible).")
-        ),
-        tags$h5("Tools"),
-        tags$dl(
-          tags$dt("Shinylive"), tags$dd("R Shiny apps running entirely in the browser via WebAssembly — no server required. ",
-            tags$a(href = "https://posit-dev.github.io/r-shinylive/", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[posit-dev.github.io]")),
-          tags$dt("WebR / WebAssembly"), tags$dd("R compiled to WebAssembly, running natively in the browser. Powers the Shinylive embedding in this dashboard. ",
-            tags$a(href = "https://docs.r-wasm.org/webr/latest/", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[docs.r-wasm.org]")),
-          tags$dt("DuckDB-WASM"), tags$dd("DuckDB compiled to WebAssembly — SQL analytics in the browser, no server. Used here for Parquet queries. ",
-            tags$a(href = "https://duckdb.org/docs/clients/wasm/overview.html", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[DuckDB WASM docs]")),
-          tags$dt("duckplyr"), tags$dd("Tidyverse-syntax DuckDB queries in R — replaces raw SQL strings. ",
-            tags$a(href = "https://duckplyr.tidyverse.org/", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[duckplyr.tidyverse.org]")),
-          tags$dt("ECharts"), tags$dd("Apache ECharts — the JavaScript charting library powering all interactive charts. ",
-            tags$a(href = "https://echarts.apache.org/en/index.html", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[echarts.apache.org]"))
+        layout_columns(col_widths = c(12),
+          card(card_header("Prediction Log"), DTOutput("cal_log"),
+            card_footer(class = "text-muted small", "All predictions with stated confidence, outcome, and notes"))
         )
       ),
-      card_footer(class = "text-muted small",
-        "Reference definitions for interpreting dashboard metrics. Links open in a new tab. Hover over charts for tooltips.")
+      nav_panel("Glossary", value = "Glossary", icon = icon("book"),
+        card(card_header("Metric Definitions"),
+          tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+            tags$h5("Cost Metrics"),
+            tags$dl(
+              tags$dt("Total Cost ($)"), tags$dd("Sum of API charges for input, output, and cache tokens. ",
+                tags$a(href = "https://docs.anthropic.com/en/docs/about-claude/models/overview#api-models", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Anthropic pricing]")),
+              tags$dt("Cost per MTok"), tags$dd("Cost per million tokens — efficiency metric comparing model tiers."),
+              tags$dt("Cumulative Cost"), tags$dd("Running total of spend over time. Useful for burn-rate forecasting."),
+              tags$dt("Est. Cost by Project"), tags$dd("⚠ Approximate: daily cost × (project session time / total session time). No per-project billing from API.")
+            ),
+            tags$h5("Token Metrics"),
+            tags$dl(
+              tags$dt("Input Tokens"), tags$dd("Tokens sent to the model (prompts, context)."),
+              tags$dt("Output Tokens"), tags$dd("Tokens generated by the model (responses)."),
+              tags$dt("Cache Creation"), tags$dd("Tokens written to prompt cache (first use). Billed at 25% of base input rate. ",
+                tags$a(href = "https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Anthropic caching docs]")),
+              tags$dt("Cache Read"), tags$dd("Tokens retrieved from cache (subsequent uses). Billed at 10% of base input rate — significant cost saving for repeated context. ",
+                tags$a(href = "https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Anthropic caching docs]"))
+            ),
+            tags$h5("Session Metrics"),
+            tags$dl(
+              tags$dt("API Conversation"), tags$dd("Single Claude Code conversation. Short durations (0-5 min) are normal — each context compaction or restart creates a new conversation. ",
+                tags$a(href = "https://docs.anthropic.com/en/docs/claude-code/overview", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Claude Code docs]")),
+              tags$dt("Duration (min)"), tags$dd("Time from conversation start to end. NOT user work time — excludes idle periods between messages."),
+              tags$dt("Block"), tags$dd("Contiguous coding period from ccusage; gaps >30 min create new blocks. More meaningful than API conversations as a work-session metric. ",
+                tags$a(href = "https://github.com/ryoppippi/ccusage", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[ccusage]"))
+            ),
+            tags$h5("Repo Health Metrics"),
+            tags$dl(
+              tags$dt("Bus Factor"), tags$dd("Risk metric: if 1 person has >60% of commits, project is at risk if they leave. Low bus factor = knowledge concentration. ",
+                tags$a(href = "https://en.wikipedia.org/wiki/Bus_factor", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Wikipedia]")),
+              tags$dt("Velocity Trend"), tags$dd("Commits per month — indicates project momentum. Declining velocity may signal reduced activity or scope completion."),
+              tags$dt("Commit Timing"), tags$dd("Heatmap of when commits happen by hour and day. Shows work patterns and potential burnout signals."),
+              tags$dt("File Growth"), tags$dd("6-month rolling aggregate of files added vs deleted. Net positive = codebase growing."),
+              tags$dt("Churn Hotspots"), tags$dd("Files modified most often. High churn = refactoring candidates or unstable design. ",
+                tags$a(href = "https://en.wikipedia.org/wiki/Software_entropy", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Software entropy]")),
+              tags$dt("Bug Hotspots"), tags$dd("Files frequently touched by fix/bug commits. May indicate code quality issues."),
+              tags$dt("TODO/FIXME Debt"), tags$dd("Count of TODO, FIXME, HACK markers. Technical debt that should be tracked and resolved. ",
+                tags$a(href = "https://en.wikipedia.org/wiki/Technical_debt", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Technical debt]")),
+              tags$dt("Crisis Commits"), tags$dd("Reverts, hotfixes, emergency commits. High count = unstable releases or reactive development culture.")
+            ),
+            tags$h5("Calibration Metrics"),
+            tags$dl(
+              tags$dt("Calibration"), tags$dd("How well predicted confidence matches actual outcomes. 80% confident predictions should succeed ~80% of the time. ",
+                tags$a(href = "https://en.wikipedia.org/wiki/Calibration_(statistics)", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Wikipedia]")),
+              tags$dt("Brier Score"), tags$dd("Mean squared error of probabilistic predictions. 0 = perfect, 0.25 = no better than guessing 50%. Lower is better. ",
+                tags$a(href = "https://en.wikipedia.org/wiki/Brier_score", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[Wikipedia]")),
+              tags$dt("Reliability Diagram"), tags$dd("Plot of predicted confidence vs actual success rate. Points on diagonal = perfectly calibrated. Above = overconfident. Below = underconfident."),
+              tags$dt("Overconfidence"), tags$dd("Predictions above the reliability diagram diagonal — stated confidence exceeds actual accuracy."),
+              tags$dt("Underconfidence"), tags$dd("Predictions below the diagonal — actual accuracy exceeds stated confidence (rare but possible).")
+            ),
+            tags$h5("Tools"),
+            tags$dl(
+              tags$dt("Shinylive"), tags$dd("R Shiny apps running entirely in the browser via WebAssembly — no server required. ",
+                tags$a(href = "https://posit-dev.github.io/r-shinylive/", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[posit-dev.github.io]")),
+              tags$dt("WebR / WebAssembly"), tags$dd("R compiled to WebAssembly, running natively in the browser. Powers the Shinylive embedding in this dashboard. ",
+                tags$a(href = "https://docs.r-wasm.org/webr/latest/", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[docs.r-wasm.org]")),
+              tags$dt("DuckDB-WASM"), tags$dd("DuckDB compiled to WebAssembly — SQL analytics in the browser, no server. Used here for Parquet queries. ",
+                tags$a(href = "https://duckdb.org/docs/clients/wasm/overview.html", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[DuckDB WASM docs]")),
+              tags$dt("duckplyr"), tags$dd("Tidyverse-syntax DuckDB queries in R — replaces raw SQL strings. ",
+                tags$a(href = "https://duckplyr.tidyverse.org/", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[duckplyr.tidyverse.org]")),
+              tags$dt("ECharts"), tags$dd("Apache ECharts — the JavaScript charting library powering all interactive charts. ",
+                tags$a(href = "https://echarts.apache.org/en/index.html", target = "_blank", rel = "noopener noreferrer", style = "color:#7cb5ec;", "[echarts.apache.org]"))
+            )
+          ),
+          card_footer(class = "text-muted small",
+            "Reference definitions for interpreting dashboard metrics. Links open in a new tab. Hover over charts for tooltips.")
+        )
+      )
     )
   ),
 
@@ -1823,7 +1825,7 @@ server <- function(input, output, session) {
   })
 
   observe({
-    req(input$tabs == "By Project")
+    req(input$tabs == "Usage", input$usage_tabs == "By Project")
     sel <- resolve_sel(input$selected_projects)
     # NULL        => All projects: send null  (JS omits IN filter, includes live projects)
     # character(0)=> None selected: send "__NONE__" sentinel (JS renders empty chart)
