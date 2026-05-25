@@ -353,10 +353,15 @@ hf_push_telemetry <- function(
   env_token <- Sys.getenv("HF_TOKEN", unset = "")
   if (nzchar(env_token)) {
     transient_path <- file.path(workdir, ".hf_token_ci")
-    # Trim trailing whitespace/newlines — gh secret set from a file can
-    # include a trailing newline that would corrupt git auth.
-    env_token_trimmed <- trimws(env_token, which = "right")
-    writeLines(env_token_trimmed, con = transient_path)
+    # Trim ALL trailing/leading whitespace and strip internal CR/LF.
+    # gh secret set from a file can include a trailing newline that corrupts
+    # git auth ("password authentication no longer supported" from HuggingFace
+    # means git sent "hf_xxx\n" as the password — the classic trailing-newline
+    # symptom).  Use cat(..., sep = "") (NOT writeLines, which appends "\n")
+    # so the file on disk contains exactly the token bytes with no newline.
+    env_token_trimmed <- trimws(env_token, which = "both")
+    env_token_trimmed <- gsub("[\r\n]", "", env_token_trimmed)
+    cat(env_token_trimmed, file = transient_path, sep = "")
     Sys.chmod(transient_path, mode = "0600")
     # Clear the local string immediately
     env_token <- NULL
@@ -378,7 +383,11 @@ hf_push_telemetry <- function(
 #' `$GIT_ASKPASS "<prompt>"`, the helper checks the first word of the prompt:
 #' - `Username*` → prints the HF repo owner (the part before `/` in `hf_repo`)
 #'   using `printf` without a trailing newline.
-#' - Anything else (the Password prompt) → `cat`s the token file.
+#' - Anything else (the Password prompt) → emits the token via
+#'   `printf '%s' "$(cat <file>)"`.  Command substitution strips trailing
+#'   newlines from the file; `printf %s` adds none.  This ensures git never
+#'   receives `hf_xxx\n` as the password even if the token file on disk
+#'   (e.g. `~/.cache/huggingface/token`) carries a trailing newline.
 #'
 #' HuggingFace git-over-HTTPS requires username = the repo owner and
 #' password = the HF token.  Sending the token as the username causes
@@ -407,7 +416,12 @@ hf_push_telemetry <- function(
       # "Password for 'https://...'" (or anything else) → cat the token file.
       "case \"$1\" in",
       paste0("  Username*) printf '%s' ", shQuote(repo_owner), " ;;"),
-      paste0("  *)         cat ", shQuote(token_path), " ;;"),
+      # Use printf '%s' "$(cat ...)" rather than plain cat: command substitution
+      # strips any trailing newlines from the file, and printf %s adds none.
+      # This is the belt-and-braces guard so even if the token file on disk
+      # somehow carries a trailing newline (e.g. the local ~/.cache/huggingface/token
+      # written by huggingface-cli), git never receives "hf_xxx\n" as the password.
+      paste0("  *)         printf '%s' \"$(cat ", shQuote(token_path), ")\" ;;"),
       "esac"),
     con = helper_path
   )

@@ -259,9 +259,14 @@ test_that(".hf_resolve_token_path() falls back to HF_TOKEN env var when file abs
     perm_bits <- bitwAnd(as.integer(info$mode), 511L)  # 511L = 0777 octal
     expect_equal(perm_bits, 384L)                       # 384L = 0600 octal
 
-    # Content must equal what was in the env var (token written to file)
-    written <- readLines(result, warn = FALSE)
-    expect_equal(written, "ci-test-token-value")
+    # Content must equal what was in the env var (token written to file).
+    # Use readBin to verify the file truly has no trailing newline byte on disk
+    # (readLines would strip it silently and mask the bug).
+    raw_bytes <- readBin(result, what = "raw", n = 200L)
+    file_str  <- rawToChar(raw_bytes)
+    expect_false(grepl("[\r\n]", file_str),
+      info = "Token file must contain no newline bytes")
+    expect_equal(file_str, "ci-test-token-value")
   })
 })
 
@@ -367,8 +372,41 @@ test_that(".hf_resolve_token_path() trims trailing newline from HF_TOKEN env var
   withr::with_envvar(c(HF_TOKEN = "my-real-token\n"), {
     result <- llmtelemetry:::.hf_resolve_token_path(absent_path, tmpdir)
 
-    written <- readLines(result, warn = FALSE)
-    # Must be stripped — no empty line at end
-    expect_equal(written, "my-real-token")
+    # readLines strips the newline when reading; use readBin to confirm the
+    # file truly contains no trailing newline byte on disk.
+    raw_bytes <- readBin(result, what = "raw", n = 100L)
+    file_str  <- rawToChar(raw_bytes)
+    # File must contain exactly the token with no trailing \n or \r
+    expect_false(grepl("[\r\n]", file_str),
+      info = "Token file must contain no newline bytes (root cause of HF auth failure)")
+    # Sanity: content equals the bare token
+    expect_equal(trimws(file_str, which = "both"), "my-real-token")
   })
+})
+
+test_that(".hf_make_askpass() Password branch strips trailing newline from token file", {
+  # Root cause regression test: if the token file on disk has a trailing
+  # newline (e.g. written by huggingface-cli or an old writeLines() call),
+  # the askpass helper must NOT pass it through to git.
+  # "remote: Password authentication in git is no longer supported" = HF
+  # received "hf_xxx\n" as the password — this test prevents recurrence.
+  tmpdir     <- withr::local_tempdir()
+  token_file <- file.path(tmpdir, "token_with_newline")
+
+  # Deliberately write a token file WITH a trailing newline
+  cat("hf_test_token_abc\n", file = token_file, sep = "")
+
+  script <- llmtelemetry:::.hf_make_askpass(
+    token_path = token_file,
+    workdir    = tmpdir,
+    hf_repo    = "JohnGavin/llmtelemetry-metrics"
+  )
+
+  # system2() stdout captures lines (strips trailing newline per line — that is
+  # fine). The key assertion is that stdout is exactly one element equal to the
+  # bare token, NOT two elements (bare token + empty string from the \n).
+  result <- system2(script, args = "Password for 'https://huggingface.co'",
+                    stdout = TRUE, stderr = FALSE)
+  expect_length(result, 1L)
+  expect_equal(result[[1L]], "hf_test_token_abc")
 })
