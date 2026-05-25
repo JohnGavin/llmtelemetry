@@ -193,15 +193,18 @@ if (!interactive() &&
   raw_usage_path <- args[[1L]]
   raw_cost_path  <- args[[2L]]
 
-  # Determine output directory (inst/extdata/ relative to the package root)
-  # here::here() works when run from the package root; fall back to cwd-relative.
-  extdata_dir <- tryCatch(
-    {
-      requireNamespace("here", quietly = TRUE)
-      here::here("inst", "extdata")
-    },
-    error = function(e) file.path("inst", "extdata")
-  )
+  # Determine output directory.
+  # Arg 3 (explicit out-dir) takes priority — ensures the caller controls where
+  # output lands regardless of cwd.  here::here() is the second choice (works
+  # when run from the package root); cwd-relative is a last resort.
+  extdata_dir <- if (length(args) >= 3L && nzchar(args[[3L]])) {
+    args[[3L]]
+  } else {
+    tryCatch(
+      here::here("inst", "extdata"),
+      error = function(e) file.path("inst", "extdata")
+    )
+  }
   dir.create(extdata_dir, recursive = TRUE, showWarnings = FALSE)
 
   out_usage_path <- file.path(extdata_dir, "codexbar_usage.json")
