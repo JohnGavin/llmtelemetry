@@ -8,7 +8,6 @@ hf_push_telemetry(
   sessions_parquet = NULL,
   costs_parquet = NULL,
   hf_repo = NULL,
-  token_path = path.expand("~/.cache/huggingface/token"),
   push = FALSE,
   workdir = NULL
 )
@@ -26,21 +25,13 @@ root resolved via \code{\link[here:here]{here::here()}}.}
 environment variable \code{HF_DATASET_REPO}.  Defaults to
 \code{"JohnGavin/llmtelemetry-metrics"}.}
 
-\item{token_path}{Path to the HuggingFace token file.  Defaults to
-\verb{~/.cache/huggingface/token}.  The token is \strong{never} read into R
-memory by this function: a transient GIT_ASKPASS helper script \code{cat}s
-the file at git-clone time and is deleted immediately afterward.
-When the file does not exist and the \code{HF_TOKEN} environment variable
-is set, \code{hf_resolve_token_path()} writes the token to a transient file
-and returns that path instead (the caller manages cleanup).}
-
 \item{push}{Logical.  \code{FALSE} (default) performs a dry-run: validate +
-print manifest but do NOT clone or push.  Set to \code{TRUE} only to fire
-the actual push.}
+print manifest but do NOT invoke \code{huggingface-cli} or touch the network.
+Set to \code{TRUE} only to fire the actual push.}
 
-\item{workdir}{Temporary directory used for the git clone.  Created via
-\code{\link[=tempfile]{tempfile()}} if \code{NULL}.  Deleted on exit (push mode only; dry-run never
-creates it).}
+\item{workdir}{Temporary directory used for staging sanitised parquets.
+Created via \code{\link[=tempfile]{tempfile()}} if \code{NULL}.  Deleted on exit (push mode only;
+dry-run never creates it).}
 }
 \value{
 Invisibly returns a named list with elements:
@@ -54,45 +45,32 @@ Invisibly returns a named list with elements:
 }
 \description{
 Archives the SANITISED v1 PIT parquet files (\code{sessions.parquet},
-\code{costs.parquet}) to a HuggingFace dataset repository via \verb{git clone} +
-\verb{git-lfs push}.  By default the function \strong{only} performs a dry-run:
-it validates the privacy guard, prints the file manifest and target
-repository that WOULD be pushed, and returns invisibly without touching
-the network.  A live push only happens with \code{push = TRUE}.
+\code{costs.parquet}) to a HuggingFace dataset repository via the official
+\verb{huggingface-cli upload} command.  By default the function \strong{only} performs
+a dry-run: it validates the privacy guard, prints the file manifest and
+target repository that WOULD be pushed, and returns invisibly without
+touching the network.  A live push only happens with \code{push = TRUE}.
 }
-\section{One-time setup (human operator)}{
+\section{Authentication}{
 
-\enumerate{
-\item Create the HuggingFace dataset repo (e.g. \code{JohnGavin/llmtelemetry-metrics})
-at \verb{https://huggingface.co/new-dataset}.
-\item Run \verb{huggingface-cli login} in a terminal.  This writes a token to
-\verb{~/.cache/huggingface/token} and configures a git credential helper so
-the token is never embedded in clone URLs.
-}
+The \code{huggingface-cli} command authenticates automatically from the
+\code{HF_TOKEN} environment variable — no git credential helper, no token
+files, no ASKPASS script needed.  In CI, set the \code{HF_TOKEN} secret and
+pass it to the step via \verb{env: HF_TOKEN: $\{\{ secrets.HF_TOKEN \}\}}.
 }
 
-\section{CI supply of the token}{
+\section{CLI invocation}{
 
-The function resolves the token via \code{hf_resolve_token_path()}, which
-checks two sources in order:
-\enumerate{
-\item \verb{~/.cache/huggingface/token} — if the file exists, use it directly
-(interactive / local use; no change to existing behaviour).
-\item \code{HF_TOKEN} environment variable — if set (non-empty), the token is
-written to a transient file in the working directory with mode 0600,
-used for the clone/push, then deleted immediately.  The token value
-is \strong{never} stored in an R variable or printed.
-}
+The live push calls (after staging sanitised parquets to a temp dir):
 
-Recommended GitHub Actions configuration (Phase F):
-
-\if{html}{\out{<div class="sourceCode yaml">}}\preformatted{- run: Rscript inst/scripts/push_telemetry_to_huggingface.R --push
-  env:
-    HF_TOKEN: $\{\{ secrets.HF_TOKEN \}\}
+\if{html}{\out{<div class="sourceCode">}}\preformatted{huggingface-cli upload <repo_id> <staging_dir> . \\
+  --repo-type dataset \\
+  --commit-message "telemetry archive <date>"
 }\if{html}{\out{</div>}}
 
-This avoids writing the token to disk via \code{echo} and lets the function
-manage the transient file securely.
+The CLI binary is resolved by \code{.hf_cli_binary()}: tries \code{huggingface-cli}
+first, then \code{hf} as a fallback (both are installed by \code{huggingface_hub}).
+Aborts if neither is found.
 }
 
 \section{Archive scope}{
@@ -100,13 +78,5 @@ manage the transient file securely.
 Only session metadata and cost aggregates are archived.  Raw conversation
 logs, PHI, and \code{working_dir} path columns are never included.  The
 mandatory privacy guard asserts zero confidential rows before any staging.
-}
-
-\section{Phase notes}{
-
-\itemize{
-\item \strong{Phase E} (deferred): dashboard \verb{hf://} read via DuckDB.
-\item \strong{Phase F} (deferred): scheduled CI push via GitHub Actions cron.
-}
 }
 
