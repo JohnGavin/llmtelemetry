@@ -33,6 +33,13 @@ jobs:
             any::purrr
             local::.
 
+      - name: Overlay CodexBar data from data branch  # INTERIM #229 — remove when resolved
+        continue-on-error: true
+        run: |
+          git fetch origin data || true
+          git checkout origin/data -- inst/extdata/codexbar_usage.json inst/extdata/codexbar_cost_daily.json 2>/dev/null \
+            || echo "No codexbar data on data branch yet — email will show 'not yet available'"
+
       - name: Build email HTML
         run: Rscript inst/scripts/send_daily_email.R --build-only
 
