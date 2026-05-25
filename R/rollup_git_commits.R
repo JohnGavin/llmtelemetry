@@ -56,6 +56,14 @@ rollup_git_commits <- function(
     dplyr::distinct(commit_pk, .keep_all = TRUE) |>
     dplyr::collect()
 
+  # Re-apply canonicalization to catch any stale pre-computed values in the JSON
+  # (consistent with rollup_sessions / rollup_costs — mirrors their pattern).
+  out$canonical_project <- .canonicalize_project_local(out$canonical_project)
+  out <- out[!is.na(out$canonical_project), , drop = FALSE]
+
+  # privacy: PIT store must never contain confidential projects (#83)
+  out <- drop_confidential_projects(out)
+
   # --- 3. Atomic write via DuckDB COPY TO (no arrow dependency) --------------
   tmp_path <- paste0(output_path, ".tmp")
 
@@ -195,6 +203,12 @@ append_git_commits_from_staging <- function(
       new_rows$canonical_project[is_path]
     )
   }
+
+  # --- 3c. Privacy filter: drop confidential projects from staging drain (#83) -
+  # Mirror the guard applied in rollup_git_commits() on the JSON path so that the
+  # staging drain can never write mycare / crypto / solwatch / swarms rows.
+  new_rows <- drop_confidential_projects(new_rows)
+  if (nrow(new_rows) == 0L) return(invisible(0L))
 
   # --- 4. Dedup against existing parquet ------------------------------------
   dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
