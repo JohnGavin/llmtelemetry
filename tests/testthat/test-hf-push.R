@@ -226,3 +226,75 @@ test_that("hf_push_telemetry() errors when sessions parquet does not exist", {
     regexp = "Source parquet not found"
   )
 })
+
+# ---------------------------------------------------------------------------
+# Test 5: Token resolver — HF_TOKEN env-var fallback (CI path)
+# ---------------------------------------------------------------------------
+
+test_that(".hf_resolve_token_path() returns existing file path unchanged", {
+  tmpdir <- withr::local_tempdir()
+  token_file <- file.path(tmpdir, "token")
+  writeLines("fake-local-token", token_file)
+
+  result <- llmtelemetry:::.hf_resolve_token_path(token_file, tmpdir)
+  expect_equal(result, token_file)
+})
+
+test_that(".hf_resolve_token_path() falls back to HF_TOKEN env var when file absent", {
+  tmpdir <- withr::local_tempdir()
+  absent_path <- file.path(tmpdir, "nonexistent_token")
+
+  withr::with_envvar(c(HF_TOKEN = "ci-test-token-value"), {
+    result <- llmtelemetry:::.hf_resolve_token_path(absent_path, tmpdir)
+
+    # Returned path must exist and be inside tmpdir (transient file)
+    expect_true(file.exists(result))
+    expect_true(startsWith(result, tmpdir))
+
+    # File permissions: owner-only read/write (0600 octal = 384 decimal).
+    # file.info()$mode stores the full mode integer; mask with 0777 octal
+    # (511 decimal) to isolate the permission bits, then compare to 0600
+    # octal (384 decimal).
+    info <- file.info(result)
+    perm_bits <- bitwAnd(as.integer(info$mode), 511L)  # 511L = 0777 octal
+    expect_equal(perm_bits, 384L)                       # 384L = 0600 octal
+
+    # Content must equal what was in the env var (token written to file)
+    written <- readLines(result, warn = FALSE)
+    expect_equal(written, "ci-test-token-value")
+  })
+})
+
+test_that(".hf_resolve_token_path() aborts when neither file nor HF_TOKEN present", {
+  tmpdir      <- withr::local_tempdir()
+  absent_path <- file.path(tmpdir, "nonexistent_token")
+
+  withr::with_envvar(c(HF_TOKEN = ""), {
+    expect_error(
+      llmtelemetry:::.hf_resolve_token_path(absent_path, tmpdir),
+      regexp = "HuggingFace token not found"
+    )
+  })
+})
+
+test_that("hf_push_telemetry() dry-run succeeds with HF_TOKEN env var (no local token file)", {
+  # Simulate a CI environment where no local token file exists.
+  # Because push = FALSE (dry-run) the token resolver is not reached —
+  # the function returns before the live-push block.  This test verifies
+  # the dry-run path is unaffected by the absence of the token file.
+  tmpdir        <- withr::local_tempdir()
+  sessions_path <- .make_test_parquet(.clean_sessions(), tmpdir)
+  costs_path    <- .make_test_parquet(.clean_costs(),    tmpdir)
+  absent_token  <- file.path(tmpdir, "no_token_here")
+
+  # No HF_TOKEN in env, no file — dry-run must still succeed (token not needed)
+  result <- hf_push_telemetry(
+    sessions_parquet = sessions_path,
+    costs_parquet    = costs_path,
+    token_path       = absent_token,
+    push             = FALSE   # dry-run: token path never checked
+  )
+
+  expect_true(result$dry_run)
+  expect_equal(result$sessions_rows, 2L)
+})

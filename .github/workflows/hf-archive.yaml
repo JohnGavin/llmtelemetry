@@ -1,0 +1,73 @@
+name: Archive telemetry to HuggingFace
+
+# Runs at 07:30 UTC daily — after the 12-hour data refresh (daily-report.yaml)
+# and before the 08:00 email delivery, so HF always reflects the latest snapshot.
+# Also triggerable manually for testing.
+on:
+  schedule:
+    - cron: "30 7 * * *"
+  workflow_dispatch: {}
+
+# Token has no push authority to this repo — only outbound HF git operations.
+permissions:
+  contents: read
+
+# Prevent races when a scheduled run overlaps a manual dispatch.
+concurrency:
+  group: hf-archive
+  cancel-in-progress: false
+
+jobs:
+  push-to-hf:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Guard: fail immediately with a clear message if the secret is absent.
+      # This avoids confusing "token not found" errors deep inside R code.
+      # -----------------------------------------------------------------------
+      - name: Guard — HF_TOKEN secret must be configured
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN secret is not set."
+            echo "::error::Add it via: gh secret set HF_TOKEN --repo JohnGavin/llmtelemetry"
+            echo "::error::Get a write token at https://huggingface.co/settings/tokens"
+            exit 1
+          fi
+          echo "HF_TOKEN is present (length: ${#HF_TOKEN})"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # git-lfs must be available before the R push script clones the HF repo.
+      - name: Install git-lfs
+        run: |
+          git lfs install
+          git lfs version
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      # Mirror the package subset from deploy-dashboard.yaml that covers the
+      # parquet + privacy guard dependencies.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::DBI
+            any::duckdb
+            any::here
+            any::cli
+            any::pkgload
+
+      # -----------------------------------------------------------------------
+      # Privacy guard: if any confidential row is detected the script exits
+      # non-zero → CI fails closed.  Do NOT suppress this failure.
+      # -----------------------------------------------------------------------
+      - name: Push sanitised telemetry archive to HuggingFace
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: Rscript inst/scripts/push_telemetry_to_huggingface.R --push

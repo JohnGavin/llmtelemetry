@@ -29,7 +29,10 @@ environment variable \code{HF_DATASET_REPO}.  Defaults to
 \item{token_path}{Path to the HuggingFace token file.  Defaults to
 \verb{~/.cache/huggingface/token}.  The token is \strong{never} read into R
 memory by this function: a transient GIT_ASKPASS helper script \code{cat}s
-the file at git-clone time and is deleted immediately afterward.}
+the file at git-clone time and is deleted immediately afterward.
+When the file does not exist and the \code{HF_TOKEN} environment variable
+is set, \code{hf_resolve_token_path()} writes the token to a transient file
+and returns that path instead (the caller manages cleanup).}
 
 \item{push}{Logical.  \code{FALSE} (default) performs a dry-run: validate +
 print manifest but do NOT clone or push.  Set to \code{TRUE} only to fire
@@ -70,19 +73,26 @@ the token is never embedded in clone URLs.
 
 \section{CI supply of the token}{
 
-In GitHub Actions, write the \code{HF_TOKEN} secret into the expected location
-before calling this script:
+The function resolves the token via \code{hf_resolve_token_path()}, which
+checks two sources in order:
+\enumerate{
+\item \verb{~/.cache/huggingface/token} — if the file exists, use it directly
+(interactive / local use; no change to existing behaviour).
+\item \code{HF_TOKEN} environment variable — if set (non-empty), the token is
+written to a transient file in the working directory with mode 0600,
+used for the clone/push, then deleted immediately.  The token value
+is \strong{never} stored in an R variable or printed.
+}
 
-\if{html}{\out{<div class="sourceCode yaml">}}\preformatted{- run: |
-    mkdir -p ~/.cache/huggingface
-    echo "$HF_TOKEN" > ~/.cache/huggingface/token
-    chmod 600 ~/.cache/huggingface/token
+Recommended GitHub Actions configuration (Phase F):
+
+\if{html}{\out{<div class="sourceCode yaml">}}\preformatted{- run: Rscript inst/scripts/push_telemetry_to_huggingface.R --push
   env:
     HF_TOKEN: $\{\{ secrets.HF_TOKEN \}\}
 }\if{html}{\out{</div>}}
 
-Alternatively, configure a GIT_ASKPASS helper that reads the token file
-at runtime (see \code{hf_make_askpass()}).
+This avoids writing the token to disk via \code{echo} and lets the function
+manage the transient file securely.
 }
 
 \section{Archive scope}{
