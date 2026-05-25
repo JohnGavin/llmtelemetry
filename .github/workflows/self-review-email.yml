@@ -1,0 +1,43 @@
+name: Self-Review Verify Email
+
+# Dispatched by the local self-review verify job (JohnGavin/llm#235) to email the
+# overnight self-review PASS/FAIL result. Reuses this repo's GMAIL_* secrets.
+on:
+  workflow_dispatch:
+    inputs:
+      result:
+        description: "PASS or FAIL"
+        required: true
+      count:
+        description: "self_review_findings_stage1 row count"
+        required: false
+        default: "?"
+      run_date:
+        description: "date of the verified run (YYYY-MM-DD)"
+        required: false
+        default: ""
+      details:
+        description: "extra detail line"
+        required: false
+        default: ""
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    env:
+      GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      SR_RESULT: ${{ github.event.inputs.result }}
+      SR_COUNT: ${{ github.event.inputs.count }}
+      SR_RUN_DATE: ${{ github.event.inputs.run_date }}
+      SR_DETAILS: ${{ github.event.inputs.details }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::blastula
+      - name: Send self-review email
+        run: Rscript inst/scripts/send_self_review_email.R
