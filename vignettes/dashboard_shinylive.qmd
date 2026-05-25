@@ -899,6 +899,57 @@ ui <- page_navbar(
         }, true);
       };
 
+      // --- Session Duration by Project (Cleveland dot) --- (#83 Phase 5)
+      // Queries sessions.parquet: SUM(duration_min) GROUP BY canonical_project
+      let _durChart = null;
+      window.queryAndRenderDuration = async function(projects, min_date) {
+        const el = document.getElementById("proj_duration_ec");
+        if (!el) return;
+        if (!_durChart) {
+          _durChart = echarts.init(el, "dark");
+          new ResizeObserver(function() { _durChart.resize(); }).observe(el);
+        }
+        if (projects === "__NONE__") {
+          _durChart.setOption({ backgroundColor:"#1a1a1a", series:[{type:"scatter",data:[]}] }, true);
+          return;
+        }
+        if (!conn) {
+          _durChart.setOption({ backgroundColor:"#1a1a1a",
+            title:{text:"Duration data unavailable",textStyle:{color:"#ccc",fontSize:13}},
+            series:[] }, true);
+          return;
+        }
+        const filters = ["duration_min > 0", "canonical_project IS NOT NULL"];
+        if (Array.isArray(projects) && projects.length > 0)
+          filters.push("canonical_project IN (" + projects.map(p => "\'" + p.replace(/\'/g, "\'\'") + "\'").join(",") + ")");
+        if (min_date) filters.push("started_at >= \'" + min_date + "\'");
+        const r = await conn.query(
+          "SELECT canonical_project, ROUND(SUM(duration_min), 1) AS total_min " +
+          "FROM \'sessions.parquet\' " +
+          "WHERE " + filters.join(" AND ") + " " +
+          "GROUP BY canonical_project ORDER BY total_min DESC"
+        );
+        const rows = r.toArray().map(row => ({
+          p: String(row.canonical_project),
+          m: typeof row.total_min === "bigint" ? Number(row.total_min) : (row.total_min || 0)
+        }));
+        // Cleveland dot: ascending order (smallest at top of horizontal axis)
+        const projs = rows.map(function(r){return r.p;}).reverse();
+        const mins  = rows.map(function(r){return r.m;}).reverse();
+        _durChart.setOption({
+          backgroundColor:"#1a1a1a",
+          tooltip:{trigger:"axis",formatter:function(params){
+            return params[0].name + ": " + params[0].value + " min";
+          }},
+          grid:{left:120,containLabel:false},
+          xAxis:{type:"value",name:"Minutes",nameLocation:"middle",nameGap:25,
+                 axisLabel:{color:"#ccc"},nameTextStyle:{color:"#ccc"}},
+          yAxis:{type:"category",data:projs,axisLabel:{color:"#ccc",fontSize:11}},
+          series:[{type:"scatter",data:mins,symbolSize:12,itemStyle:{color:"#4daf4a"},
+                   label:{show:true,position:"right",color:"#ccc",formatter:"{c}"}}]
+        }, true);
+      };
+
       function registerHandler() {
         Shiny.addCustomMessageHandler("duckdb_sessions", function(msg) {
           // Pass msg.projects directly: null=All, "__NONE__"=None, Array=specific list
@@ -907,8 +958,12 @@ ui <- page_navbar(
         Shiny.addCustomMessageHandler("duckdb_sessions_time", function(msg) {
           window.queryAndRenderSessionsTime(msg.projects || null, msg.min_date || null);
         });
+        Shiny.addCustomMessageHandler("duckdb_sessions_duration", function(msg) {
+          window.queryAndRenderDuration(msg.projects || null, msg.min_date || null);
+        });
         window.queryAndRenderSessions(null, null);  // initial render (all projects, all dates)
         window.queryAndRenderSessionsTime(null, null);  // initial render for time chart
+        window.queryAndRenderDuration(null, null);  // initial render for duration chart
       }
       if (window.Shiny && window.Shiny.addCustomMessageHandler) {
         registerHandler();
@@ -1232,8 +1287,9 @@ ui <- page_navbar(
           ),
           nav_panel("Details",
             layout_columns(col_widths = c(6, 6),
-              card(card_header("Session Duration by Project"), uiOutput("proj_duration"),
-                card_footer(class = "text-muted small", "Total session minutes per project")),
+              card(card_header("Session Duration by Project"),
+                tags$div(id="proj_duration_ec", class="echart-div", style="width:100%;height:300px;"),
+                card_footer(class = "text-muted small", "Total session minutes per project · powered by DuckDB-WASM")),
               card(card_header("Cost Share by Date"), uiOutput("proj_share_heatmap"),
                 card_footer(class = "text-muted small", "Heatmap: project cost share by date"))
             ),
@@ -2491,6 +2547,11 @@ server <- function(input, output, session) {
       projects = projects_json,
       min_date = cutoff_str
     ))
+    # Phase 5 (#83): Session Duration by Project migrated to DuckDB-WASM
+    session$sendCustomMessage("duckdb_sessions_duration", list(
+      projects = projects_json,
+      min_date = cutoff_str
+    ))
   })
 
   output$proj_cost_daily <- renderUI({
@@ -2534,24 +2595,10 @@ server <- function(input, output, session) {
             aria_label = "Cumulative estimated cost by project")
   })
 
-  output$proj_duration <- renderUI({
-    d <- sess_filtered()
-    if (nrow(d) == 0 || !"duration_min" %in% names(d)) return(ec_empty())
-    agg <- aggregate(duration_min ~ project_short, data = d, FUN = sum, na.rm = TRUE)
-    agg <- agg[order(agg$duration_min, decreasing = FALSE), ]
-    ec(list(
-      tooltip = list(trigger = "axis", axisPointer = list(type = "shadow")),
-      grid = list(left = 120, containLabel = FALSE),
-      xAxis = list(type = "value", name = "Minutes"),
-      yAxis = list(type = "category", data = I(agg$project_short)),
-      series = list(list(
-        type = "scatter",
-        data = I(round(agg$duration_min, 1)),
-        symbolSize = 12,
-        itemStyle = list(color = pal$highlight)
-      ))
-    ), h = "300px", aria_label = "Cleveland dot chart: total session duration by project")
-  })
+  # proj_duration migrated to DuckDB-WASM (#83 Phase 5): observer sends "duckdb_sessions_duration"
+  # message to JS queryAndRenderDuration(), which queries sessions.parquet directly.
+  # SQL: SELECT canonical_project, ROUND(SUM(duration_min), 1) AS total_min
+  #      FROM sessions.parquet WHERE ... GROUP BY canonical_project ORDER BY total_min DESC
 
   output$proj_share_heatmap <- renderUI({
     d <- proj_filtered()
