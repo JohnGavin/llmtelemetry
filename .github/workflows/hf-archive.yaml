@@ -86,5 +86,5 @@ jobs:
           fi
           HF_TOKEN_CLEAN="$(printf '%s' "$HF_TOKEN" | tr -d '[:space:]')"
           export HF_TOKEN="$HF_TOKEN_CLEAN"
-          huggingface-cli login --token "$HF_TOKEN_CLEAN"
+          hf auth login --token "$HF_TOKEN_CLEAN"
           Rscript inst/scripts/push_telemetry_to_huggingface.R --push
