@@ -2306,6 +2306,125 @@ tryCatch({
   )
 })
 
+# --- 8f. Export roborev_agent_perf.json (#146 Q10) ----------------------------
+# Per-agent pass rate: pass_count / n_runs, total reviews, cost_per_review if available.
+# Source table: roborev_agent_performance (agent, model, n_runs, pass_count, fail_count,
+#   error_count, total_cost_usd).
+# Privacy: no repo/project column in this table — no clean_projects() needed.
+#   Agent names (codex, claude-code, gemini) are not confidential.
+# Guard: if table/columns missing, write empty-but-valid JSON and warn.
+cat("Exporting roborev_agent_perf.json...\n")
+tryCatch({
+  ap_src <- file.path(extdata, "roborev_agent_perf.json")
+  ap_dst <- file.path(out_dir, "roborev_agent_perf.json")
+
+  empty_ap <- list(agents = list(), generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"))
+
+  if (file.exists(unified_db)) {
+    apcon <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(apcon, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    ap_tbls <- dbListTables(apcon)
+
+    if ("roborev_agent_performance" %in% ap_tbls) {
+      ap_raw <- dbReadTable(apcon, "roborev_agent_performance") |> as_tibble()
+
+      # Validate required columns
+      req_cols <- c("agent", "n_runs", "pass_count", "fail_count")
+      missing_cols <- setdiff(req_cols, names(ap_raw))
+      if (length(missing_cols) > 0L) {
+        cat(sprintf("  -> roborev_agent_performance missing columns: %s; writing empty\n",
+                    paste(missing_cols, collapse = ", ")))
+        write_json(empty_ap, ap_src, auto_unbox = TRUE)
+      } else {
+        # Aggregate by agent (sum across dates)
+        has_cost <- "total_cost_usd" %in% names(ap_raw)
+
+        # Aggregate by agent across all dates.
+        # total_cost_usd is all-NA in the current data (cost not logged by roborev pipeline).
+        # Use any_nonzero_cost flag so sum(na.rm=TRUE)=0 is not mistaken for real zero cost.
+        any_nonzero_cost <- has_cost &&
+          any(!is.na(ap_raw$total_cost_usd) & ap_raw$total_cost_usd > 0, na.rm = TRUE)
+
+        ap_agg <- ap_raw |>
+          group_by(agent) |>
+          summarise(
+            n_runs      = sum(n_runs, na.rm = TRUE),
+            pass_count  = sum(pass_count, na.rm = TRUE),
+            fail_count  = sum(fail_count, na.rm = TRUE),
+            error_count = sum(error_count, na.rm = TRUE),
+            total_cost  = if (any_nonzero_cost) sum(total_cost_usd, na.rm = TRUE) else NA_real_,
+            .groups     = "drop"
+          ) |>
+          mutate(
+            pass_rate       = if_else(n_runs > 0L, round(pass_count / n_runs, 4), 0),
+            cost_per_review = if_else(
+              !is.na(total_cost) & n_runs > 0L,
+              round(total_cost / n_runs, 6),
+              NA_real_
+            )
+          ) |>
+          arrange(desc(pass_rate))
+
+        # Build output list
+        agent_list <- lapply(seq_len(nrow(ap_agg)), function(i) {
+          row <- ap_agg[i, , drop = FALSE]
+          out <- list(
+            agent       = row$agent,
+            n_runs      = as.integer(row$n_runs),
+            pass_count  = as.integer(row$pass_count),
+            fail_count  = as.integer(row$fail_count),
+            error_count = as.integer(row$error_count),
+            pass_rate   = row$pass_rate
+          )
+          if (!is.na(row$cost_per_review)) {
+            out$cost_per_review_usd <- row$cost_per_review
+            out$total_cost_usd      <- round(row$total_cost, 4)
+          }
+          out
+        })
+
+        ap_out <- list(
+          agents       = agent_list,
+          generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        )
+        write_json(ap_out, ap_src, auto_unbox = TRUE)
+        cat(sprintf(
+          "  -> roborev_agent_perf.json: %d agents, runs=%d, top pass-rate=%.1f%% (%s)\n",
+          nrow(ap_agg),
+          sum(ap_agg$n_runs),
+          max(ap_agg$pass_rate, na.rm = TRUE) * 100,
+          ap_agg$agent[which.max(ap_agg$pass_rate)]
+        ))
+        cat("  -> privacy: no repo column in roborev_agent_performance — no filtering needed\n")
+      }
+      tryCatch(dbDisconnect(apcon, shutdown = TRUE), error = function(e) NULL)
+    } else {
+      cat("  -> roborev_agent_performance not found; writing empty roborev_agent_perf.json\n")
+      write_json(empty_ap, ap_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  # Always copy committed source to vignettes/data/
+  if (file.exists(ap_src)) {
+    file.copy(ap_src, ap_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_agent_perf.json -> vignettes/data/ (%d bytes)\n",
+                file.info(ap_src)$size))
+  } else {
+    write_json(empty_ap, ap_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_agent_perf.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(agents = list(), generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_agent_perf.json"),
+    auto_unbox = TRUE
+  )
+})
+
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
 # ccusage_blocks is intentionally excluded from critical_files: the CI fallback
