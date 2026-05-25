@@ -15,18 +15,23 @@
 #'    the token is never embedded in clone URLs.
 #'
 #' @section CI supply of the token:
-#' In GitHub Actions, write the `HF_TOKEN` secret into the expected location
-#' before calling this script:
+#' The function resolves the token via `hf_resolve_token_path()`, which
+#' checks two sources in order:
+#' 1. `~/.cache/huggingface/token` — if the file exists, use it directly
+#'    (interactive / local use; no change to existing behaviour).
+#' 2. `HF_TOKEN` environment variable — if set (non-empty), the token is
+#'    written to a transient file in the working directory with mode 0600,
+#'    used for the clone/push, then deleted immediately.  The token value
+#'    is **never** stored in an R variable or printed.
+#'
+#' Recommended GitHub Actions configuration (Phase F):
 #' ```yaml
-#' - run: |
-#'     mkdir -p ~/.cache/huggingface
-#'     echo "$HF_TOKEN" > ~/.cache/huggingface/token
-#'     chmod 600 ~/.cache/huggingface/token
+#' - run: Rscript inst/scripts/push_telemetry_to_huggingface.R --push
 #'   env:
 #'     HF_TOKEN: ${{ secrets.HF_TOKEN }}
 #' ```
-#' Alternatively, configure a GIT_ASKPASS helper that reads the token file
-#' at runtime (see `hf_make_askpass()`).
+#' This avoids writing the token to disk via `echo` and lets the function
+#' manage the transient file securely.
 #'
 #' @section Archive scope:
 #' Only session metadata and cost aggregates are archived.  Raw conversation
@@ -50,6 +55,9 @@
 #'   `~/.cache/huggingface/token`.  The token is **never** read into R
 #'   memory by this function: a transient GIT_ASKPASS helper script `cat`s
 #'   the file at git-clone time and is deleted immediately afterward.
+#'   When the file does not exist and the `HF_TOKEN` environment variable
+#'   is set, `hf_resolve_token_path()` writes the token to a transient file
+#'   and returns that path instead (the caller manages cleanup).
 #' @param push Logical.  `FALSE` (default) performs a dry-run: validate +
 #'   print manifest but do NOT clone or push.  Set to `TRUE` only to fire
 #'   the actual push.
@@ -146,25 +154,24 @@ hf_push_telemetry <- function(
   }
 
   # --- 5. Live push -----------------------------------------------------------
-  if (!file.exists(token_path)) {
-    cli::cli_abort(
-      c("x" = "HuggingFace token not found at {.file {token_path}}",
-        "i" = "Run {.code huggingface-cli login} to create it, or set the path via {.arg token_path}.")
-    )
-  }
-
   if (is.null(workdir)) {
     workdir <- tempfile(pattern = "hf_push_")
   }
   dir.create(workdir, recursive = TRUE, showWarnings = FALSE)
   on.exit(unlink(workdir, recursive = TRUE), add = TRUE)
 
+  # Resolve the token: prefer the caller-supplied file path; fall back to
+  # the HF_TOKEN environment variable (CI path).  A transient token file
+  # is written inside workdir when the env-var path is taken; it is removed
+  # by the on.exit(unlink(workdir, ...)) above.
+  resolved_token <- .hf_resolve_token_path(token_path, workdir)
+
   clone_dir <- file.path(workdir, "repo")
 
   # Build the GIT_ASKPASS helper: a transient shell script that cats the token.
   # The helper is deleted immediately after git clone completes so the file's
   # lifetime is minimised.  NEVER embed the token in the clone URL.
-  askpass_script <- .hf_make_askpass(token_path, workdir)
+  askpass_script <- .hf_make_askpass(resolved_token, workdir)
   on.exit(
     if (file.exists(askpass_script)) file.remove(askpass_script),
     add = TRUE
@@ -198,6 +205,16 @@ hf_push_telemetry <- function(
   system2("git", args = c("-C", clone_dir, "lfs", "install"),
           stdout = FALSE, stderr = FALSE)
 
+  # Set a local git identity inside the clone so CI runners (which have no
+  # global git config) can commit.  Using --local avoids touching the
+  # runner's global config; the clone dir is deleted on.exit anyway.
+  system2("git", args = c("-C", clone_dir, "config", "--local",
+                          "user.name", "llmtelemetry-bot"),
+          stdout = FALSE, stderr = FALSE)
+  system2("git", args = c("-C", clone_dir, "config", "--local",
+                          "user.email", "actions@github.com"),
+          stdout = FALSE, stderr = FALSE)
+
   # Write the sanitised parquets to the clone
   sessions_out <- file.path(clone_dir, "sessions.parquet")
   costs_out    <- file.path(clone_dir, "costs.parquet")
@@ -218,7 +235,7 @@ hf_push_telemetry <- function(
           stdout = FALSE, stderr = FALSE)
 
   # Re-create GIT_ASKPASS for push (helper was deleted after clone)
-  askpass_script2 <- .hf_make_askpass(token_path, workdir)
+  askpass_script2 <- .hf_make_askpass(resolved_token, workdir)
   on.exit(
     if (file.exists(askpass_script2)) file.remove(askpass_script2),
     add = TRUE
@@ -310,6 +327,43 @@ hf_push_telemetry <- function(
     df <- df[, setdiff(names(df), present), drop = FALSE]
   }
   df
+}
+
+
+#' Resolve the HuggingFace token file path for CI and local use.
+#'
+#' Checks two sources in order:
+#' 1. If `token_path` exists on disk, return it unchanged (local / already-set-up CI).
+#' 2. If the `HF_TOKEN` environment variable is non-empty, write its value to a
+#'    transient file inside `workdir` (mode 0600) and return that path.
+#'    The transient file's lifetime is bounded by the caller's `workdir` cleanup.
+#'
+#' The token value is written only to a file — it is NEVER stored in an R
+#' variable that outlives this function's local scope, and never printed.
+#'
+#' @param token_path Character.  Preferred path (default `~/.cache/huggingface/token`).
+#' @param workdir Character.  Directory where a transient token file may be created.
+#' @return Character path to the resolved token file.
+#' @keywords internal
+.hf_resolve_token_path <- function(token_path, workdir) {
+  if (file.exists(token_path)) {
+    return(token_path)
+  }
+  env_token <- Sys.getenv("HF_TOKEN", unset = "")
+  if (nzchar(env_token)) {
+    transient_path <- file.path(workdir, ".hf_token_ci")
+    writeLines(env_token, con = transient_path)
+    Sys.chmod(transient_path, mode = "0600")
+    # Clear the env_token string from the local scope immediately
+    env_token <- NULL
+    return(transient_path)
+  }
+  # Neither source available — abort with a clear message
+  cli::cli_abort(
+    c("x" = "HuggingFace token not found.",
+      "i" = "On local machines: run {.code huggingface-cli login} to create {.file {token_path}}.",
+      "i" = "In CI: set the {.envvar HF_TOKEN} secret and pass it via {.code env: HF_TOKEN: ${{{{ secrets.HF_TOKEN }}}}}.")
+  )
 }
 
 
