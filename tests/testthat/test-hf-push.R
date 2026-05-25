@@ -292,17 +292,24 @@ test_that(".hf_cli_binary() aborts when neither binary is found", {
 # ---------------------------------------------------------------------------
 
 test_that("hf_push_telemetry() push=TRUE calls hf upload with correct args", {
-  # Strategy: shim the PATH with a fake 'hf' that captures its argv to a
-  # temp file and exits 0, so hf_push_telemetry(push=TRUE) runs without
-  # any network call.  Use 'hf' (the preferred binary) not 'huggingface-cli'.
+  # Strategy: shim the PATH with a fake 'hf' that logs each argument on its
+  # own line (via a for loop over "$@") and exits 0, so hf_push_telemetry()
+  # runs without any network call.
+  #
+  # Logging one-arg-per-line is the regression guard for the system2()
+  # arg-splitting bug: if shQuote() is missing from the commit-message arg,
+  # the multi-word message gets split into several positional arguments by the
+  # shell.  We assert that exactly ONE line matches the pattern
+  # "telemetry archive ..." — proving the message arrived as a single token.
 
   shim_dir <- withr::local_tempdir()
   argv_log <- file.path(shim_dir, "argv.txt")
 
   fake_cli <- file.path(shim_dir, "hf")
+  # Log each argument as a separate line so we can count tokens precisely.
   writeLines(
     c("#!/bin/sh",
-      paste0("echo \"$@\" >> '", argv_log, "'"),
+      paste0("for arg in \"$@\"; do echo \"$arg\" >> '", argv_log, "'; done"),
       "exit 0"),
     fake_cli
   )
@@ -327,18 +334,30 @@ test_that("hf_push_telemetry() push=TRUE calls hf upload with correct args", {
   expect_equal(result$sessions_rows, 2L)
   expect_equal(result$costs_rows, 2L)
 
-  # Verify CLI was called with expected arguments
+  # Verify CLI was called and the log exists
   expect_true(file.exists(argv_log),
-    info = "huggingface-cli shim must have been invoked")
+    info = "hf shim must have been invoked")
   logged <- readLines(argv_log)
-  expect_length(logged, 1L)
 
-  # Args must include: upload, repo_id, path, ., --repo-type, dataset,
-  # --commit-message
-  expect_match(logged, "upload")
-  expect_match(logged, "JohnGavin/llmtelemetry-metrics")
-  expect_match(logged, "--repo-type dataset")
-  expect_match(logged, "--commit-message")
+  # Basic structural checks
+  expect_true("upload" %in% logged, info = "first arg must be 'upload'")
+  expect_true(any(grepl("JohnGavin/llmtelemetry-metrics", logged)),
+    info = "repo id must appear as a single token")
+  expect_true("--repo-type" %in% logged, info = "--repo-type flag present")
+  expect_true("dataset" %in% logged,     info = "dataset value present")
+  expect_true("--commit-message" %in% logged, info = "--commit-message flag present")
+
+  # REGRESSION GUARD: the commit message must arrive as exactly ONE argument,
+  # not be word-split into multiple tokens.
+  # If shQuote() is absent, "telemetry archive 2026-05-25T... (2 sessions, 2
+  # cost rows)" becomes ~6 separate lines instead of 1.
+  commit_lines <- grep("^telemetry archive ", logged, value = TRUE)
+  expect_length(commit_lines, 1L)
+  # And it must contain the full message — session count embedded
+  expect_match(commit_lines, "sessions", fixed = TRUE,
+    info = "commit message must include session count")
+  expect_match(commit_lines, "cost rows", fixed = TRUE,
+    info = "commit message must include cost-row count")
 })
 
 test_that("hf_push_telemetry() push=TRUE aborts when CLI exits non-zero", {

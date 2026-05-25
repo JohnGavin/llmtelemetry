@@ -150,8 +150,14 @@ hf_push_telemetry <- function(
   # Resolve the CLI binary: hf (preferred, current) or huggingface-cli (legacy fallback)
   cli_bin <- .hf_cli_binary()
 
+  # Plain ASCII commit message — no em-dash or other multi-byte characters.
+  # system2() does NOT shell-quote its args vector: each element is joined with
+  # spaces and the resulting string is passed to the shell as-is.  A commit
+  # message that contains spaces (e.g. "telemetry archive 2026-05-25T12:00:00Z
+  # (301 sessions, 76 cost rows)") would be word-split by the shell into
+  # multiple positional arguments unless we wrap it in shQuote().
   commit_msg <- sprintf(
-    "telemetry archive %s — %s sessions, %s cost rows",
+    "telemetry archive %s (%s sessions, %s cost rows)",
     format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     nrow(sessions_clean),
     nrow(costs_clean)
@@ -163,6 +169,9 @@ hf_push_telemetry <- function(
   #
   # The CLI reads HF_TOKEN from the environment automatically — no credential
   # helper, no ASKPASS script, no token on the command line.
+  #
+  # shQuote() wraps values that may contain spaces so the shell treats them as
+  # single tokens.  repo ID and staging_dir are quoted for the same reason.
   cli::cli_h1("Uploading to {.val {hf_repo}} ...")
   # suppressWarnings() silences the "running command ... had status N"
   # message that base R emits when system2() captures stdout AND the process
@@ -171,11 +180,11 @@ hf_push_telemetry <- function(
     cli_bin,
     args   = c(
       "upload",
-      hf_repo,
-      staging_dir,
+      shQuote(hf_repo),
+      shQuote(staging_dir),
       ".",
       "--repo-type", "dataset",
-      "--commit-message", commit_msg
+      "--commit-message", shQuote(commit_msg)
     ),
     stdout = TRUE,
     stderr = TRUE
