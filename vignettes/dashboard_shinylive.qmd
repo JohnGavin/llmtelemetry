@@ -42,6 +42,7 @@ format:
       - data/roborev_summary.json
       - data/roborev_by_repo.json
       - data/roborev_resolution.json
+      - data/roborev_agent_perf.json
       - data/v1/sessions.parquet
 filters:
   - shinylive
@@ -1467,6 +1468,25 @@ ui <- page_navbar(
               "The weekly trend shows resolved vs open reviews per week (based on created_at). ",
               "Data sourced from ~/.claude/logs/unified.duckdb roborev_review_lifecycle table; ",
               "refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Agent Pass Rate (#146 Q10)"),
+            uiOutput("rv_agent_perf_chart"),
+            tags$table(class = "table table-sm table-dark mt-2 mb-0",
+              tags$thead(tags$tr(
+                tags$th("Agent"), tags$th("Reviews"), tags$th("Pass rate"),
+                tags$th("Pass"), tags$th("Fail"), tags$th("Error"),
+                tags$th("Cost/review")
+              )),
+              uiOutput("rv_agent_perf_table")
+            ),
+            card_footer(class = "text-muted small",
+              "Cleveland dot chart: pass rate (pass_count / n_runs) per review agent. ",
+              "Agents sourced from roborev_agent_performance in unified.duckdb (no repo column — no confidential filtering needed). ",
+              "Cost per review is shown only when total_cost_usd is available; NA values display as —. ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
           )
         )
       )
@@ -3471,6 +3491,9 @@ server <- function(input, output, session) {
   # roborev_resolution.json — resolution rate KPI + weekly trend (#146 Q5).
   # Contract: {overall:{total,resolved,open,resolution_rate}, weekly:[{week_start,resolved,open,total,resolution_rate},...]}
   roborev_resolution_raw <- load_json("roborev_resolution.json")
+  # roborev_agent_perf.json — per-agent pass rate + review counts (#146 Q10).
+  # Contract: {agents:[{agent,n_runs,pass_count,fail_count,error_count,pass_rate,...}], generated_at}
+  roborev_agent_perf_raw <- load_json("roborev_agent_perf.json")
 
   rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
     roborev_summary_raw$pulse
@@ -3645,6 +3668,107 @@ server <- function(input, output, session) {
       "Line chart: roborev resolved vs open reviews per week. ",
       "Green = resolved, red = open. Defaulting to last 3 months view."
     ))
+  })
+
+  # --- Agent Pass Rate panel (#146 Q10) ----------------------------------------
+  # Cleveland dot chart: pass rate per agent, sorted ascending (lowest at bottom).
+  # KPI table: agent | reviews | pass-rate | pass | fail | error | cost/review.
+  # Source: roborev_agent_perf.json {agents:[{agent,n_runs,pass_rate,...}]}.
+  safe_ap <- function(raw) {
+    if (is.null(raw) || !is.list(raw)) return(NULL)
+    agents <- raw$agents
+    if (is.null(agents) || length(agents) == 0L) return(NULL)
+    # Convert list-of-lists to data frame
+    do.call(rbind, lapply(agents, function(r) {
+      data.frame(
+        agent       = as.character(r$agent),
+        n_runs      = as.integer(r$n_runs),
+        pass_count  = as.integer(r$pass_count),
+        fail_count  = as.integer(r$fail_count),
+        error_count = as.integer(r$error_count),
+        pass_rate   = as.numeric(r$pass_rate),
+        cost_per_review = if (!is.null(r$cost_per_review_usd)) as.numeric(r$cost_per_review_usd) else NA_real_,
+        stringsAsFactors = FALSE
+      )
+    }))
+  }
+
+  output$rv_agent_perf_chart <- renderUI({
+    ap <- safe_ap(roborev_agent_perf_raw)
+    if (is.null(ap))
+      return(ec_empty("No agent performance data yet — roborev_agent_perf.json not deployed", h = "250px"))
+    # Sort ascending for Cleveland dot (lowest at bottom)
+    ap <- ap[order(ap$pass_rate, decreasing = FALSE), ]
+    n_agents   <- nrow(ap)
+    total_runs <- sum(ap$n_runs)
+    best_agent <- ap$agent[which.max(ap$pass_rate)]
+    best_rate  <- round(max(ap$pass_rate) * 100, 1)
+    ec(list(
+      tooltip = list(
+        trigger = "axis",
+        axisPointer = list(type = "shadow"),
+        formatter  = DT::JS(
+          "function(params) {",
+          "  var d = params[0];",
+          "  return d.name + '<br/>Pass rate: ' + (d.value * 100).toFixed(1) + '%';",
+          "}"
+        )
+      ),
+      grid = list(left = 110, containLabel = FALSE),
+      xAxis = list(
+        type = "value",
+        name = "Pass rate",
+        nameLocation = "middle", nameGap = 25,
+        min = 0, max = 1,
+        axisLabel = list(
+          color = "#ccc",
+          formatter = DT::JS("function(v){ return (v*100).toFixed(0)+'%'; }")
+        ),
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        type = "category",
+        data = I(ap$agent),
+        axisLabel = list(color = "#ccc", fontSize = 12)
+      ),
+      series = list(list(
+        type       = "scatter",
+        data       = I(ap$pass_rate),
+        symbolSize = 14,
+        itemStyle  = list(color = "#4ea8de")   # primary blue (accessibility palette)
+      ))
+    ), h = "250px",
+    aria_label = paste0(
+      "Cleveland dot chart: roborev review agent pass rate. ",
+      n_agents, " agents, ", total_runs, " total reviews. ",
+      "Best performing agent: ", best_agent, " at ", best_rate, "% pass rate. ",
+      "Data sourced from roborev_agent_performance table in unified.duckdb."
+    ))
+  })
+
+  output$rv_agent_perf_table <- renderUI({
+    ap <- safe_ap(roborev_agent_perf_raw)
+    if (is.null(ap)) {
+      return(tags$tbody(tags$tr(tags$td(colspan = "7", "No data yet"))))
+    }
+    # Sort descending by pass_rate for table (best first)
+    ap <- ap[order(ap$pass_rate, decreasing = TRUE), ]
+    fmt_cost <- function(x) {
+      if (is.na(x)) "—" else sprintf("$%.4f", x)
+    }
+    rows <- lapply(seq_len(nrow(ap)), function(i) {
+      r <- ap[i, , drop = FALSE]
+      tags$tr(
+        tags$td(r$agent),
+        tags$td(formatC(r$n_runs,      format = "d", big.mark = ",")),
+        tags$td(sprintf("%.1f%%", r$pass_rate * 100)),
+        tags$td(formatC(r$pass_count,  format = "d", big.mark = ",")),
+        tags$td(formatC(r$fail_count,  format = "d", big.mark = ",")),
+        tags$td(formatC(r$error_count, format = "d", big.mark = ",")),
+        tags$td(fmt_cost(r$cost_per_review))
+      )
+    })
+    tags$tbody(rows)
   })
 }
 
