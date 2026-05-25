@@ -846,12 +846,68 @@ ui <- page_navbar(
       };
 
       // Shiny bridge: re-query when project filter or date horizon changes
+      // --- Conversations Over Time scatter (#83 Phase 2) ---
+      // Query sessions.parquet grouped by date — returns [date, n, total_min] triples
+      // for the ECharts bubble-scatter in the Sessions > Charts tab.
+      let _timeChart = null;
+      window.queryAndRenderSessionsTime = async function(projects, min_date) {
+        const el = document.getElementById("sess_time_ec");
+        if (!el) return;
+        if (!_timeChart) {
+          _timeChart = echarts.init(el, "dark");
+          new ResizeObserver(function() { _timeChart.resize(); }).observe(el);
+        }
+        if (projects === "__NONE__") {
+          _timeChart.setOption({ backgroundColor:"#1a1a1a", series:[{type:"scatter",data:[]}] }, true);
+          return;
+        }
+        if (!conn) {
+          _timeChart.setOption({ backgroundColor:"#1a1a1a",
+            title:{text:"Sessions data unavailable",textStyle:{color:"#ccc",fontSize:13}},
+            series:[] }, true);
+          return;
+        }
+        const filters = ["duration_min > 0", "canonical_project IS NOT NULL"];
+        if (Array.isArray(projects) && projects.length > 0)
+          filters.push("canonical_project IN (" + projects.map(p => "\'" + p.replace(/\'/g, "\'\'") + "\'").join(",") + ")");
+        if (min_date) filters.push("started_at >= \'" + min_date + "\'");
+        const r = await conn.query(
+          "SELECT CAST(started_at AS DATE)::TEXT AS date, " +
+          "COUNT(*)::INTEGER AS n, " +
+          "ROUND(SUM(duration_min), 1) AS total_min " +
+          "FROM \'sessions.parquet\' " +
+          "WHERE " + filters.join(" AND ") + " " +
+          "GROUP BY CAST(started_at AS DATE) ORDER BY CAST(started_at AS DATE)"
+        );
+        const pts = r.toArray().map(row => [
+          String(row.date),
+          typeof row.n === "bigint" ? Number(row.n) : row.n,
+          typeof row.total_min === "bigint" ? Number(row.total_min) : (row.total_min || 0)
+        ]);
+        _timeChart.setOption({
+          backgroundColor: "#1a1a1a",
+          tooltip: { trigger: "item", formatter: function(p) {
+            return p.data[0] + "<br/>Sessions: " + p.data[1] + "<br/>Total min: " + p.data[2];
+          }},
+          grid: { containLabel: true },
+          xAxis: { type: "time" },
+          yAxis: { type: "value", name: "Sessions" },
+          series: [{ type: "scatter", data: pts,
+            symbolSize: function(d) { return Math.max(5, Math.sqrt(Math.abs(d[2])) * 2); },
+            itemStyle: { color: "#377eb8" } }]
+        }, true);
+      };
+
       function registerHandler() {
         Shiny.addCustomMessageHandler("duckdb_sessions", function(msg) {
           // Pass msg.projects directly: null=All, "__NONE__"=None, Array=specific list
           window.queryAndRenderSessions(msg.projects || null, msg.min_date || null);
         });
+        Shiny.addCustomMessageHandler("duckdb_sessions_time", function(msg) {
+          window.queryAndRenderSessionsTime(msg.projects || null, msg.min_date || null);
+        });
         window.queryAndRenderSessions(null, null);  // initial render (all projects, all dates)
+        window.queryAndRenderSessionsTime(null, null);  // initial render for time chart
       }
       if (window.Shiny && window.Shiny.addCustomMessageHandler) {
         registerHandler();
@@ -1137,8 +1193,9 @@ ui <- page_navbar(
             layout_columns(col_widths = c(6, 6),
               card(card_header("Conversation Duration Distribution"), uiOutput("sess_hist"),
                 card_footer(class = "text-muted small", "Histogram of API conversation durations (minutes)")),
-              card(card_header("Conversations Over Time"), uiOutput("sess_scatter"),
-                card_footer(class = "text-muted small", "Daily conversation count, bubble size = total minutes"))
+              card(card_header("Conversations Over Time"),
+                tags$div(id="sess_time_ec", class="echart-div", style="width:100%;height:300px;"),
+                card_footer(class = "text-muted small", "Daily conversation count, bubble size = total minutes · powered by DuckDB-WASM"))
             )
           ),
           nav_panel("Tables",
@@ -2346,29 +2403,19 @@ server <- function(input, output, session) {
            itemStyle = list(color = pal$hist))))
   })
 
-  output$sess_scatter <- renderUI({
-    d <- sess_filtered()
-    d <- d[!is.na(d$duration_min) & d$duration_min > 0, ]
-    if (nrow(d) == 0) return(ec_empty("No sessions for selected projects"))
-    daily <- aggregate(
-      cbind(n = duration_min, total_min = duration_min) ~ date,
-      data = d, FUN = function(x) c(length(x), sum(x))
-    )
-    # aggregate with cbind produces a matrix column; flatten
-    if (is.matrix(daily$n)) {
-      daily_n <- daily$n[, 1]
-      daily_tot <- daily$total_min[, 2]
-      daily <- data.frame(date = daily$date, n = daily_n, total_min = daily_tot)
-    } else {
-      # fallback: compute separately
-      n_agg <- aggregate(duration_min ~ date, data = d, FUN = length)
-      t_agg <- aggregate(duration_min ~ date, data = d, FUN = sum, na.rm = TRUE)
-      daily <- merge(n_agg, t_agg, by = "date", suffixes = c("_n", "_sum"))
-      names(daily) <- c("date", "n", "total_min")
-    }
-    pts <- lapply(seq_len(nrow(daily)), function(i)
-      list(as.character(daily$date[i]), daily$n[i], round(daily$total_min[i], 1)))
-    ec_scatter(pts, pal$claude, x_type = "time", size_col = 3, scale = 2)
+  # sess_scatter migrated to DuckDB-WASM (#83 Phase 2): observe sends "duckdb_sessions_time"
+  # message to JS queryAndRenderSessionsTime(), which queries sessions.parquet directly.
+  observe({
+    req(input$tabs == "Usage", input$usage_tabs == "Sessions")
+    sel <- resolve_sel(input$selected_projects)
+    projects_json <- if (is.null(sel)) list()
+                     else if (length(sel) == 0L) "__NONE__"
+                     else as.list(sel)
+    cutoff_str <- if (!is.null(cutoff())) format(cutoff(), "%Y-%m-%d") else NULL
+    session$sendCustomMessage("duckdb_sessions_time", list(
+      projects = projects_json,
+      min_date = cutoff_str
+    ))
   })
 
   # --- By Project -------------------------------------------------------------
