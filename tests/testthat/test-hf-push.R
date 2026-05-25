@@ -305,10 +305,14 @@ test_that("hf_push_telemetry() dry-run succeeds with HF_TOKEN env var (no local 
 })
 
 # ---------------------------------------------------------------------------
-# Test 6: GIT_ASKPASS helper is prompt-aware (username vs password)
+# Test 6: GIT_ASKPASS helper returns token for BOTH Username and Password
+#
+# HuggingFace token-auth requires the token as the username.  Supplying the
+# repo owner triggers the deprecated account-password path (#212 regression).
+# The helper is now prompt-agnostic: same token for Username and Password.
 # ---------------------------------------------------------------------------
 
-test_that(".hf_make_askpass() returns repo owner for Username prompt", {
+test_that(".hf_make_askpass() returns bare token for Username prompt", {
   tmpdir     <- withr::local_tempdir()
   token_file <- file.path(tmpdir, "token")
   writeLines("fake-token-value", token_file)
@@ -319,13 +323,13 @@ test_that(".hf_make_askpass() returns repo owner for Username prompt", {
     hf_repo    = "JohnGavin/llmtelemetry-metrics"
   )
 
-  # Invoke the helper with a Username prompt (as git does)
+  # Username prompt must return the token, NOT the repo owner
   result <- system2(script, args = "Username for 'https://huggingface.co'",
                     stdout = TRUE, stderr = FALSE)
-  expect_equal(result, "JohnGavin")
+  expect_equal(result, "fake-token-value")
 })
 
-test_that(".hf_make_askpass() returns token content for Password prompt", {
+test_that(".hf_make_askpass() returns bare token for Password prompt", {
   tmpdir     <- withr::local_tempdir()
   token_file <- file.path(tmpdir, "token")
   # Write token without trailing newline (trimmed, as CI path produces)
@@ -337,17 +341,17 @@ test_that(".hf_make_askpass() returns token content for Password prompt", {
     hf_repo    = "JohnGavin/llmtelemetry-metrics"
   )
 
-  # Invoke with a Password prompt
+  # Password prompt must return the token (no trailing newline — #214 safety)
   result <- system2(script, args = "Password for 'https://huggingface.co'",
                     stdout = TRUE, stderr = FALSE)
   # writeLines adds a newline; system2 stdout strips trailing newlines per line
   expect_equal(result, "fake-token-value")
 })
 
-test_that(".hf_make_askpass() extracts correct owner from multi-part repo names", {
+test_that(".hf_make_askpass() returns token for any unknown prompt (prompt-agnostic)", {
   tmpdir     <- withr::local_tempdir()
   token_file <- file.path(tmpdir, "token")
-  writeLines("tok", token_file)
+  writeLines("my-hf-tok", token_file)
 
   script <- llmtelemetry:::.hf_make_askpass(
     token_path = token_file,
@@ -355,9 +359,10 @@ test_that(".hf_make_askpass() extracts correct owner from multi-part repo names"
     hf_repo    = "MyOrg/my-dataset-repo"
   )
 
-  result <- system2(script, args = "Username for 'https://huggingface.co'",
+  # Any unknown prompt also gets the token (hf_repo is ignored — no owner logic)
+  result <- system2(script, args = "Some other prompt",
                     stdout = TRUE, stderr = FALSE)
-  expect_equal(result, "MyOrg")
+  expect_equal(result, "my-hf-tok")
 })
 
 # ---------------------------------------------------------------------------
