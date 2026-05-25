@@ -41,6 +41,7 @@ format:
       - data/change_coupling.json
       - data/roborev_summary.json
       - data/roborev_by_repo.json
+      - data/roborev_resolution.json
       - data/v1/sessions.parquet
 filters:
   - shinylive
@@ -1390,6 +1391,27 @@ ui <- page_navbar(
           card(card_header("Active Loops"), DTOutput("rv_loops_table"),
             card_footer(class = "text-muted small",
               "Recurring review loops. Row colour: red=escalate, orange=block, yellow=watch. Sorted by cycles descending."))
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Resolution Rate (#146 Q5)"),
+            tags$table(class = "table table-sm table-dark mb-2",
+              tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
+              tags$tbody(
+                tags$tr(tags$td("Resolution rate"), tags$td(textOutput("rv_res_rate", inline = TRUE))),
+                tags$tr(tags$td("Resolved (public repos)"), tags$td(textOutput("rv_res_resolved", inline = TRUE))),
+                tags$tr(tags$td("Open (public repos)"),     tags$td(textOutput("rv_res_open", inline = TRUE))),
+                tags$tr(tags$td("Total reviews"),           tags$td(textOutput("rv_res_total", inline = TRUE)))
+              )
+            ),
+            uiOutput("rv_resolution_trend"),
+            card_footer(class = "text-muted small",
+              "Resolution rate = close_reason='manual' / total, computed from roborev_resolution.json. ",
+              "Confidential repos (mycare, crypto, swarms) are excluded via clean_projects() before aggregation. ",
+              "The weekly trend shows resolved vs open reviews per week (based on created_at). ",
+              "Data sourced from ~/.claude/logs/unified.duckdb roborev_review_lifecycle table; ",
+              "refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
         )
       )
     )
@@ -3399,6 +3421,9 @@ server <- function(input, output, session) {
   # Contract: [{"repo":"llm","n_total":120,"n_high":40,"n_resolved":80,"n_open":40}, ...]
   # Produced by the parallel exclusion PR; degrade gracefully when absent.
   roborev_by_repo_raw <- load_json("roborev_by_repo.json")
+  # roborev_resolution.json — resolution rate KPI + weekly trend (#146 Q5).
+  # Contract: {overall:{total,resolved,open,resolution_rate}, weekly:[{week_start,resolved,open,total,resolution_rate},...]}
+  roborev_resolution_raw <- load_json("roborev_resolution.json")
 
   rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
     roborev_summary_raw$pulse
@@ -3489,6 +3514,90 @@ server <- function(input, output, session) {
         scrollX    = TRUE
       )
     )
+  })
+
+  # --- Resolution Rate panel (#146 Q5) -----------------------------------------
+  # KPI text outputs from roborev_resolution.json overall block.
+  safe_res <- function(key, fmt = "%s", default = "—") {
+    if (is.null(roborev_resolution_raw) || !is.list(roborev_resolution_raw)) return(default)
+    ov <- roborev_resolution_raw$overall
+    if (is.null(ov) || !key %in% names(ov)) return(default)
+    v <- ov[[key]]
+    if (is.null(v) || (length(v) == 1 && is.na(v))) return(default)
+    tryCatch(sprintf(fmt, v), error = function(e) default)
+  }
+
+  output$rv_res_rate <- renderText({
+    v <- safe_res("resolution_rate")
+    if (v == "—") return("—")
+    rate_num <- suppressWarnings(as.numeric(v))
+    if (is.na(rate_num)) return("—")
+    sprintf("%.1f%%", rate_num * 100)
+  })
+  output$rv_res_resolved <- renderText(safe_res("resolved", "%d"))
+  output$rv_res_open     <- renderText(safe_res("open",     "%d"))
+  output$rv_res_total    <- renderText(safe_res("total",    "%d"))
+
+  output$rv_resolution_trend <- renderUI({
+    if (is.null(roborev_resolution_raw) || !is.list(roborev_resolution_raw)) {
+      return(ec_empty("roborev_resolution.json not yet available", h = "300px"))
+    }
+    weekly_raw <- roborev_resolution_raw$weekly
+    if (is.null(weekly_raw) || length(weekly_raw) == 0) {
+      return(ec_empty("No weekly resolution trend data yet", h = "300px"))
+    }
+    # Convert list-of-lists to data frame
+    wdf <- do.call(rbind, lapply(weekly_raw, function(r) {
+      data.frame(
+        week_start      = as.character(r$week_start),
+        resolved        = as.numeric(r$resolved),
+        open            = as.numeric(r$open),
+        total           = as.numeric(r$total),
+        resolution_rate = as.numeric(r$resolution_rate),
+        stringsAsFactors = FALSE
+      )
+    }))
+    wdf <- wdf[order(wdf$week_start), ]
+
+    # Line chart: resolved vs open per week (NOT a bar/stacked bar per viz rules)
+    # Range slider defaults to last 3 months (~13 weeks)
+    total_weeks <- nrow(wdf)
+    dz_start <- if (total_weeks > 13) round(100 * (1 - 13 / total_weeks)) else 0
+
+    ec(list(
+      tooltip  = list(trigger = "axis"),
+      legend   = list(bottom = 30, textStyle = list(color = "#ccc"),
+                      data = list("Resolved", "Open")),
+      toolbox  = list(feature = list(
+        dataZoom = list(yAxisIndex = "none"),
+        restore  = list(),
+        saveAsImage = list()
+      )),
+      dataZoom = list(
+        list(type = "inside", start = dz_start, end = 100, filterMode = "filter"),
+        list(type = "slider", start = dz_start, end = 100, bottom = 5, filterMode = "filter")
+      ),
+      grid     = list(containLabel = TRUE, bottom = 80),
+      xAxis    = list(type = "category", data = I(wdf$week_start),
+                      axisLabel = list(rotate = 30, color = "#ccc"),
+                      name = "Week start (Monday)", nameLocation = "middle", nameGap = 45,
+                      nameTextStyle = list(color = "#ccc")),
+      yAxis    = list(type = "value", name = "Review count",
+                      nameTextStyle = list(color = "#ccc"),
+                      axisLabel = list(color = "#ccc")),
+      series   = list(
+        list(name = "Resolved", type = "line", data = I(wdf$resolved),
+             smooth = FALSE, itemStyle = list(color = "#69d4a0"),
+             lineStyle = list(color = "#69d4a0", width = 2)),
+        list(name = "Open", type = "line", data = I(wdf$open),
+             smooth = FALSE, itemStyle = list(color = "#f08080"),
+             lineStyle = list(color = "#f08080", width = 2))
+      )
+    ), h = "300px",
+    aria_label = paste0(
+      "Line chart: roborev resolved vs open reviews per week. ",
+      "Green = resolved, red = open. Defaulting to last 3 months view."
+    ))
   })
 }
 
