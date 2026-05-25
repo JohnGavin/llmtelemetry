@@ -68,8 +68,23 @@ jobs:
       # Privacy guard: if any confidential row is detected the script exits
       # non-zero → CI fails closed.  Do NOT suppress this failure.
       # huggingface-cli reads HF_TOKEN from the environment automatically.
+      #
+      # Token normalisation: strip all whitespace from the secret (HF tokens
+      # are "hf_" + alphanumerics with no internal spaces; trailing newlines
+      # from paste-at-rest are the most common source of 401 errors).
+      # Explicit "hf auth login" validates the token early and emits a clear
+      # error if the token value is invalid, rather than a cryptic 401 buried
+      # inside the R upload call.
       # -----------------------------------------------------------------------
       - name: Push sanitised telemetry archive to HuggingFace
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: Rscript inst/scripts/push_telemetry_to_huggingface.R --push
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN is empty in the push step — aborting."
+            exit 1
+          fi
+          HF_TOKEN_CLEAN="$(printf '%s' "$HF_TOKEN" | tr -d '[:space:]')"
+          export HF_TOKEN="$HF_TOKEN_CLEAN"
+          huggingface-cli login --token "$HF_TOKEN_CLEAN"
+          Rscript inst/scripts/push_telemetry_to_huggingface.R --push
