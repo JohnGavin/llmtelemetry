@@ -205,6 +205,12 @@ append_costs_from_staging <- function(
     )
   }
 
+  # --- 3c. Privacy filter: drop confidential projects from staging drain (#83) -
+  # Mirror the guard applied in rollup_costs() on the JSON path so that the
+  # staging drain can never write mycare / crypto / solwatch / swarms rows.
+  new_rows <- drop_confidential_projects(new_rows)
+  if (nrow(new_rows) == 0L) return(invisible(0L))
+
   # --- 4. Dedup against existing parquet ------------------------------------
   dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
 
@@ -261,7 +267,9 @@ append_costs_from_staging <- function(
 # amendment emits a new row with valid_from/valid_to/reason, never
 # UPDATE/DELETE.  Mirror the design from the epic schema.
 #
-# TODO(#83 Phase A): add a scheduled "drain staging → append → commit parquet"
-# step (launchd/cron or /schedule routine) so valid_from reflects real arrival
-# time rather than a single bulk seed timestamp.  Concurrency guard needed:
-# check for an in-progress .tmp file before starting a new drain.
+# DONE(#83 Phase A drain-privacy): append_costs_from_staging() now calls
+# drop_confidential_projects() before dedup/write — the staging drain can no
+# longer leak mycare/crypto/solwatch/swarms rows.
+#
+# DONE(#210): export_and_deploy_data.sh now invokes run_rollup.R after the
+# JSON export, draining staging and committing fresh parquets every session.

@@ -207,3 +207,199 @@ test_that("rollup_costs() drops mycare rows", {
   expect_equal(nrow(result), 1L)
   expect_equal(result$project, "llm")
 })
+
+# ---------------------------------------------------------------------------
+# Staging-drain privacy guard — append_*_from_staging() must filter (#83)
+# These tests verify the drain path leaks described in the issue:
+# a mycare (or crypto_solwatch / solwatch) row in staging must NOT survive
+# the append step. Regression for the drain gap closed in PR #210 / #83 Phase A.
+# ---------------------------------------------------------------------------
+
+# Helper shared across the three drain regression tests
+.make_staging_event <- function(event_type, project, ...) {
+  payload <- c(list(event_type = event_type, project = project), list(...))
+  env     <- list(ts = "2026-01-10T12:00:00Z", host = "testhost",
+                  pid = "1", payload = payload)
+  jsonlite::toJSON(env, auto_unbox = TRUE)
+}
+
+.write_staging_jsonl <- function(lines, dir) {
+  writeLines(lines, file.path(dir, "events-2026-01-10.jsonl"))
+}
+
+# --- append_sessions_from_staging() drain regression ---------------------------
+
+test_that("append_sessions_from_staging() blocks confidential staged sessions (#83)", {
+  staging <- withr::local_tempdir()
+
+  safe_event <- .make_staging_event(
+    "session_stop",
+    project      = "docs-gh-llmtelemetry",
+    session_id   = "sess-safe-001",
+    started_at   = "2026-01-10T10:00:00Z",
+    ended_at     = "2026-01-10T11:00:00Z",
+    duration_min = 60
+  )
+  mycare_event <- .make_staging_event(
+    "session_stop",
+    project      = "mycare",
+    session_id   = "sess-mycare-001",
+    started_at   = "2026-01-10T10:00:00Z",
+    ended_at     = "2026-01-10T11:00:00Z",
+    duration_min = 60
+  )
+  solwatch_event <- .make_staging_event(
+    "session_stop",
+    project      = "crypto_solwatch",
+    session_id   = "sess-solwatch-001",
+    started_at   = "2026-01-10T10:00:00Z",
+    ended_at     = "2026-01-10T11:00:00Z",
+    duration_min = 60
+  )
+
+  .write_staging_jsonl(
+    c(safe_event, mycare_event, solwatch_event),
+    staging
+  )
+
+  out_f <- withr::local_tempfile(fileext = ".parquet")
+
+  n <- append_sessions_from_staging(
+    staging_dir  = staging,
+    parquet_path = out_f,
+    now          = as.POSIXct("2026-01-10 12:00:00", tz = "UTC")
+  )
+
+  # Only the safe row survives
+  expect_equal(n, 1L)
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  back <- DBI::dbGetQuery(
+    con, sprintf("SELECT * FROM read_parquet('%s')", out_f)
+  )
+  expect_equal(nrow(back), 1L)
+  expect_false(any(tolower(back$canonical_project) %in%
+                     c("mycare", "crypto_solwatch", "solwatch", "swarms", "crypto")))
+  expect_true(back$canonical_project[1] == "llmtelemetry")
+})
+
+# --- append_costs_from_staging() drain regression ------------------------------
+
+test_that("append_costs_from_staging() blocks confidential staged costs (#83)", {
+  staging <- withr::local_tempdir()
+
+  safe_event <- .make_staging_event(
+    "cost_emitted",
+    project        = "docs-gh-llmtelemetry",
+    date           = "2026-01-10",
+    source         = "ccusage",
+    daily_cost_usd = 1.50,
+    n_sessions     = 1L,
+    duration_min   = 60.0
+  )
+  mycare_event <- .make_staging_event(
+    "cost_emitted",
+    project        = "mycare",
+    date           = "2026-01-10",
+    source         = "ccusage",
+    daily_cost_usd = 2.00,
+    n_sessions     = 1L,
+    duration_min   = 30.0
+  )
+  solwatch_event <- .make_staging_event(
+    "cost_emitted",
+    project        = "solwatch",
+    date           = "2026-01-10",
+    source         = "ccusage",
+    daily_cost_usd = 0.75,
+    n_sessions     = 1L,
+    duration_min   = 15.0
+  )
+
+  .write_staging_jsonl(
+    c(safe_event, mycare_event, solwatch_event),
+    staging
+  )
+
+  out_f <- withr::local_tempfile(fileext = ".parquet")
+
+  n <- append_costs_from_staging(
+    staging_dir  = staging,
+    parquet_path = out_f,
+    now          = as.POSIXct("2026-01-10 12:00:00", tz = "UTC")
+  )
+
+  expect_equal(n, 1L)
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  back <- DBI::dbGetQuery(
+    con, sprintf("SELECT * FROM read_parquet('%s')", out_f)
+  )
+  expect_equal(nrow(back), 1L)
+  expect_false(any(tolower(back$canonical_project) %in%
+                     c("mycare", "solwatch", "swarms", "crypto", "crypto_solwatch")))
+})
+
+# --- append_git_commits_from_staging() drain regression -----------------------
+
+test_that("append_git_commits_from_staging() blocks confidential staged commits (#83)", {
+  staging <- withr::local_tempdir()
+
+  safe_event <- .make_staging_event(
+    "git_commit",
+    project       = "docs-gh-llmtelemetry",
+    hash          = "safecommit001abc",
+    date          = "2026-01-10",
+    message       = "feat: safe commit",
+    lines_added   = 10L,
+    lines_deleted = 2L,
+    files_changed = 1L,
+    lines_changed = 12L
+  )
+  mycare_event <- .make_staging_event(
+    "git_commit",
+    project       = "mycare",
+    hash          = "mycarecommit001x",
+    date          = "2026-01-10",
+    message       = "fix: mycare commit",
+    lines_added   = 5L,
+    lines_deleted = 1L,
+    files_changed = 1L,
+    lines_changed = 6L
+  )
+  solwatch_event <- .make_staging_event(
+    "git_commit",
+    project       = "crypto_solwatch",
+    hash          = "solwatchcommit01",
+    date          = "2026-01-10",
+    message       = "chore: solwatch commit",
+    lines_added   = 3L,
+    lines_deleted = 0L,
+    files_changed = 1L,
+    lines_changed = 3L
+  )
+
+  .write_staging_jsonl(
+    c(safe_event, mycare_event, solwatch_event),
+    staging
+  )
+
+  out_f <- withr::local_tempfile(fileext = ".parquet")
+
+  n <- append_git_commits_from_staging(
+    staging_dir  = staging,
+    parquet_path = out_f,
+    now          = as.POSIXct("2026-01-10 12:00:00", tz = "UTC")
+  )
+
+  expect_equal(n, 1L)
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  back <- DBI::dbGetQuery(
+    con, sprintf("SELECT * FROM read_parquet('%s')", out_f)
+  )
+  expect_equal(nrow(back), 1L)
+  expect_false(any(tolower(back$canonical_project) %in%
+                     c("mycare", "solwatch", "swarms", "crypto", "crypto_solwatch")))
+  expect_equal(back$hash, "safecommit001abc")
+})

@@ -212,6 +212,12 @@ append_sessions_from_staging <- function(
     started_at         = new_rows$started_at
   )
 
+  # --- 3c. Privacy filter: drop confidential projects from staging drain (#83) -
+  # Mirror the guard applied in rollup_sessions() on the JSON path so that the
+  # staging drain can never write mycare / crypto / solwatch / swarms rows.
+  new_rows <- drop_confidential_projects(new_rows)
+  if (nrow(new_rows) == 0L) return(invisible(0L))
+
   # --- 4. Dedup against existing parquet ------------------------------------
   dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
 
@@ -293,5 +299,9 @@ append_sessions_from_staging <- function(
 # each amendment emits a new row with valid_from/valid_to/reason, never
 # UPDATE/DELETE.
 #
-# TODO(#83 Phase A): add a scheduled "drain staging → append → commit parquet"
-# step so valid_from reflects real arrival time rather than a bulk seed.
+# DONE(#83 Phase A drain-privacy): append_sessions_from_staging() now calls
+# drop_confidential_projects() before dedup/write — the staging drain can no
+# longer leak mycare/crypto/solwatch/swarms rows.
+#
+# DONE(#210): export_and_deploy_data.sh now invokes run_rollup.R after the
+# JSON export, draining staging and committing fresh parquets every session.
