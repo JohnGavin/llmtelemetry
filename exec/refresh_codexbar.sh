@@ -28,7 +28,7 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+export PATH="/nix/var/nix/profiles/default/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -112,23 +112,29 @@ if [ ! -f "${SANITIZE_SCRIPT}" ]; then
   exit 1
 fi
 
-# Use Rscript directly; if not on PATH try the nix-shell for this project.
-if command -v Rscript > /dev/null 2>&1; then
-  if Rscript "${SANITIZE_SCRIPT}" "${TMP_USAGE}" "${TMP_COST}" >> "${LOG_FILE}" 2>&1; then
-    log "Sanitization complete"
+# Always prefer the project's nix-shell so R resolves to the correct binary
+# and here::here() cannot write to a different repo.  Pass the explicit
+# output dir as arg 3 so the script never falls back to a cwd-relative path.
+# Bare Rscript is a last resort; it also receives the explicit out-dir + cwd
+# so it still writes to the right place.
+if command -v nix-shell > /dev/null 2>&1 && [ -f "${PKG_ROOT}/default.nix" ]; then
+  if (cd "${PKG_ROOT}" && nix-shell "${PKG_ROOT}/default.nix" --run "Rscript inst/scripts/sanitize_codexbar.R '${TMP_USAGE}' '${TMP_COST}' '${PKG_ROOT}/inst/extdata'") >> "${LOG_FILE}" 2>&1; then
+    log "Sanitization complete (nix-shell)"
+  else
+    log "ERROR: sanitize_codexbar.R failed via nix-shell — check ${LOG_FILE}"
+    exit 1
+  fi
+elif command -v Rscript > /dev/null 2>&1; then
+  # Fallback: bare Rscript, still cwd=PKG_ROOT + explicit out-dir so it writes to the right place
+  if (cd "${PKG_ROOT}" && Rscript inst/scripts/sanitize_codexbar.R "${TMP_USAGE}" "${TMP_COST}" "${PKG_ROOT}/inst/extdata") >> "${LOG_FILE}" 2>&1; then
+    log "Sanitization complete (bare Rscript fallback)"
   else
     log "ERROR: sanitize_codexbar.R failed — check ${LOG_FILE}"
     exit 1
   fi
 else
-  log "Rscript not on PATH — trying nix-shell"
-  NIX_SHELL_CMD="Rscript ${SANITIZE_SCRIPT} ${TMP_USAGE} ${TMP_COST}"
-  if nix-shell "${PKG_ROOT}/default.nix" --run "${NIX_SHELL_CMD}" >> "${LOG_FILE}" 2>&1; then
-    log "Sanitization complete (via nix-shell)"
-  else
-    log "ERROR: sanitize_codexbar.R failed via nix-shell — check ${LOG_FILE}"
-    exit 1
-  fi
+  log "ERROR: neither nix-shell nor Rscript available"
+  exit 1
 fi
 
 log "Done — inst/extdata/codexbar_usage.json and codexbar_cost_daily.json updated"
