@@ -32,6 +32,8 @@ library(here)
 # Source shared formatting helpers (dollar, comma, millions, email_safe_num).
 # here::here() resolves to the package root regardless of cwd at call time.
 source(file.path(here::here(), "R", "email_helpers.R"))
+# Source CodexBar parsers (parse_codexbar_usage, parse_codexbar_cost).
+source(file.path(here::here(), "R", "codexbar.R"))
 
 # --send-only: read the already-built + QA-validated HTML and send it.
 # The CI send step uses this flag so the emailed bytes == the validated bytes.
@@ -998,6 +1000,156 @@ if (!has_data) {
     message("Roborev summary not available: ", e$message)
   })
   email_body <- paste0(email_body, roborev_html)
+
+  # --- CodexBar section: live limits/credits + cost reconciliation ---
+  # Graceful: renders a one-line note when the JSON files are absent (normal
+  # CI state until sanitize_codexbar.R has run).  Must not error even if
+  # parse_codexbar_usage / parse_codexbar_cost fail.
+  codexbar_html <- tryCatch({
+    cb_usage_path <- here::here("inst", "extdata", "codexbar_usage.json")
+    cb_cost_path  <- here::here("inst", "extdata", "codexbar_cost_daily.json")
+
+    has_cb_usage <- file.exists(cb_usage_path)
+    has_cb_cost  <- file.exists(cb_cost_path)
+
+    if (!has_cb_usage && !has_cb_cost) {
+      paste0(
+        sprintf('\n<h3 style="color: %s; margin-top: 20px;">Provider usage (CodexBar)</h3>',
+                accent_purple),
+        sprintf('<p style="color: %s; font-size: 11px; font-style: italic;">',
+                dark_muted),
+        "CodexBar data not yet available (run <code>sanitize_codexbar.R</code> to populate).",
+        "</p>",
+        "<!-- QA:codexbar_section=unavailable -->"
+      )
+    } else {
+      # --- Part 1: live limits/credits from codexbar_usage.json ---
+      usage_tbl <- if (has_cb_usage) {
+        tryCatch(parse_codexbar_usage(cb_usage_path), error = function(e) {
+          message("parse_codexbar_usage failed: ", e$message); NULL
+        })
+      } else NULL
+
+      limits_html <- ""
+      if (!is.null(usage_tbl) && nrow(usage_tbl) > 0) {
+        limits_html <- sprintf(
+          '\n<h4 style="color: %s; margin-top: 0; margin-bottom: 6px;">Live rate-limit windows</h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Provider</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Window</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Used %%</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Window (min)</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Resets at</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Credits left</th>\n  </tr>',
+          accent_purple, accent_purple,
+          dark_border, dark_border, dark_border, dark_border, dark_border, dark_border)
+
+        for (ri in seq_len(nrow(usage_tbl))) {
+          bg_r <- if (ri %% 2 == 0) dark_row_alt else dark_card
+          used_col <- if (!is.na(usage_tbl$used_pct[ri]) && usage_tbl$used_pct[ri] >= 80) {
+            "#ff5555"
+          } else if (!is.na(usage_tbl$used_pct[ri]) && usage_tbl$used_pct[ri] >= 50) {
+            accent_orange
+          } else accent_green
+          cred_str <- if (!is.na(usage_tbl$credits_remaining[ri])) {
+            dollar(usage_tbl$credits_remaining[ri])
+          } else "-"
+          used_str <- if (!is.na(usage_tbl$used_pct[ri])) {
+            sprintf("%.1f%%", usage_tbl$used_pct[ri])
+          } else "-"
+          win_str <- if (!is.na(usage_tbl$window_minutes[ri])) {
+            as.character(usage_tbl$window_minutes[ri])
+          } else "-"
+          reset_str <- tryCatch({
+            rt <- lubridate::ymd_hms(usage_tbl$resets_at[ri], quiet = TRUE)
+            if (!is.na(rt)) format(rt, "%H:%M UTC") else as.character(usage_tbl$resets_at[ri])
+          }, error = function(e) as.character(usage_tbl$resets_at[ri]))
+
+          limits_html <- paste0(limits_html, sprintf(
+            '\n  <tr style="background-color: %s;">\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n  </tr>',
+            bg_r,
+            dark_border, dark_text,    as.character(usage_tbl$provider[ri]),
+            dark_border, dark_muted,   as.character(usage_tbl$limit_window[ri]),
+            dark_border, used_col,     used_str,
+            dark_border, dark_text,    win_str,
+            dark_border, dark_muted,   reset_str,
+            dark_border, accent_green, cred_str))
+        }
+        limits_html <- paste0(limits_html, "\n</table>")
+      }
+
+      # --- Part 2: cost reconciliation vs ccusage (last ~7 days) ---
+      recon_html <- ""
+      if (has_cb_cost) {
+        cb_cost_tbl <- tryCatch(parse_codexbar_cost(cb_cost_path), error = function(e) {
+          message("parse_codexbar_cost failed: ", e$message); NULL
+        })
+        if (!is.null(cb_cost_tbl) && nrow(cb_cost_tbl) > 0) {
+          cb_daily_cb <- cb_cost_tbl |>
+            mutate(date_d = as.Date(date)) |>
+            group_by(date_d) |>
+            summarise(cb_cost = sum(cost, na.rm = TRUE), .groups = "drop") |>
+            arrange(desc(date_d)) |>
+            head(7)
+
+          cc_lookup <- if (!is.null(daily_data) && nrow(daily_data) > 0 && "date" %in% names(daily_data)) {
+            daily_data |>
+              mutate(date_d = safe_date(date)) |>
+              group_by(date_d) |>
+              summarise(cc_cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
+          } else tibble::tibble(date_d = as.Date(character()), cc_cost = numeric())
+
+          recon_df <- dplyr::left_join(cb_daily_cb, cc_lookup, by = "date_d") |>
+            mutate(
+              cc_cost = tidyr::replace_na(cc_cost, 0),
+              diff_pct = if_else(
+                cc_cost > 0,
+                (cb_cost - cc_cost) / cc_cost * 100,
+                NA_real_
+              )
+            )
+
+          recon_html <- sprintf(
+            '\n<h4 style="color: %s; margin-top: 12px; margin-bottom: 4px;">Cost reconciliation (last ~7 days) <em style="font-size: 9px; color: %s; font-weight: normal;">(local estimates - not provider invoices)</em></h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Date</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">CodexBar $ (local est)</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">ccusage $ (local est)</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Diff %%</th>\n  </tr>',
+            accent_purple, dark_muted, accent_purple,
+            dark_border, dark_border, dark_border, dark_border)
+
+          for (ri in seq_len(nrow(recon_df))) {
+            bg_r <- if (ri %% 2 == 0) dark_row_alt else dark_card
+            diff_col <- if (is.na(recon_df$diff_pct[ri])) dark_muted else {
+              if (abs(recon_df$diff_pct[ri]) <= 5) accent_green
+              else if (abs(recon_df$diff_pct[ri]) <= 20) accent_orange
+              else "#ff5555"
+            }
+            diff_str <- if (is.na(recon_df$diff_pct[ri])) "-" else {
+              sprintf("%+.1f%%", recon_df$diff_pct[ri])
+            }
+            recon_html <- paste0(recon_html, sprintf(
+              '\n  <tr style="background-color: %s;">\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n  </tr>',
+              bg_r,
+              dark_border, dark_muted, format(recon_df$date_d[ri], "%Y-%m-%d"),
+              dark_border, accent_green, dollar(recon_df$cb_cost[ri]),
+              dark_border, dark_text, dollar(recon_df$cc_cost[ri]),
+              dark_border, diff_col, diff_str))
+          }
+          recon_html <- paste0(recon_html, "\n</table>",
+            "<!-- QA:codexbar_recon_rows=", nrow(recon_df), " -->")
+        }
+      }
+
+      paste0(
+        sprintf('\n<h3 style="color: %s; margin-top: 20px;">Provider usage (CodexBar)</h3>',
+                accent_purple),
+        limits_html,
+        recon_html,
+        "<!-- QA:codexbar_section=1 -->"
+      )
+    }
+  }, error = function(e) {
+    message("CodexBar email section failed: ", e$message)
+    paste0(
+      sprintf('\n<h3 style="color: %s; margin-top: 20px;">Provider usage (CodexBar)</h3>',
+              accent_purple),
+      sprintf('<p style="color: %s; font-size: 11px; font-style: italic;">', dark_muted),
+      "CodexBar data not yet available.",
+      "</p>",
+      "<!-- QA:codexbar_section=error -->"
+    )
+  })
+  email_body <- paste0(email_body, codexbar_html)
 
   email_body <- paste0(email_body, sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
 <p style="color: %s; font-size: 12px;">
