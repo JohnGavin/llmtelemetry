@@ -11,7 +11,7 @@
       result
     Output
       [1] "llmtelemetry"       "llmtelemetry"       "llmtelemetry"      
-      [4] "llm"                NA                   "irish_buoy_network"
+      [4] "llm"                "urban_planning"     "irish_buoy_network"
 
 # .shorten_project_local snapshot — output for known forms is stable
 

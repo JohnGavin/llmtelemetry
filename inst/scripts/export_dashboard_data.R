@@ -137,6 +137,8 @@ shorten_project <- function(x) {
 # Helper: map raw project path to canonical project name.
 # Returns NA_character_ for orphan/meta names that should be excluded from
 # project-aware aggregations (agent-worktree IDs, generic meta names).
+# Returns "agent-tooling" for real Claude usage sessions with no recoverable
+# parent project (roborev, ClaudeProbe, sonnet, cc, eval, subagents, worker).
 canonicalize_project <- function(name) {
   if (is.null(name) || is.na(name) || !nzchar(name)) return(NA_character_)
 
@@ -151,21 +153,31 @@ canonicalize_project <- function(name) {
   #     agent worktree hashes recorded as project names by some hooks.
   if (grepl("^[0-9a-f]{12,}$", name)) return(NA_character_)
 
-  # 1. Drop pure meta-names (agent dirs, generic worktree marker, and
+  # 1a. Bucket agent-tooling tokens: real Claude usage sessions with no
+  #     recoverable parent project. Preserved under "agent-tooling" label.
+  agent_tooling_tokens <- c(
+    "roborev", "ClaudeProbe", "sonnet", "cc", "eval", "subagents", "worker"
+  )
+  if (name %in% agent_tooling_tokens) return("agent-tooling")
+
+  # 1b. Explicit single-token remaps: bare token → full canonical project name.
+  token_remaps <- c(
+    "network"   = "irish_buoy_network",
+    "telemetry" = "llmtelemetry"
+  )
+  if (name %in% names(token_remaps)) return(token_remaps[[name]])
+
+  # 1c. Drop pure meta-names (agent dirs, generic worktree marker, and
   #    top-level container directories that are not real projects).
-  #    meta_only_noise added in this fix: branch fragment tokens, tool names,
-  #    single-char tokens, and ephemeral names observed in telemetry data.
   meta_only <- c(
-    # Original set:
-    "sonnet", "roborev", "worktree",
+    # Original set (container dirs and true noise):
+    "worktree",
     "antigravity", "crypto", "data", "github", "hello",
-    "knowledge", "simulations", "sport", "subagents",
-    "t", "io", "urban_planning", "notmineraft", "telemetry", "football",
+    "simulations", "sport",
+    "t", "io", "notmineraft",
     # Added: branch fragment tokens
-    "cc", "feat", "fix", "chore", "ci", "perf", "style", "build", "revert",
-    "wt", "scope", "worker", "network", "repo", "docs", "eval", "project",
-    # Added: ephemeral/tool names not associated with any persistent project
-    "ClaudeProbe",
+    "feat", "fix", "chore", "ci", "perf", "style", "build", "revert",
+    "wt", "scope", "repo", "docs", "project",
     # Added: user-confirmed noise (demos = demo content, wiki = internal wiki)
     "demos", "wiki",
     # Added: .claude/worktrees/agent sentinel from shorten_project()
@@ -219,7 +231,9 @@ canonicalize_project <- function(name) {
   first <- parts[1L]
   # Drop purely numeric segments (worktree numeric IDs, e.g. "1020043174")
   if (grepl("^[0-9]+$", first)) return(NA_character_)
-  # Drop first segments that are meta-only (e.g. "roborev/worktree/NNN")
+  # Bucket agent-tooling first-segments (e.g. "roborev/worktree/NNN")
+  if (first %in% agent_tooling_tokens) return("agent-tooling")
+  # Drop first segments that are meta-only (e.g. "feat/worktree/NNN")
   if (first %in% meta_only) return(NA_character_)
   first
 }

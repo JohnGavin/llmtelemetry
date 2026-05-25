@@ -78,23 +78,37 @@
   # Convert dash-form project names emitted by the hook to slash-form first
   name <- .shorten_project_local(name)
 
+  # Tokens that represent real Claude usage sessions (agent tooling, model
+  # evaluation, etc.) but have NO recoverable parent project name.  These are
+  # bucketed under "agent-tooling" rather than dropped as NA.
+  agent_tooling_tokens <- c(
+    "roborev", "ClaudeProbe", "sonnet", "cc", "eval", "subagents", "worker"
+  )
+  if (name %in% agent_tooling_tokens) return("agent-tooling")
+
+  # Explicit single-token remaps: bare token recorded as project, remap to
+  # the full canonical project name.
+  token_remaps <- c(
+    "network"  = "irish_buoy_network",
+    "telemetry" = "llmtelemetry"
+  )
+  if (name %in% names(token_remaps)) return(token_remaps[[name]])
+
   # Noise/meta-only tokens that should never appear as canonical project names.
   # Split into two groups for clarity:
   #   meta_only_original — in the list before this fix
   #   meta_only_noise    — added by this fix (branch fragments, tool names,
   #                        single-char tokens, ephemeral names)
   meta_only <- c(
-    # Original set:
-    "sonnet", "roborev", "worktree",
+    # Original set (container dirs and true noise):
+    "worktree",
     "antigravity", "crypto", "data", "github", "hello",
-    "knowledge", "simulations", "sport", "subagents",
-    "t", "io", "urban_planning", "notmineraft", "telemetry", "football",
+    "simulations", "sport",
+    "t", "io", "notmineraft",
     # Added: branch fragment tokens (appear when suffix-stripping fails or raw
     # branch-type fragments are recorded as project names by hooks)
-    "cc", "feat", "fix", "chore", "ci", "perf", "style", "build", "revert",
-    "wt", "scope", "worker", "network", "repo", "docs", "eval", "project",
-    # Added: ephemeral/tool names not associated with any persistent project
-    "ClaudeProbe",
+    "feat", "fix", "chore", "ci", "perf", "style", "build", "revert",
+    "wt", "scope", "repo", "docs", "project",
     # Added: user-confirmed noise (demos = demo content, wiki = internal wiki)
     "demos", "wiki",
     # Added: .claude/worktrees/agent sentinel returned by .shorten_project_local
@@ -146,6 +160,8 @@
   if (length(parts) == 0L || !nzchar(parts[1L])) return(NA_character_)
   first <- parts[1L]
   if (grepl("^[0-9]+$", first)) return(NA_character_)
+  # Bucket agent-tooling first-segments (e.g. "roborev/worktree/NNN")
+  if (first %in% agent_tooling_tokens) return("agent-tooling")
   if (first %in% meta_only) return(NA_character_)
   first
 }
