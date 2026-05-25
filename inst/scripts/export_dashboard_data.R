@@ -2172,6 +2172,140 @@ tryCatch({
   write_json(list(), file.path(out_dir, "roborev_by_repo.json"), auto_unbox = TRUE)
 })
 
+# --- 8e. Export roborev_resolution.json (#146 Q5) ----------------------------
+# Resolution rate = close_reason='manual' / total.
+# Weekly trend: per week (created_at), resolved vs open counts.
+# Privacy: clean_projects() on repo column before aggregating.
+# Guard: if table/columns missing, write empty-but-valid JSON.
+cat("Exporting roborev_resolution.json...\n")
+tryCatch({
+  roborev_res_src <- file.path(extdata, "roborev_resolution.json")
+  roborev_res_dst <- file.path(out_dir, "roborev_resolution.json")
+
+  empty_res <- list(
+    overall = list(total = 0L, resolved = 0L, open = 0L, resolution_rate = 0),
+    weekly  = list()
+  )
+
+  if (file.exists(unified_db)) {
+    rcon3 <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(rcon3, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    rbtbls3 <- dbListTables(rcon3)
+
+    if ("roborev_review_lifecycle" %in% rbtbls3) {
+      rl3 <- dbReadTable(rcon3, "roborev_review_lifecycle") |> as_tibble()
+
+      # Determine repo column
+      repo_col3 <- if ("repo" %in% names(rl3)) "repo" else if ("project" %in% names(rl3)) "project" else NULL
+
+      if (!is.null(repo_col3)) {
+        # Rename to 'repo' for clean_projects (expects 'project' or use project_col=)
+        names(rl3)[names(rl3) == repo_col3] <- "repo"
+
+        # Apply privacy filter: clean_projects on repo column BEFORE aggregating
+        rl3_clean <- clean_projects(rl3, project_col = "repo")
+
+        # Assert 0 confidential repos in the output
+        conf_lower  <- tolower(CONFIDENTIAL_PROJECTS)
+        repos_clean <- tolower(rl3_clean$repo)
+        base_repos  <- sub(
+          "-(?:feat|fix|chore|docs|refactor|test|ci|perf|style|build|revert|worktree)-.*$",
+          "", repos_clean, ignore.case = TRUE
+        )
+        n_conf <- sum(base_repos %in% conf_lower)
+        if (n_conf > 0L) {
+          stop(sprintf(
+            "roborev_resolution: %d confidential repo row(s) remain after clean_projects — aborting",
+            n_conf
+          ))
+        }
+        cat(sprintf("  -> privacy assertion passed: 0 confidential repos in output\n"))
+
+        is_resolved3 <- !is.na(rl3_clean$close_reason) & nzchar(as.character(rl3_clean$close_reason))
+        n_total    <- nrow(rl3_clean)
+        n_resolved <- sum(is_resolved3)
+        n_open     <- n_total - n_resolved
+        res_rate   <- if (n_total > 0L) round(n_resolved / n_total, 4) else 0
+
+        # Weekly trend: group by week of created_at
+        if ("created_at" %in% names(rl3_clean) && n_total > 0L) {
+          rl3_clean$created_at_dt <- as.Date(as.POSIXct(rl3_clean$created_at, tz = "UTC"))
+          # ISO week start (Monday)
+          rl3_clean$week_start <- rl3_clean$created_at_dt -
+            as.integer(format(rl3_clean$created_at_dt, "%u")) + 1L
+          rl3_clean$week_start <- as.character(rl3_clean$week_start)
+
+          weekly_agg <- rl3_clean |>
+            group_by(week_start) |>
+            summarise(
+              resolved = sum(is_resolved3[row_number()]),
+              open     = n() - sum(is_resolved3[row_number()]),
+              total    = n(),
+              .groups  = "drop"
+            ) |>
+            mutate(
+              resolution_rate = if_else(total > 0L, round(resolved / total, 4), 0)
+            ) |>
+            arrange(week_start)
+        } else {
+          weekly_agg <- tibble(
+            week_start = character(0), resolved = integer(0),
+            open = integer(0), total = integer(0), resolution_rate = numeric(0)
+          )
+        }
+
+        roborev_res <- list(
+          overall = list(
+            total           = as.integer(n_total),
+            resolved        = as.integer(n_resolved),
+            open            = as.integer(n_open),
+            resolution_rate = res_rate
+          ),
+          weekly = lapply(seq_len(nrow(weekly_agg)), function(i) {
+            as.list(weekly_agg[i, , drop = FALSE])
+          })
+        )
+
+        write_json(roborev_res, roborev_res_src, auto_unbox = TRUE)
+        cat(sprintf(
+          "  -> roborev_resolution.json: total=%d, resolved=%d, rate=%.1f%%, weeks=%d\n",
+          n_total, n_resolved, res_rate * 100, nrow(weekly_agg)
+        ))
+      } else {
+        cat("  -> roborev_review_lifecycle has no repo/project column; writing empty\n")
+        write_json(empty_res, roborev_res_src, auto_unbox = TRUE)
+      }
+      tryCatch(dbDisconnect(rcon3, shutdown = TRUE), error = function(e) NULL)
+    } else {
+      cat("  -> roborev_review_lifecycle not found; writing empty roborev_resolution.json\n")
+      write_json(empty_res, roborev_res_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  # Always copy committed source to vignettes/data/
+  if (file.exists(roborev_res_src)) {
+    file.copy(roborev_res_src, roborev_res_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_resolution.json -> vignettes/data/ (%d bytes)\n",
+                file.info(roborev_res_src)$size))
+  } else {
+    write_json(empty_res, roborev_res_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_resolution.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(
+      overall = list(total = 0L, resolved = 0L, open = 0L, resolution_rate = 0),
+      weekly  = list()
+    ),
+    file.path(out_dir, "roborev_resolution.json"),
+    auto_unbox = TRUE
+  )
+})
+
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
 # ccusage_blocks is intentionally excluded from critical_files: the CI fallback
