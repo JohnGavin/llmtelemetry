@@ -1,0 +1,97 @@
+[
+  {
+    "provider": "claude",
+    "source": "local",
+    "updatedAt": "2026-05-25T09:00:00Z",
+    "historyDays": 30,
+    "daily": [
+      {
+        "date": "2026-05-24",
+        "totalCost": 1.23,
+        "totalTokens": 45000,
+        "inputTokens": 30000,
+        "outputTokens": 10000,
+        "cacheReadTokens": 4000,
+        "cacheCreationTokens": 1000,
+        "modelsUsed": ["claude-sonnet-4-6"],
+        "modelBreakdowns": [
+          {
+            "modelName": "claude-sonnet-4-6",
+            "cost": 1.23,
+            "totalTokens": 45000,
+            "inputTokens": 30000,
+            "outputTokens": 10000,
+            "cacheReadTokens": 4000,
+            "cacheCreationTokens": 1000
+          }
+        ]
+      },
+      {
+        "date": "2026-05-23",
+        "totalCost": 0.45,
+        "totalTokens": 12000,
+        "inputTokens": 8000,
+        "outputTokens": 3500,
+        "cacheReadTokens": 500,
+        "cacheCreationTokens": 0,
+        "modelsUsed": ["claude-haiku-4-5"],
+        "modelBreakdowns": [
+          {
+            "modelName": "claude-haiku-4-5",
+            "cost": 0.45,
+            "totalTokens": 12000,
+            "inputTokens": 8000,
+            "outputTokens": 3500,
+            "cacheReadTokens": 500,
+            "cacheCreationTokens": 0
+          }
+        ]
+      }
+    ],
+    "sessionTokens": 5000,
+    "sessionCostUSD": 0.10,
+    "last30DaysTokens": 57000,
+    "last30DaysCostUSD": 1.68,
+    "totals": {
+      "totalCost": 1.68,
+      "totalTokens": 57000
+    }
+  },
+  {
+    "provider": "openai",
+    "source": "local",
+    "updatedAt": "2026-05-25T09:00:00Z",
+    "historyDays": 30,
+    "daily": [
+      {
+        "date": "2026-05-24",
+        "totalCost": 0.08,
+        "totalTokens": 3000,
+        "inputTokens": 2000,
+        "outputTokens": 1000,
+        "cacheReadTokens": 0,
+        "cacheCreationTokens": 0,
+        "modelsUsed": ["gpt-4o-mini"],
+        "modelBreakdowns": [
+          {
+            "modelName": "gpt-4o-mini",
+            "cost": 0.08,
+            "totalTokens": 3000,
+            "inputTokens": 2000,
+            "outputTokens": 1000,
+            "cacheReadTokens": 0,
+            "cacheCreationTokens": 0
+          }
+        ]
+      }
+    ],
+    "sessionTokens": 0,
+    "sessionCostUSD": 0.0,
+    "last30DaysTokens": 3000,
+    "last30DaysCostUSD": 0.08,
+    "totals": {
+      "totalCost": 0.08,
+      "totalTokens": 3000
+    }
+  }
+]
