@@ -44,8 +44,13 @@ get_export_canonicalize_fn <- function() {
   )
   if (!nzchar(script)) skip("export_dashboard_data.R not found")
   lines <- readLines(script)
-  # shorten_project through Vectorize call (inclusive)
-  start <- which(grepl("^# Helper: shorten project", lines))[1L]
+  # Extract from the branch-suffix constant (or shorten_project comment) through Vectorize.
+  # The .BRANCH_SUFFIX_RE_EXPORT constant must be in scope when shorten_project() runs.
+  start_branch <- which(grepl("^[.]BRANCH_SUFFIX_RE_EXPORT", lines))[1L]
+  start_shorten <- which(grepl("^# Branch/worktree suffixes that", lines))[1L]
+  start <- if (!is.na(start_shorten)) start_shorten else
+           if (!is.na(start_branch))  start_branch  else
+           which(grepl("^# Helper: shorten project", lines))[1L]
   end   <- which(grepl("^canonicalize_project <- Vectorize", lines))[1L]
   if (is.na(start) || is.na(end)) skip("Helper block not found in export script")
   block <- paste(lines[start:end], collapse = "\n")

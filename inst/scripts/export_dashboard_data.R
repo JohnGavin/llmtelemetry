@@ -100,13 +100,35 @@ parse_cmonitor_time <- function(t) {
   sprintf("%s %02d:%02d:%02d", d, t[3], t[4], t[5])
 }
 
+# Branch/worktree suffixes that, when appended to a project name with a dash,
+# indicate the project itself and not a separate sub-entity.
+# Pattern: <project>-<SUFFIX>-<anything>
+# Examples: llmtelemetry-feat-cc-20260524-102501 -> llmtelemetry
+#           llm-wt-193 -> llm
+#           llm-sonnet -> llm (bare suffix, no trailing tokens)
+.BRANCH_SUFFIX_RE_EXPORT <- paste0(
+  "-(feat|fix|chore|docs|refactor|test|ci|perf|style|build|revert|wt|",
+  "sonnet|haiku|opus|worktree)(-.*)?$"
+)
+
 # Helper: shorten project path to last meaningful component (kept for legacy use)
 shorten_project <- function(x) {
+  if (is.null(x) || is.na(x)) return(NA_character_)
+
+  # Handle .claude/worktrees/agent-<hex> paths: ephemeral agent checkouts.
+  if (grepl("^[.]claude/worktrees/agent-", x) ||
+      grepl("[-/]claude[-/]worktrees[-/]agent-", x)) {
+    return(".claude/worktrees/agent")
+  }
+
   x |>
     # NHS/personal path prefix (double-dash form):
     # "-Users-johngavin-docs--pers-NHS-health-data-antigravity-<project>"
     gsub("^-Users-johngavin-docs--pers-NHS-health-data-antigravity-", "", x = _) |>
     gsub("^-Users-johngavin-docs[-_]gh-", "", x = _) |>
+    # Strip branch/worktree suffixes BEFORE stripping the "llm-" prefix.
+    # Without this, "llm-feat-cc-..." becomes "feat-cc-..." -> first segment "feat".
+    sub(.BRANCH_SUFFIX_RE_EXPORT, "", x = _, perl = TRUE, ignore.case = TRUE) |>
     gsub("^llm-", "", x = _) |>
     gsub("^proj-", "", x = _) |>
     gsub("-", "/", x = _)
@@ -115,23 +137,51 @@ shorten_project <- function(x) {
 # Helper: map raw project path to canonical project name.
 # Returns NA_character_ for orphan/meta names that should be excluded from
 # project-aware aggregations (agent-worktree IDs, generic meta names).
+# Returns "agent-tooling" for real Claude usage sessions with no recoverable
+# parent project (roborev, ClaudeProbe, sonnet, cc, eval, subagents, worker).
 canonicalize_project <- function(name) {
   if (is.null(name) || is.na(name) || !nzchar(name)) return(NA_character_)
 
-  # 0. Reject worktree-suffixed names (e.g. "roborev-worktree-3047898692",
+  # 0a. Reject worktree-suffixed names (e.g. "roborev-worktree-3047898692",
   #    "llm-worktree-1234567890", or paths containing "/worktree/").
   #    These are ephemeral agent checkout directories, not real projects.
   if (grepl("-worktree-\\d+", name) || grepl("/worktree/\\d+", name)) {
     return(NA_character_)
   }
 
-  # 1. Drop pure meta-names (agent dirs, generic worktree marker, and
+  # 0b. Reject bare hex-hash strings (12+ lowercase hex chars) — these are
+  #     agent worktree hashes recorded as project names by some hooks.
+  if (grepl("^[0-9a-f]{12,}$", name)) return(NA_character_)
+
+  # 1a. Bucket agent-tooling tokens: real Claude usage sessions with no
+  #     recoverable parent project. Preserved under "agent-tooling" label.
+  agent_tooling_tokens <- c(
+    "roborev", "ClaudeProbe", "sonnet", "cc", "eval", "subagents", "worker"
+  )
+  if (name %in% agent_tooling_tokens) return("agent-tooling")
+
+  # 1b. Explicit single-token remaps: bare token → full canonical project name.
+  token_remaps <- c(
+    "network"   = "irish_buoy_network",
+    "telemetry" = "llmtelemetry"
+  )
+  if (name %in% names(token_remaps)) return(token_remaps[[name]])
+
+  # 1c. Drop pure meta-names (agent dirs, generic worktree marker, and
   #    top-level container directories that are not real projects).
   meta_only <- c(
-    "sonnet", "roborev", "worktree",
+    # Original set (container dirs and true noise):
+    "worktree",
     "antigravity", "crypto", "data", "github", "hello",
-    "knowledge", "simulations", "sport", "subagents",
-    "t", "io", "urban_planning", "notmineraft", "telemetry", "football"
+    "simulations", "sport",
+    "t", "io", "notmineraft",
+    # Added: branch fragment tokens
+    "feat", "fix", "chore", "ci", "perf", "style", "build", "revert",
+    "wt", "scope", "repo", "docs", "project",
+    # Added: user-confirmed noise (demos = demo content, wiki = internal wiki)
+    "demos", "wiki",
+    # Added: .claude/worktrees/agent sentinel from shorten_project()
+    ".claude/worktrees/agent"
   )
   if (name %in% meta_only) return(NA_character_)
 
@@ -181,7 +231,9 @@ canonicalize_project <- function(name) {
   first <- parts[1L]
   # Drop purely numeric segments (worktree numeric IDs, e.g. "1020043174")
   if (grepl("^[0-9]+$", first)) return(NA_character_)
-  # Drop first segments that are meta-only (e.g. "roborev/worktree/NNN")
+  # Bucket agent-tooling first-segments (e.g. "roborev/worktree/NNN")
+  if (first %in% agent_tooling_tokens) return("agent-tooling")
+  # Drop first segments that are meta-only (e.g. "feat/worktree/NNN")
   if (first %in% meta_only) return(NA_character_)
   first
 }

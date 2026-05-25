@@ -63,6 +63,11 @@ rollup_costs <- function(
                   daily_cost_usd, n_sessions, duration_min, valid_from) |>
     dplyr::collect()
 
+  # Re-apply canonicalization to catch any stale pre-computed values in the JSON
+  # (e.g. "demos", "wiki" confirmed as noise 2026-05-24).
+  out$canonical_project <- .canonicalize_project_local(out$canonical_project)
+  out <- out[!is.na(out$canonical_project), , drop = FALSE]
+
   # privacy: PIT store must never contain confidential projects (#83)
   out <- drop_confidential_projects(out)
 

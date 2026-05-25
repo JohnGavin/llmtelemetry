@@ -100,11 +100,11 @@ test_that("mixed dash-underscore snapshot", {
 
 # ── Bare underscore names must pass through UNCHANGED (meta_only guard) ───────
 
-test_that("bare 'urban_planning' remains NA (meta_only)", {
-  # Regression guard: underscore-to-slash conversion must not fire for bare
-  # single-token names that are not path-like.  'urban_planning' is in meta_only
-  # and must resolve to NA_character_, not "urban/planning" -> "urban".
-  expect_equal(.canonicalize_project_local("urban_planning"), NA_character_)
+test_that("bare 'urban_planning' is KEPT as a real project", {
+  # 2026-05-25: urban_planning is a real project — must NOT be dropped.
+  # Underscore-to-slash conversion must not fire for bare single-token names
+  # that are not path-like.
+  expect_equal(.canonicalize_project_local("urban_planning"), "urban_planning")
 })
 
 test_that("bare 'irish_buoy_network' is not converted by underscore logic", {
@@ -121,15 +121,15 @@ test_that("bare 'irish_buoy_network' is not converted by underscore logic", {
 
 # ── Path-prefix + underscore meta_only names (critic m10) ────────────────────
 
-test_that("path-prefixed docs_gh_urban_planning resolves to NA (meta_only)", {
+test_that("path-prefixed docs_gh_urban_planning resolves to urban_planning (real project)", {
   # docs_gh_urban_planning: the ^docs[-_]gh[-_] prefix is stripped first,
-  # yielding "urban_planning" which is in meta_only -> NA_character_.
-  expect_equal(.canonicalize_project_local("docs_gh_urban_planning"), NA_character_)
+  # yielding "urban_planning" which is a real project -> "urban_planning".
+  expect_equal(.canonicalize_project_local("docs_gh_urban_planning"), "urban_planning")
 })
 
-test_that("path-prefixed docs_gh_telemetry resolves to NA (meta_only)", {
-  # docs_gh_telemetry: strips to "telemetry" which is in meta_only -> NA_character_.
-  expect_equal(.canonicalize_project_local("docs_gh_telemetry"), NA_character_)
+test_that("path-prefixed docs_gh_telemetry resolves to llmtelemetry (remap)", {
+  # docs_gh_telemetry: strips to "telemetry" which remaps -> "llmtelemetry".
+  expect_equal(.canonicalize_project_local("docs_gh_telemetry"), "llmtelemetry")
 })
 
 # ── Snapshot tests ────────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ test_that("dash-form, slash-form, underscore-path, and bare-underscore snapshot"
     "llmtelemetry/inst",                         # slash-form (already normalised)
     "docs_gh_llmtelemetry",                      # underscore-path
     "-Users_johngavin_docs_gh_llm",              # underscore full prefix
-    "urban_planning",                            # bare underscore name (meta_only -> NA)
+    "urban_planning",                            # real project (not meta_only)
     "irish_buoy_network"                         # bare underscore name (not meta_only)
   )
   result <- .canonicalize_project_local(inputs)
@@ -157,4 +157,119 @@ test_that(".shorten_project_local snapshot — output for known forms is stable"
   )
   result <- vapply(inputs, .shorten_project_local, character(1L), USE.NAMES = FALSE)
   expect_snapshot(result)
+})
+
+# ── Branch/worktree-suffix stripping (fix: project-name-canonicalization) ─────
+#
+# Before this fix, "llm-feat-cc-20260521-092847" -> "feat" (wrong) because
+# .shorten_project_local() stripped "llm-" first, leaving "feat/cc/...".
+# After the fix, branch suffixes are stripped BEFORE the "llm-" strip.
+
+test_that("branch-suffixed llm paths strip to llm", {
+  # "llm-feat-cc-20260521-092847" must give "llm", not "feat"
+  expect_equal(.canonicalize_project_local("llm-feat-cc-20260521-092847"), "llm")
+  expect_equal(.canonicalize_project_local("llm-sonnet"),                  "llm")
+  expect_equal(.canonicalize_project_local("llm-wt-193"),                  "llm")
+  expect_equal(.canonicalize_project_local("llm-wt-198"),                  "llm")
+})
+
+test_that("branch-suffixed llmtelemetry paths strip to llmtelemetry", {
+  expect_equal(.canonicalize_project_local("llmtelemetry-feat-cc-20260524-102501"),
+               "llmtelemetry")
+  expect_equal(
+    .canonicalize_project_local("docs-gh-llmtelemetry-feat-cc-20260524-102501"),
+    "llmtelemetry"
+  )
+  expect_equal(
+    .canonicalize_project_local("-Users-johngavin-docs-gh-llmtelemetry-feat-cc-20260524-102501"),
+    "llmtelemetry"
+  )
+})
+
+# ── .claude/worktrees/agent-<hex> paths → NA ─────────────────────────────────
+
+test_that(".claude/worktrees/agent-<hex> path returns NA", {
+  expect_equal(.canonicalize_project_local(".claude/worktrees/agent-ab6f701adcaed79e9"),
+               NA_character_)
+})
+
+# ── Bare hex-hash strings → NA ───────────────────────────────────────────────
+
+test_that("bare hex agent hash of 12+ chars returns NA", {
+  expect_equal(.canonicalize_project_local("ab6f701adcaed79e9"), NA_character_)
+  expect_equal(.canonicalize_project_local("af82a624c38fab7a"),  NA_character_)
+})
+
+# ── Fragment-noise tokens → NA ────────────────────────────────────────────────
+# These tokens appeared in telemetry as canonicalized project names despite
+# being branch fragments or ephemeral process names, not real projects.
+
+test_that("branch fragment tokens (feat, wt, scope, etc.) return NA", {
+  noise <- c("feat", "fix", "chore", "wt", "scope",
+             "repo", "docs", "project")
+  for (tok in noise) {
+    expect_equal(.canonicalize_project_local(tok), NA_character_,
+                 info = sprintf("'%s' should be NA", tok))
+  }
+})
+
+test_that("agent-tooling tokens (roborev, sonnet, cc, eval, subagents, worker, ClaudeProbe) bucket to agent-tooling", {
+  # 2026-05-25: these are real Claude sessions, not noise — bucket to agent-tooling.
+  agent_tooling <- c("roborev", "ClaudeProbe", "sonnet", "cc", "eval", "subagents", "worker")
+  for (tok in agent_tooling) {
+    expect_equal(.canonicalize_project_local(tok), "agent-tooling",
+                 info = sprintf("'%s' should be agent-tooling", tok))
+  }
+})
+
+test_that("network remaps to irish_buoy_network", {
+  expect_equal(.canonicalize_project_local("network"), "irish_buoy_network")
+})
+
+test_that("telemetry remaps to llmtelemetry", {
+  expect_equal(.canonicalize_project_local("telemetry"), "llmtelemetry")
+})
+
+test_that("urban_planning, football, knowledge are preserved as real projects", {
+  expect_equal(.canonicalize_project_local("urban_planning"), "urban_planning")
+  expect_equal(.canonicalize_project_local("football"),       "football")
+  expect_equal(.canonicalize_project_local("knowledge"),      "knowledge")
+})
+
+test_that("user-confirmed noise tokens (demos, wiki) return NA", {
+  # Confirmed as noise by user 2026-05-24: demos = demo content, wiki = internal wiki.
+  expect_equal(.canonicalize_project_local("demos"), NA_character_)
+  expect_equal(.canonicalize_project_local("wiki"),  NA_character_)
+})
+
+# ── Regression: real projects must not be affected ───────────────────────────
+
+test_that("real project names are unaffected by the fix", {
+  expect_equal(.canonicalize_project_local("llm"),                     "llm")
+  expect_equal(.canonicalize_project_local("llmtelemetry"),            "llmtelemetry")
+  expect_equal(.canonicalize_project_local("footbet"),                 "footbet")
+  expect_equal(.canonicalize_project_local("randomwalk"),              "randomwalk")
+  expect_equal(.canonicalize_project_local("acd_area_climate_design"), "acd_area_climate_design")
+  expect_equal(.canonicalize_project_local("irish_buoy_network"),      "irish_buoy_network")
+})
+
+test_that("user-confirmed real projects (hartree, maps, tlang) are PRESERVED", {
+  # Regression guard: user confirmed 2026-05-24 that these are real projects.
+  # A future change that accidentally adds them to meta_only must fail here.
+  expect_equal(.canonicalize_project_local("hartree"), "hartree")
+  expect_equal(.canonicalize_project_local("maps"),    "maps")
+  expect_equal(.canonicalize_project_local("tlang"),   "tlang")
+})
+
+test_that("vectorised branch-suffix stripping works across a mixed column", {
+  input <- c(
+    "llm-feat-cc-20260521-092847",          # should give llm
+    "llm-wt-193",                           # should give llm
+    "llmtelemetry-feat-cc-20260524-102501", # should give llmtelemetry
+    "cc",                                   # agent-tooling bucket (not pure noise)
+    "ab6f701adcaed79e9",                    # hex hash -> NA
+    "footbet"                               # real project unchanged
+  )
+  expected <- c("llm", "llm", "llmtelemetry", "agent-tooling", NA_character_, "footbet")
+  expect_equal(.canonicalize_project_local(input), expected)
 })

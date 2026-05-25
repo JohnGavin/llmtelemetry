@@ -62,10 +62,19 @@ test_that("agent-worktree ID prefix is stripped to reveal project", {
   expect_equal(canonicalize_project("kSBNJFuu6G/repo/llmtelemetry/vignettes"), "llmtelemetry")
 })
 
+# ── agent-tooling bucket ───────────────────────────────────────────────────────
+test_that("agent-tooling tokens bucket to agent-tooling (not NA)", {
+  expect_equal(canonicalize_project("roborev"),    "agent-tooling")
+  expect_equal(canonicalize_project("sonnet"),     "agent-tooling")
+  expect_equal(canonicalize_project("cc"),         "agent-tooling")
+  expect_equal(canonicalize_project("eval"),       "agent-tooling")
+  expect_equal(canonicalize_project("subagents"),  "agent-tooling")
+  expect_equal(canonicalize_project("worker"),     "agent-tooling")
+  expect_equal(canonicalize_project("ClaudeProbe"), "agent-tooling")
+})
+
 # ── meta-only names → NA ───────────────────────────────────────────────────────
 test_that("meta-only names canonicalise to NA", {
-  expect_equal(canonicalize_project("sonnet"),   NA_character_)
-  expect_equal(canonicalize_project("roborev"),  NA_character_)
   expect_equal(canonicalize_project("worktree"), NA_character_)
 })
 
@@ -75,19 +84,29 @@ test_that("expanded meta-only top-level names canonicalise to NA", {
   expect_equal(canonicalize_project("data"),        NA_character_)
   expect_equal(canonicalize_project("github"),      NA_character_)
   expect_equal(canonicalize_project("hello"),       NA_character_)
-  expect_equal(canonicalize_project("knowledge"),   NA_character_)
   expect_equal(canonicalize_project("simulations"), NA_character_)
   expect_equal(canonicalize_project("sport"),       NA_character_)
-  expect_equal(canonicalize_project("subagents"),   NA_character_)
 })
 
 test_that("new AA1 meta-only names canonicalise to NA", {
-  expect_equal(canonicalize_project("t"),             NA_character_)
-  expect_equal(canonicalize_project("io"),            NA_character_)
-  expect_equal(canonicalize_project("urban_planning"), NA_character_)
-  expect_equal(canonicalize_project("notmineraft"),   NA_character_)
-  expect_equal(canonicalize_project("telemetry"),     NA_character_)
-  expect_equal(canonicalize_project("football"),      NA_character_)
+  expect_equal(canonicalize_project("t"),           NA_character_)
+  expect_equal(canonicalize_project("io"),          NA_character_)
+  expect_equal(canonicalize_project("notmineraft"), NA_character_)
+})
+
+test_that("urban_planning, football, knowledge are real projects (KEPT)", {
+  # 2026-05-25: confirmed as real projects — must NOT be dropped.
+  expect_equal(canonicalize_project("urban_planning"), "urban_planning")
+  expect_equal(canonicalize_project("football"),       "football")
+  expect_equal(canonicalize_project("knowledge"),      "knowledge")
+})
+
+test_that("network remaps to irish_buoy_network", {
+  expect_equal(canonicalize_project("network"), "irish_buoy_network")
+})
+
+test_that("telemetry remaps to llmtelemetry", {
+  expect_equal(canonicalize_project("telemetry"), "llmtelemetry")
 })
 
 # ── container-prefix stripping ─────────────────────────────────────────────────
@@ -147,9 +166,25 @@ test_that("vectorised call over a column works correctly", {
   input    <- c("llm", "worktree/llm", "D73dOZsvyf/repo", "sonnet",
                 "buoy/network", "data/historical", NA_character_, "footbet/R",
                 "1020043174")
-  expected <- c("llm", "llm",          NA_character_,      NA_character_,
+  expected <- c("llm", "llm",          NA_character_,      "agent-tooling",
                 "irish_buoy_network", "historical",        NA_character_, "footbet",
                 NA_character_)
   result   <- canonicalize_project(input)
   expect_equal(result, expected)
+})
+
+# ── Fragment-noise and hex-hash suppression (fix: project-name-canonicalization)
+
+test_that("bare hex agent worktree hashes return NA", {
+  expect_equal(canonicalize_project("ab6f701adcaed79e9"), NA_character_)
+  expect_equal(canonicalize_project("af82a624c38fab7a"),  NA_character_)
+})
+
+test_that("fragment-noise tokens (non-agent-tooling) return NA", {
+  noise <- c("feat", "fix", "chore", "wt", "scope",
+             "repo", "docs", "project")
+  for (tok in noise) {
+    expect_equal(canonicalize_project(tok), NA_character_,
+                 info = sprintf("'%s' should be NA", tok))
+  }
 })
