@@ -8,7 +8,7 @@
 #' touching the network.  A live push only happens with `push = TRUE`.
 #'
 #' @section Authentication:
-#' The `huggingface-cli` command authenticates automatically from the
+#' The `hf` command authenticates automatically from the
 #' `HF_TOKEN` environment variable — no git credential helper, no token
 #' files, no ASKPASS script needed.  In CI, set the `HF_TOKEN` secret and
 #' pass it to the step via `env: HF_TOKEN: ${{ secrets.HF_TOKEN }}`.
@@ -16,12 +16,13 @@
 #' @section CLI invocation:
 #' The live push calls (after staging sanitised parquets to a temp dir):
 #' ```
-#' huggingface-cli upload <repo_id> <staging_dir> . \
+#' hf upload <repo_id> <staging_dir> . \
 #'   --repo-type dataset \
 #'   --commit-message "telemetry archive <date>"
 #' ```
-#' The CLI binary is resolved by `.hf_cli_binary()`: tries `huggingface-cli`
-#' first, then `hf` as a fallback (both are installed by `huggingface_hub`).
+#' The CLI binary is resolved by `.hf_cli_binary()`: tries `hf` first
+#' (`huggingface-cli` is deprecated and a non-functional no-op in current
+#' `huggingface_hub`), then `huggingface-cli` as fallback for older installs.
 #' Aborts if neither is found.
 #'
 #' @section Archive scope:
@@ -146,7 +147,7 @@ hf_push_telemetry <- function(
   .hf_write_parquet_duckdb(sessions_clean, sessions_out)
   .hf_write_parquet_duckdb(costs_clean,    costs_out)
 
-  # Resolve the CLI binary: huggingface-cli (preferred) or hf (alias)
+  # Resolve the CLI binary: hf (preferred, current) or huggingface-cli (legacy fallback)
   cli_bin <- .hf_cli_binary()
 
   commit_msg <- sprintf(
@@ -204,16 +205,17 @@ hf_push_telemetry <- function(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-#' Resolve the huggingface-cli binary.
+#' Resolve the HuggingFace CLI binary.
 #'
-#' Tries `huggingface-cli` first (the canonical name installed by
-#' `pip install huggingface_hub`), then `hf` as a fallback alias.
+#' Tries `hf` first (the current binary name in `huggingface_hub` >= 0.24;
+#' `huggingface-cli` is deprecated and a non-functional no-op in that version).
+#' Falls back to `huggingface-cli` only when `hf` is absent (older installs).
 #' Aborts with a clear message if neither is found on PATH.
 #'
 #' @return Character name of the binary to pass to [system2()].
 #' @keywords internal
 .hf_cli_binary <- function() {
-  for (bin in c("huggingface-cli", "hf")) {
+  for (bin in c("hf", "huggingface-cli")) {
     # Sys.which() is a pure-R lookup — no subprocess, respects the current PATH,
     # and returns "" when the binary is absent (never throws).
     found <- Sys.which(bin)
@@ -226,7 +228,7 @@ hf_push_telemetry <- function(
       "x" = "HuggingFace CLI not found on PATH.",
       "i" = paste0(
         "Install it with: {.code pip install --upgrade huggingface_hub}. ",
-        "Ensure the resulting {.code huggingface-cli} (or {.code hf}) is on PATH."
+        "Ensure the resulting {.code hf} (or {.code huggingface-cli}) is on PATH."
       )
     )
   )

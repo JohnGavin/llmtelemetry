@@ -235,14 +235,28 @@ test_that("hf_push_telemetry() errors when sessions parquet does not exist", {
 # Test 5: .hf_cli_binary() resolves the correct binary
 # ---------------------------------------------------------------------------
 
-test_that(".hf_cli_binary() returns a non-empty string for a known-available binary", {
-  # We can't guarantee huggingface-cli is installed in the test environment,
-  # but we CAN verify the function returns something when the binary exists.
-  # Mock by shimming PATH with a fake binary.
+test_that(".hf_cli_binary() prefers 'hf' over 'huggingface-cli' when both present", {
+  # Both binaries on PATH — 'hf' must win (huggingface-cli is deprecated no-op)
   shim_dir <- withr::local_tempdir()
-  fake_bin <- file.path(shim_dir, "huggingface-cli")
-  writeLines("#!/bin/sh\necho 'fake-hf-cli'", fake_bin)
-  Sys.chmod(fake_bin, mode = "0755")
+  fake_hf  <- file.path(shim_dir, "hf")
+  fake_old <- file.path(shim_dir, "huggingface-cli")
+  writeLines("#!/bin/sh\necho 'fake-hf'", fake_hf)
+  writeLines("#!/bin/sh\necho 'fake-hf-cli'", fake_old)
+  Sys.chmod(fake_hf,  mode = "0755")
+  Sys.chmod(fake_old, mode = "0755")
+
+  withr::with_envvar(c(PATH = paste0(shim_dir, ":", Sys.getenv("PATH"))), {
+    result <- llmtelemetry:::.hf_cli_binary()
+    expect_equal(result, "hf")
+  })
+})
+
+test_that(".hf_cli_binary() falls back to 'huggingface-cli' when hf absent", {
+  # Only legacy binary present — older huggingface_hub installs
+  shim_dir <- withr::local_tempdir()
+  fake_old <- file.path(shim_dir, "huggingface-cli")
+  writeLines("#!/bin/sh\necho 'fake-hf-cli'", fake_old)
+  Sys.chmod(fake_old, mode = "0755")
 
   withr::with_envvar(c(PATH = paste0(shim_dir, ":", Sys.getenv("PATH"))), {
     result <- llmtelemetry:::.hf_cli_binary()
@@ -250,14 +264,12 @@ test_that(".hf_cli_binary() returns a non-empty string for a known-available bin
   })
 })
 
-test_that(".hf_cli_binary() falls back to 'hf' when huggingface-cli absent", {
+test_that(".hf_cli_binary() returns 'hf' when only hf present", {
   shim_dir <- withr::local_tempdir()
-  # Only provide 'hf', not 'huggingface-cli'
-  fake_hf <- file.path(shim_dir, "hf")
+  fake_hf  <- file.path(shim_dir, "hf")
   writeLines("#!/bin/sh\necho 'fake-hf'", fake_hf)
   Sys.chmod(fake_hf, mode = "0755")
 
-  # Override PATH so 'which huggingface-cli' fails but 'which hf' succeeds
   withr::with_envvar(c(PATH = paste0(shim_dir, ":", Sys.getenv("PATH"))), {
     result <- llmtelemetry:::.hf_cli_binary()
     expect_equal(result, "hf")
@@ -265,7 +277,7 @@ test_that(".hf_cli_binary() falls back to 'hf' when huggingface-cli absent", {
 })
 
 test_that(".hf_cli_binary() aborts when neither binary is found", {
-  # Use a PATH with no huggingface-cli or hf
+  # Use a PATH with no hf or huggingface-cli
   empty_dir <- withr::local_tempdir()
   withr::with_envvar(c(PATH = empty_dir), {
     expect_error(
@@ -279,15 +291,15 @@ test_that(".hf_cli_binary() aborts when neither binary is found", {
 # Test 6: Live-push path invokes huggingface-cli with correct args (mocked)
 # ---------------------------------------------------------------------------
 
-test_that("hf_push_telemetry() push=TRUE calls huggingface-cli upload with correct args", {
-  # Strategy: shim the PATH with a fake huggingface-cli that captures its
-  # argv to a temp file and exits 0, so hf_push_telemetry(push=TRUE) runs
-  # without any network call.
+test_that("hf_push_telemetry() push=TRUE calls hf upload with correct args", {
+  # Strategy: shim the PATH with a fake 'hf' that captures its argv to a
+  # temp file and exits 0, so hf_push_telemetry(push=TRUE) runs without
+  # any network call.  Use 'hf' (the preferred binary) not 'huggingface-cli'.
 
   shim_dir <- withr::local_tempdir()
   argv_log <- file.path(shim_dir, "argv.txt")
 
-  fake_cli <- file.path(shim_dir, "huggingface-cli")
+  fake_cli <- file.path(shim_dir, "hf")
   writeLines(
     c("#!/bin/sh",
       paste0("echo \"$@\" >> '", argv_log, "'"),
@@ -330,9 +342,9 @@ test_that("hf_push_telemetry() push=TRUE calls huggingface-cli upload with corre
 })
 
 test_that("hf_push_telemetry() push=TRUE aborts when CLI exits non-zero", {
-  # Shim that exits 1 (simulates upload failure)
+  # Shim 'hf' that exits 1 (simulates upload failure)
   shim_dir <- withr::local_tempdir()
-  fake_cli <- file.path(shim_dir, "huggingface-cli")
+  fake_cli <- file.path(shim_dir, "hf")
   writeLines(
     c("#!/bin/sh",
       "echo 'simulated upload error' >&2",
