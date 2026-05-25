@@ -298,3 +298,77 @@ test_that("hf_push_telemetry() dry-run succeeds with HF_TOKEN env var (no local 
   expect_true(result$dry_run)
   expect_equal(result$sessions_rows, 2L)
 })
+
+# ---------------------------------------------------------------------------
+# Test 6: GIT_ASKPASS helper is prompt-aware (username vs password)
+# ---------------------------------------------------------------------------
+
+test_that(".hf_make_askpass() returns repo owner for Username prompt", {
+  tmpdir     <- withr::local_tempdir()
+  token_file <- file.path(tmpdir, "token")
+  writeLines("fake-token-value", token_file)
+
+  script <- llmtelemetry:::.hf_make_askpass(
+    token_path = token_file,
+    workdir    = tmpdir,
+    hf_repo    = "JohnGavin/llmtelemetry-metrics"
+  )
+
+  # Invoke the helper with a Username prompt (as git does)
+  result <- system2(script, args = "Username for 'https://huggingface.co'",
+                    stdout = TRUE, stderr = FALSE)
+  expect_equal(result, "JohnGavin")
+})
+
+test_that(".hf_make_askpass() returns token content for Password prompt", {
+  tmpdir     <- withr::local_tempdir()
+  token_file <- file.path(tmpdir, "token")
+  # Write token without trailing newline (trimmed, as CI path produces)
+  writeLines("fake-token-value", token_file)
+
+  script <- llmtelemetry:::.hf_make_askpass(
+    token_path = token_file,
+    workdir    = tmpdir,
+    hf_repo    = "JohnGavin/llmtelemetry-metrics"
+  )
+
+  # Invoke with a Password prompt
+  result <- system2(script, args = "Password for 'https://huggingface.co'",
+                    stdout = TRUE, stderr = FALSE)
+  # writeLines adds a newline; system2 stdout strips trailing newlines per line
+  expect_equal(result, "fake-token-value")
+})
+
+test_that(".hf_make_askpass() extracts correct owner from multi-part repo names", {
+  tmpdir     <- withr::local_tempdir()
+  token_file <- file.path(tmpdir, "token")
+  writeLines("tok", token_file)
+
+  script <- llmtelemetry:::.hf_make_askpass(
+    token_path = token_file,
+    workdir    = tmpdir,
+    hf_repo    = "MyOrg/my-dataset-repo"
+  )
+
+  result <- system2(script, args = "Username for 'https://huggingface.co'",
+                    stdout = TRUE, stderr = FALSE)
+  expect_equal(result, "MyOrg")
+})
+
+# ---------------------------------------------------------------------------
+# Test 7: Token trimming — trailing whitespace stripped before writing
+# ---------------------------------------------------------------------------
+
+test_that(".hf_resolve_token_path() trims trailing newline from HF_TOKEN env var", {
+  tmpdir      <- withr::local_tempdir()
+  absent_path <- file.path(tmpdir, "nonexistent_token")
+
+  # Simulate a token with a trailing newline (common from gh secret set)
+  withr::with_envvar(c(HF_TOKEN = "my-real-token\n"), {
+    result <- llmtelemetry:::.hf_resolve_token_path(absent_path, tmpdir)
+
+    written <- readLines(result, warn = FALSE)
+    # Must be stripped — no empty line at end
+    expect_equal(written, "my-real-token")
+  })
+})

@@ -168,10 +168,11 @@ hf_push_telemetry <- function(
 
   clone_dir <- file.path(workdir, "repo")
 
-  # Build the GIT_ASKPASS helper: a transient shell script that cats the token.
+  # Build the GIT_ASKPASS helper: a transient prompt-aware shell script.
+  # Username prompt → repo owner; Password prompt → token file.
   # The helper is deleted immediately after git clone completes so the file's
   # lifetime is minimised.  NEVER embed the token in the clone URL.
-  askpass_script <- .hf_make_askpass(resolved_token, workdir)
+  askpass_script <- .hf_make_askpass(resolved_token, workdir, hf_repo)
   on.exit(
     if (file.exists(askpass_script)) file.remove(askpass_script),
     add = TRUE
@@ -235,7 +236,7 @@ hf_push_telemetry <- function(
           stdout = FALSE, stderr = FALSE)
 
   # Re-create GIT_ASKPASS for push (helper was deleted after clone)
-  askpass_script2 <- .hf_make_askpass(resolved_token, workdir)
+  askpass_script2 <- .hf_make_askpass(resolved_token, workdir, hf_repo)
   on.exit(
     if (file.exists(askpass_script2)) file.remove(askpass_script2),
     add = TRUE
@@ -352,10 +353,14 @@ hf_push_telemetry <- function(
   env_token <- Sys.getenv("HF_TOKEN", unset = "")
   if (nzchar(env_token)) {
     transient_path <- file.path(workdir, ".hf_token_ci")
-    writeLines(env_token, con = transient_path)
+    # Trim trailing whitespace/newlines — gh secret set from a file can
+    # include a trailing newline that would corrupt git auth.
+    env_token_trimmed <- trimws(env_token, which = "right")
+    writeLines(env_token_trimmed, con = transient_path)
     Sys.chmod(transient_path, mode = "0600")
-    # Clear the env_token string from the local scope immediately
+    # Clear the local string immediately
     env_token <- NULL
+    env_token_trimmed <- NULL
     return(transient_path)
   }
   # Neither source available — abort with a clear message
@@ -369,22 +374,41 @@ hf_push_telemetry <- function(
 
 #' Create a transient GIT_ASKPASS helper script.
 #'
-#' Writes a minimal shell script that `cat`s the HuggingFace token file.
-#' The caller is responsible for deleting the script after use.
+#' Writes a minimal shell script that is prompt-aware: when git invokes
+#' `$GIT_ASKPASS "<prompt>"`, the helper checks the first word of the prompt:
+#' - `Username*` → prints the HF repo owner (the part before `/` in `hf_repo`)
+#'   using `printf` without a trailing newline.
+#' - Anything else (the Password prompt) → `cat`s the token file.
 #'
+#' HuggingFace git-over-HTTPS requires username = the repo owner and
+#' password = the HF token.  Sending the token as the username causes
+#' "Invalid username or password".
+#'
+#' The caller is responsible for deleting the script after use.
 #' The token is NEVER read into R memory — it flows only from the token file
 #' to git's stdin via the helper process at clone/push time.
 #'
 #' @param token_path Character.  Path to the HF token file.
 #' @param workdir Character.  Directory in which to create the helper.
+#' @param hf_repo Character.  Repository identifier, e.g.
+#'   `"JohnGavin/llmtelemetry-metrics"`.  The owner (part before `/`) is
+#'   embedded in the helper as the git username.
 #' @return Character path to the helper script.
 #' @keywords internal
-.hf_make_askpass <- function(token_path, workdir) {
+.hf_make_askpass <- function(token_path, workdir, hf_repo) {
+  # Derive the repo owner: the substring before the first "/"
+  repo_owner <- sub("/.*$", "", hf_repo)
+
   helper_path <- file.path(workdir, "hf_askpass.sh")
   writeLines(
     c("#!/bin/sh",
-      # cat the token file; no variable interpolation — path is fixed at write time
-      paste0("cat ", shQuote(token_path))),
+      # Git passes the full prompt string as $1.
+      # "Username for 'https://...'" → return the repo owner (no trailing newline).
+      # "Password for 'https://...'" (or anything else) → cat the token file.
+      "case \"$1\" in",
+      paste0("  Username*) printf '%s' ", shQuote(repo_owner), " ;;"),
+      paste0("  *)         cat ", shQuote(token_path), " ;;"),
+      "esac"),
     con = helper_path
   )
   Sys.chmod(helper_path, mode = "0700")
