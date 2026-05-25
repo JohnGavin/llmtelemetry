@@ -1,46 +1,33 @@
 #' HuggingFace dataset archive push (dry-run by default)
 #'
 #' Archives the SANITISED v1 PIT parquet files (`sessions.parquet`,
-#' `costs.parquet`) to a HuggingFace dataset repository via `git clone` +
-#' `git-lfs push`.  By default the function **only** performs a dry-run:
-#' it validates the privacy guard, prints the file manifest and target
-#' repository that WOULD be pushed, and returns invisibly without touching
-#' the network.  A live push only happens with `push = TRUE`.
+#' `costs.parquet`) to a HuggingFace dataset repository via the official
+#' `huggingface-cli upload` command.  By default the function **only** performs
+#' a dry-run: it validates the privacy guard, prints the file manifest and
+#' target repository that WOULD be pushed, and returns invisibly without
+#' touching the network.  A live push only happens with `push = TRUE`.
 #'
-#' @section One-time setup (human operator):
-#' 1. Create the HuggingFace dataset repo (e.g. `JohnGavin/llmtelemetry-metrics`)
-#'    at `https://huggingface.co/new-dataset`.
-#' 2. Run `huggingface-cli login` in a terminal.  This writes a token to
-#'    `~/.cache/huggingface/token` and configures a git credential helper so
-#'    the token is never embedded in clone URLs.
+#' @section Authentication:
+#' The `huggingface-cli` command authenticates automatically from the
+#' `HF_TOKEN` environment variable — no git credential helper, no token
+#' files, no ASKPASS script needed.  In CI, set the `HF_TOKEN` secret and
+#' pass it to the step via `env: HF_TOKEN: ${{ secrets.HF_TOKEN }}`.
 #'
-#' @section CI supply of the token:
-#' The function resolves the token via `hf_resolve_token_path()`, which
-#' checks two sources in order:
-#' 1. `~/.cache/huggingface/token` — if the file exists, use it directly
-#'    (interactive / local use; no change to existing behaviour).
-#' 2. `HF_TOKEN` environment variable — if set (non-empty), the token is
-#'    written to a transient file in the working directory with mode 0600,
-#'    used for the clone/push, then deleted immediately.  The token value
-#'    is **never** stored in an R variable or printed.
-#'
-#' Recommended GitHub Actions configuration (Phase F):
-#' ```yaml
-#' - run: Rscript inst/scripts/push_telemetry_to_huggingface.R --push
-#'   env:
-#'     HF_TOKEN: ${{ secrets.HF_TOKEN }}
+#' @section CLI invocation:
+#' The live push calls (after staging sanitised parquets to a temp dir):
 #' ```
-#' This avoids writing the token to disk via `echo` and lets the function
-#' manage the transient file securely.
+#' huggingface-cli upload <repo_id> <staging_dir> . \
+#'   --repo-type dataset \
+#'   --commit-message "telemetry archive <date>"
+#' ```
+#' The CLI binary is resolved by `.hf_cli_binary()`: tries `huggingface-cli`
+#' first, then `hf` as a fallback (both are installed by `huggingface_hub`).
+#' Aborts if neither is found.
 #'
 #' @section Archive scope:
 #' Only session metadata and cost aggregates are archived.  Raw conversation
 #' logs, PHI, and `working_dir` path columns are never included.  The
 #' mandatory privacy guard asserts zero confidential rows before any staging.
-#'
-#' @section Phase notes:
-#' * **Phase E** (deferred): dashboard `hf://` read via DuckDB.
-#' * **Phase F** (deferred): scheduled CI push via GitHub Actions cron.
 #'
 #' @param sessions_parquet Path to the sessions PIT parquet.  Defaults to
 #'   `inst/extdata/telemetry/v1/sessions.parquet` relative to the package
@@ -51,19 +38,12 @@
 #'   `"JohnGavin/llmtelemetry-metrics"`.  May also be set via the
 #'   environment variable `HF_DATASET_REPO`.  Defaults to
 #'   `"JohnGavin/llmtelemetry-metrics"`.
-#' @param token_path Path to the HuggingFace token file.  Defaults to
-#'   `~/.cache/huggingface/token`.  The token is **never** read into R
-#'   memory by this function: a transient GIT_ASKPASS helper script `cat`s
-#'   the file at git-clone time and is deleted immediately afterward.
-#'   When the file does not exist and the `HF_TOKEN` environment variable
-#'   is set, `hf_resolve_token_path()` writes the token to a transient file
-#'   and returns that path instead (the caller manages cleanup).
 #' @param push Logical.  `FALSE` (default) performs a dry-run: validate +
-#'   print manifest but do NOT clone or push.  Set to `TRUE` only to fire
-#'   the actual push.
-#' @param workdir Temporary directory used for the git clone.  Created via
-#'   [tempfile()] if `NULL`.  Deleted on exit (push mode only; dry-run never
-#'   creates it).
+#'   print manifest but do NOT invoke `huggingface-cli` or touch the network.
+#'   Set to `TRUE` only to fire the actual push.
+#' @param workdir Temporary directory used for staging sanitised parquets.
+#'   Created via [tempfile()] if `NULL`.  Deleted on exit (push mode only;
+#'   dry-run never creates it).
 #' @return Invisibly returns a named list with elements:
 #'   \describe{
 #'     \item{`dry_run`}{Logical.}
@@ -77,7 +57,6 @@ hf_push_telemetry <- function(
   sessions_parquet = NULL,
   costs_parquet    = NULL,
   hf_repo          = NULL,
-  token_path       = path.expand("~/.cache/huggingface/token"),
   push             = FALSE,
   workdir          = NULL
 ) {
@@ -153,113 +132,61 @@ hf_push_telemetry <- function(
     )))
   }
 
-  # --- 5. Live push -----------------------------------------------------------
+  # --- 5. Live push via huggingface-cli upload --------------------------------
   if (is.null(workdir)) {
     workdir <- tempfile(pattern = "hf_push_")
   }
-  dir.create(workdir, recursive = TRUE, showWarnings = FALSE)
+  staging_dir <- file.path(workdir, "staging")
+  dir.create(staging_dir, recursive = TRUE, showWarnings = FALSE)
   on.exit(unlink(workdir, recursive = TRUE), add = TRUE)
 
-  # Resolve the token: prefer the caller-supplied file path; fall back to
-  # the HF_TOKEN environment variable (CI path).  A transient token file
-  # is written inside workdir when the env-var path is taken; it is removed
-  # by the on.exit(unlink(workdir, ...)) above.
-  resolved_token <- .hf_resolve_token_path(token_path, workdir)
-
-  clone_dir <- file.path(workdir, "repo")
-
-  # Build the GIT_ASKPASS helper: a transient prompt-agnostic shell script.
-  # Returns the token for BOTH Username and Password prompts (HF token-auth).
-  # The helper is deleted immediately after git clone completes so the file's
-  # lifetime is minimised.  NEVER embed the token in the clone URL.
-  askpass_script <- .hf_make_askpass(resolved_token, workdir, hf_repo)
-  on.exit(
-    if (file.exists(askpass_script)) file.remove(askpass_script),
-    add = TRUE
-  )
-
-  hf_clone_url <- paste0("https://huggingface.co/datasets/", hf_repo)
-
-  cli::cli_h1("Cloning {.val {hf_repo}} ...")
-  clone_env <- c(
-    "GIT_ASKPASS" = askpass_script,
-    "GIT_TERMINAL_PROMPT" = "0"
-  )
-  clone_result <- system2(
-    "git",
-    args    = c("clone", hf_clone_url, clone_dir),
-    env     = paste0(names(clone_env), "=", clone_env),
-    stdout  = TRUE,
-    stderr  = TRUE
-  )
-  if (!is.null(attr(clone_result, "status")) &&
-      attr(clone_result, "status") != 0L) {
-    cli::cli_abort(
-      c("x" = "git clone failed",
-        "i" = paste(clone_result, collapse = "\n"))
-    )
-  }
-  # Delete the askpass helper as soon as clone is done
-  if (file.exists(askpass_script)) file.remove(askpass_script)
-
-  # Enable git-lfs in the cloned repo
-  system2("git", args = c("-C", clone_dir, "lfs", "install"),
-          stdout = FALSE, stderr = FALSE)
-
-  # Set a local git identity inside the clone so CI runners (which have no
-  # global git config) can commit.  Using --local avoids touching the
-  # runner's global config; the clone dir is deleted on.exit anyway.
-  system2("git", args = c("-C", clone_dir, "config", "--local",
-                          "user.name", "llmtelemetry-bot"),
-          stdout = FALSE, stderr = FALSE)
-  system2("git", args = c("-C", clone_dir, "config", "--local",
-                          "user.email", "actions@github.com"),
-          stdout = FALSE, stderr = FALSE)
-
-  # Write the sanitised parquets to the clone
-  sessions_out <- file.path(clone_dir, "sessions.parquet")
-  costs_out    <- file.path(clone_dir, "costs.parquet")
+  # Write the sanitised parquets to the staging dir
+  sessions_out <- file.path(staging_dir, "sessions.parquet")
+  costs_out    <- file.path(staging_dir, "costs.parquet")
   .hf_write_parquet_duckdb(sessions_clean, sessions_out)
   .hf_write_parquet_duckdb(costs_clean,    costs_out)
 
-  # git add, commit, push
-  system2("git", args = c("-C", clone_dir, "add",
-                          "sessions.parquet", "costs.parquet"),
-          stdout = FALSE, stderr = FALSE)
+  # Resolve the CLI binary: huggingface-cli (preferred) or hf (alias)
+  cli_bin <- .hf_cli_binary()
 
   commit_msg <- sprintf(
-    "archive: telemetry v1 — %s sessions, %s cost rows [%s]",
-    nrow(sessions_clean), nrow(costs_clean),
-    format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+    "telemetry archive %s — %s sessions, %s cost rows",
+    format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    nrow(sessions_clean),
+    nrow(costs_clean)
   )
-  system2("git", args = c("-C", clone_dir, "commit", "-m", commit_msg),
-          stdout = FALSE, stderr = FALSE)
 
-  # Re-create GIT_ASKPASS for push (helper was deleted after clone)
-  askpass_script2 <- .hf_make_askpass(resolved_token, workdir, hf_repo)
-  on.exit(
-    if (file.exists(askpass_script2)) file.remove(askpass_script2),
-    add = TRUE
-  )
-  push_env <- paste0(names(clone_env), "=", clone_env)
-  push_env[grepl("^GIT_ASKPASS=", push_env)] <-
-    paste0("GIT_ASKPASS=", askpass_script2)
-
-  push_result <- system2(
-    "git",
-    args   = c("-C", clone_dir, "push"),
-    env    = push_env,
+  # huggingface-cli upload <repo_id> <local_folder> <path_in_repo>
+  #   --repo-type dataset
+  #   --commit-message "<msg>"
+  #
+  # The CLI reads HF_TOKEN from the environment automatically — no credential
+  # helper, no ASKPASS script, no token on the command line.
+  cli::cli_h1("Uploading to {.val {hf_repo}} ...")
+  # suppressWarnings() silences the "running command ... had status N"
+  # message that base R emits when system2() captures stdout AND the process
+  # exits non-zero.  We check the exit status ourselves below.
+  upload_result <- suppressWarnings(system2(
+    cli_bin,
+    args   = c(
+      "upload",
+      hf_repo,
+      staging_dir,
+      ".",
+      "--repo-type", "dataset",
+      "--commit-message", commit_msg
+    ),
     stdout = TRUE,
     stderr = TRUE
-  )
-  if (!is.null(attr(push_result, "status")) &&
-      attr(push_result, "status") != 0L) {
+  ))
+
+  exit_status <- attr(upload_result, "status")
+  if (!is.null(exit_status) && exit_status != 0L) {
     cli::cli_abort(
-      c("x" = "git push failed",
-        "i" = paste(push_result, collapse = "\n"))
+      c("x" = "{cli_bin} upload failed (exit {exit_status})",
+        "i" = paste(upload_result, collapse = "\n"))
     )
   }
-  if (file.exists(askpass_script2)) file.remove(askpass_script2)
 
   cli::cli_inform(c("v" = "Push complete to {.val {hf_repo}}"))
 
@@ -276,6 +203,35 @@ hf_push_telemetry <- function(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+#' Resolve the huggingface-cli binary.
+#'
+#' Tries `huggingface-cli` first (the canonical name installed by
+#' `pip install huggingface_hub`), then `hf` as a fallback alias.
+#' Aborts with a clear message if neither is found on PATH.
+#'
+#' @return Character name of the binary to pass to [system2()].
+#' @keywords internal
+.hf_cli_binary <- function() {
+  for (bin in c("huggingface-cli", "hf")) {
+    # Sys.which() is a pure-R lookup — no subprocess, respects the current PATH,
+    # and returns "" when the binary is absent (never throws).
+    found <- Sys.which(bin)
+    if (nzchar(found)) {
+      return(bin)
+    }
+  }
+  cli::cli_abort(
+    c(
+      "x" = "HuggingFace CLI not found on PATH.",
+      "i" = paste0(
+        "Install it with: {.code pip install --upgrade huggingface_hub}. ",
+        "Ensure the resulting {.code huggingface-cli} (or {.code hf}) is on PATH."
+      )
+    )
+  )
+}
+
 
 #' Load a parquet file via DuckDB and run the privacy guard.
 #'
@@ -328,96 +284,6 @@ hf_push_telemetry <- function(
     df <- df[, setdiff(names(df), present), drop = FALSE]
   }
   df
-}
-
-
-#' Resolve the HuggingFace token file path for CI and local use.
-#'
-#' Checks two sources in order:
-#' 1. If `token_path` exists on disk, return it unchanged (local / already-set-up CI).
-#' 2. If the `HF_TOKEN` environment variable is non-empty, write its value to a
-#'    transient file inside `workdir` (mode 0600) and return that path.
-#'    The transient file's lifetime is bounded by the caller's `workdir` cleanup.
-#'
-#' The token value is written only to a file — it is NEVER stored in an R
-#' variable that outlives this function's local scope, and never printed.
-#'
-#' @param token_path Character.  Preferred path (default `~/.cache/huggingface/token`).
-#' @param workdir Character.  Directory where a transient token file may be created.
-#' @return Character path to the resolved token file.
-#' @keywords internal
-.hf_resolve_token_path <- function(token_path, workdir) {
-  if (file.exists(token_path)) {
-    return(token_path)
-  }
-  env_token <- Sys.getenv("HF_TOKEN", unset = "")
-  if (nzchar(env_token)) {
-    transient_path <- file.path(workdir, ".hf_token_ci")
-    # Trim ALL trailing/leading whitespace and strip internal CR/LF.
-    # gh secret set from a file can include a trailing newline that corrupts
-    # git auth ("password authentication no longer supported" from HuggingFace
-    # means git sent "hf_xxx\n" as the password — the classic trailing-newline
-    # symptom).  Use cat(..., sep = "") (NOT writeLines, which appends "\n")
-    # so the file on disk contains exactly the token bytes with no newline.
-    env_token_trimmed <- trimws(env_token, which = "both")
-    env_token_trimmed <- gsub("[\r\n]", "", env_token_trimmed)
-    cat(env_token_trimmed, file = transient_path, sep = "")
-    Sys.chmod(transient_path, mode = "0600")
-    # Clear the local string immediately
-    env_token <- NULL
-    env_token_trimmed <- NULL
-    return(transient_path)
-  }
-  # Neither source available — abort with a clear message
-  cli::cli_abort(
-    c("x" = "HuggingFace token not found.",
-      "i" = "On local machines: run {.code huggingface-cli login} to create {.file {token_path}}.",
-      "i" = "In CI: set the {.envvar HF_TOKEN} secret and pass it via {.code env: HF_TOKEN: ${{{{ secrets.HF_TOKEN }}}}}.")
-  )
-}
-
-
-#' Create a transient GIT_ASKPASS helper script.
-#'
-#' Writes a minimal shell script that returns the HuggingFace token for
-#' BOTH the Username and Password prompts that git issues during
-#' `git clone`/`git push` over HTTPS.
-#'
-#' HuggingFace git-over-HTTPS uses **token authentication**: the token must
-#' be supplied as the username (and repeated as the password).  Supplying the
-#' repo owner as the username causes HF to fall back to account-password auth,
-#' which is deprecated and rejected with "Password authentication in git is
-#' no longer supported."
-#'
-#' The helper is prompt-agnostic: regardless of whether git asks for
-#' `Username` or `Password`, it emits `printf '%s' "$(cat <token-file>)"`.
-#' The `printf '%s'` form guarantees no trailing newline, which is required
-#' for git to accept the credential without an empty-line suffix.  This is
-#' the trailing-newline safety introduced in #214.
-#'
-#' The caller is responsible for deleting the script after use.
-#' The token is NEVER read into R memory — it flows only from the token file
-#' to git's stdin via the helper process at clone/push time.
-#'
-#' @param token_path Character.  Path to the HF token file.
-#' @param workdir Character.  Directory in which to create the helper.
-#' @param hf_repo Character.  Repository identifier (kept for API
-#'   compatibility; no longer used internally now that the username is the
-#'   token rather than the repo owner).
-#' @return Character path to the helper script.
-#' @keywords internal
-.hf_make_askpass <- function(token_path, workdir, hf_repo) {
-  helper_path <- file.path(workdir, "hf_askpass.sh")
-  # Prompt-agnostic: return the token for both Username and Password prompts.
-  # printf '%s' avoids a trailing newline; "$(cat ...)" reads the token file
-  # at invocation time so the value never enters the R session.
-  writeLines(
-    c("#!/bin/sh",
-      paste0("printf '%s' \"$(cat ", shQuote(token_path), ")\"")),
-    con = helper_path
-  )
-  Sys.chmod(helper_path, mode = "0700")
-  helper_path
 }
 
 

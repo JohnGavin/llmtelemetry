@@ -1,12 +1,16 @@
 # tests/testthat/test-hf-push.R
 #
 # Tests for the HuggingFace archive push mechanism (R/hf_push.R).
-# All tests use dry-run mode (push = FALSE) and never touch the network.
+# All tests use dry-run mode (push = FALSE) or mock the CLI invocation so
+# they never touch the network.
 #
 # Coverage:
 #   1. Privacy guard aborts when a confidential row (mycare) is present.
 #   2. Dry-run returns the expected file manifest without network calls.
 #   3. working_dir column is dropped from the staged copy.
+#   4. Missing source parquet produces a clear error.
+#   5. .hf_cli_binary() resolves the correct binary name.
+#   6. Live-push path invokes huggingface-cli with correct args (mocked).
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -228,190 +232,127 @@ test_that("hf_push_telemetry() errors when sessions parquet does not exist", {
 })
 
 # ---------------------------------------------------------------------------
-# Test 5: Token resolver — HF_TOKEN env-var fallback (CI path)
+# Test 5: .hf_cli_binary() resolves the correct binary
 # ---------------------------------------------------------------------------
 
-test_that(".hf_resolve_token_path() returns existing file path unchanged", {
-  tmpdir <- withr::local_tempdir()
-  token_file <- file.path(tmpdir, "token")
-  writeLines("fake-local-token", token_file)
+test_that(".hf_cli_binary() returns a non-empty string for a known-available binary", {
+  # We can't guarantee huggingface-cli is installed in the test environment,
+  # but we CAN verify the function returns something when the binary exists.
+  # Mock by shimming PATH with a fake binary.
+  shim_dir <- withr::local_tempdir()
+  fake_bin <- file.path(shim_dir, "huggingface-cli")
+  writeLines("#!/bin/sh\necho 'fake-hf-cli'", fake_bin)
+  Sys.chmod(fake_bin, mode = "0755")
 
-  result <- llmtelemetry:::.hf_resolve_token_path(token_file, tmpdir)
-  expect_equal(result, token_file)
-})
-
-test_that(".hf_resolve_token_path() falls back to HF_TOKEN env var when file absent", {
-  tmpdir <- withr::local_tempdir()
-  absent_path <- file.path(tmpdir, "nonexistent_token")
-
-  withr::with_envvar(c(HF_TOKEN = "ci-test-token-value"), {
-    result <- llmtelemetry:::.hf_resolve_token_path(absent_path, tmpdir)
-
-    # Returned path must exist and be inside tmpdir (transient file)
-    expect_true(file.exists(result))
-    expect_true(startsWith(result, tmpdir))
-
-    # File permissions: owner-only read/write (0600 octal = 384 decimal).
-    # file.info()$mode stores the full mode integer; mask with 0777 octal
-    # (511 decimal) to isolate the permission bits, then compare to 0600
-    # octal (384 decimal).
-    info <- file.info(result)
-    perm_bits <- bitwAnd(as.integer(info$mode), 511L)  # 511L = 0777 octal
-    expect_equal(perm_bits, 384L)                       # 384L = 0600 octal
-
-    # Content must equal what was in the env var (token written to file).
-    # Use readBin to verify the file truly has no trailing newline byte on disk
-    # (readLines would strip it silently and mask the bug).
-    raw_bytes <- readBin(result, what = "raw", n = 200L)
-    file_str  <- rawToChar(raw_bytes)
-    expect_false(grepl("[\r\n]", file_str),
-      info = "Token file must contain no newline bytes")
-    expect_equal(file_str, "ci-test-token-value")
+  withr::with_envvar(c(PATH = paste0(shim_dir, ":", Sys.getenv("PATH"))), {
+    result <- llmtelemetry:::.hf_cli_binary()
+    expect_equal(result, "huggingface-cli")
   })
 })
 
-test_that(".hf_resolve_token_path() aborts when neither file nor HF_TOKEN present", {
-  tmpdir      <- withr::local_tempdir()
-  absent_path <- file.path(tmpdir, "nonexistent_token")
+test_that(".hf_cli_binary() falls back to 'hf' when huggingface-cli absent", {
+  shim_dir <- withr::local_tempdir()
+  # Only provide 'hf', not 'huggingface-cli'
+  fake_hf <- file.path(shim_dir, "hf")
+  writeLines("#!/bin/sh\necho 'fake-hf'", fake_hf)
+  Sys.chmod(fake_hf, mode = "0755")
 
-  withr::with_envvar(c(HF_TOKEN = ""), {
+  # Override PATH so 'which huggingface-cli' fails but 'which hf' succeeds
+  withr::with_envvar(c(PATH = paste0(shim_dir, ":", Sys.getenv("PATH"))), {
+    result <- llmtelemetry:::.hf_cli_binary()
+    expect_equal(result, "hf")
+  })
+})
+
+test_that(".hf_cli_binary() aborts when neither binary is found", {
+  # Use a PATH with no huggingface-cli or hf
+  empty_dir <- withr::local_tempdir()
+  withr::with_envvar(c(PATH = empty_dir), {
     expect_error(
-      llmtelemetry:::.hf_resolve_token_path(absent_path, tmpdir),
-      regexp = "HuggingFace token not found"
+      llmtelemetry:::.hf_cli_binary(),
+      regexp = "HuggingFace CLI not found"
     )
   })
 })
 
-test_that("hf_push_telemetry() dry-run succeeds with HF_TOKEN env var (no local token file)", {
-  # Simulate a CI environment where no local token file exists.
-  # Because push = FALSE (dry-run) the token resolver is not reached —
-  # the function returns before the live-push block.  This test verifies
-  # the dry-run path is unaffected by the absence of the token file.
+# ---------------------------------------------------------------------------
+# Test 6: Live-push path invokes huggingface-cli with correct args (mocked)
+# ---------------------------------------------------------------------------
+
+test_that("hf_push_telemetry() push=TRUE calls huggingface-cli upload with correct args", {
+  # Strategy: shim the PATH with a fake huggingface-cli that captures its
+  # argv to a temp file and exits 0, so hf_push_telemetry(push=TRUE) runs
+  # without any network call.
+
+  shim_dir <- withr::local_tempdir()
+  argv_log <- file.path(shim_dir, "argv.txt")
+
+  fake_cli <- file.path(shim_dir, "huggingface-cli")
+  writeLines(
+    c("#!/bin/sh",
+      paste0("echo \"$@\" >> '", argv_log, "'"),
+      "exit 0"),
+    fake_cli
+  )
+  Sys.chmod(fake_cli, mode = "0755")
+
   tmpdir        <- withr::local_tempdir()
   sessions_path <- .make_test_parquet(.clean_sessions(), tmpdir)
   costs_path    <- .make_test_parquet(.clean_costs(),    tmpdir)
-  absent_token  <- file.path(tmpdir, "no_token_here")
 
-  # No HF_TOKEN in env, no file — dry-run must still succeed (token not needed)
-  result <- hf_push_telemetry(
-    sessions_parquet = sessions_path,
-    costs_parquet    = costs_path,
-    token_path       = absent_token,
-    push             = FALSE   # dry-run: token path never checked
-  )
-
-  expect_true(result$dry_run)
-  expect_equal(result$sessions_rows, 2L)
-})
-
-# ---------------------------------------------------------------------------
-# Test 6: GIT_ASKPASS helper returns token for BOTH Username and Password
-#
-# HuggingFace token-auth requires the token as the username.  Supplying the
-# repo owner triggers the deprecated account-password path (#212 regression).
-# The helper is now prompt-agnostic: same token for Username and Password.
-# ---------------------------------------------------------------------------
-
-test_that(".hf_make_askpass() returns bare token for Username prompt", {
-  tmpdir     <- withr::local_tempdir()
-  token_file <- file.path(tmpdir, "token")
-  writeLines("fake-token-value", token_file)
-
-  script <- llmtelemetry:::.hf_make_askpass(
-    token_path = token_file,
-    workdir    = tmpdir,
-    hf_repo    = "JohnGavin/llmtelemetry-metrics"
-  )
-
-  # Username prompt must return the token, NOT the repo owner
-  result <- system2(script, args = "Username for 'https://huggingface.co'",
-                    stdout = TRUE, stderr = FALSE)
-  expect_equal(result, "fake-token-value")
-})
-
-test_that(".hf_make_askpass() returns bare token for Password prompt", {
-  tmpdir     <- withr::local_tempdir()
-  token_file <- file.path(tmpdir, "token")
-  # Write token without trailing newline (trimmed, as CI path produces)
-  writeLines("fake-token-value", token_file)
-
-  script <- llmtelemetry:::.hf_make_askpass(
-    token_path = token_file,
-    workdir    = tmpdir,
-    hf_repo    = "JohnGavin/llmtelemetry-metrics"
-  )
-
-  # Password prompt must return the token (no trailing newline — #214 safety)
-  result <- system2(script, args = "Password for 'https://huggingface.co'",
-                    stdout = TRUE, stderr = FALSE)
-  # writeLines adds a newline; system2 stdout strips trailing newlines per line
-  expect_equal(result, "fake-token-value")
-})
-
-test_that(".hf_make_askpass() returns token for any unknown prompt (prompt-agnostic)", {
-  tmpdir     <- withr::local_tempdir()
-  token_file <- file.path(tmpdir, "token")
-  writeLines("my-hf-tok", token_file)
-
-  script <- llmtelemetry:::.hf_make_askpass(
-    token_path = token_file,
-    workdir    = tmpdir,
-    hf_repo    = "MyOrg/my-dataset-repo"
-  )
-
-  # Any unknown prompt also gets the token (hf_repo is ignored — no owner logic)
-  result <- system2(script, args = "Some other prompt",
-                    stdout = TRUE, stderr = FALSE)
-  expect_equal(result, "my-hf-tok")
-})
-
-# ---------------------------------------------------------------------------
-# Test 7: Token trimming — trailing whitespace stripped before writing
-# ---------------------------------------------------------------------------
-
-test_that(".hf_resolve_token_path() trims trailing newline from HF_TOKEN env var", {
-  tmpdir      <- withr::local_tempdir()
-  absent_path <- file.path(tmpdir, "nonexistent_token")
-
-  # Simulate a token with a trailing newline (common from gh secret set)
-  withr::with_envvar(c(HF_TOKEN = "my-real-token\n"), {
-    result <- llmtelemetry:::.hf_resolve_token_path(absent_path, tmpdir)
-
-    # readLines strips the newline when reading; use readBin to confirm the
-    # file truly contains no trailing newline byte on disk.
-    raw_bytes <- readBin(result, what = "raw", n = 100L)
-    file_str  <- rawToChar(raw_bytes)
-    # File must contain exactly the token with no trailing \n or \r
-    expect_false(grepl("[\r\n]", file_str),
-      info = "Token file must contain no newline bytes (root cause of HF auth failure)")
-    # Sanity: content equals the bare token
-    expect_equal(trimws(file_str, which = "both"), "my-real-token")
+  withr::with_envvar(c(PATH = paste0(shim_dir, ":", Sys.getenv("PATH"))), {
+    result <- hf_push_telemetry(
+      sessions_parquet = sessions_path,
+      costs_parquet    = costs_path,
+      hf_repo          = "JohnGavin/llmtelemetry-metrics",
+      push             = TRUE
+    )
   })
+
+  # Result must report push (not dry-run)
+  expect_false(result$dry_run)
+  expect_equal(result$hf_repo, "JohnGavin/llmtelemetry-metrics")
+  expect_equal(result$sessions_rows, 2L)
+  expect_equal(result$costs_rows, 2L)
+
+  # Verify CLI was called with expected arguments
+  expect_true(file.exists(argv_log),
+    info = "huggingface-cli shim must have been invoked")
+  logged <- readLines(argv_log)
+  expect_length(logged, 1L)
+
+  # Args must include: upload, repo_id, path, ., --repo-type, dataset,
+  # --commit-message
+  expect_match(logged, "upload")
+  expect_match(logged, "JohnGavin/llmtelemetry-metrics")
+  expect_match(logged, "--repo-type dataset")
+  expect_match(logged, "--commit-message")
 })
 
-test_that(".hf_make_askpass() Password branch strips trailing newline from token file", {
-  # Root cause regression test: if the token file on disk has a trailing
-  # newline (e.g. written by huggingface-cli or an old writeLines() call),
-  # the askpass helper must NOT pass it through to git.
-  # "remote: Password authentication in git is no longer supported" = HF
-  # received "hf_xxx\n" as the password — this test prevents recurrence.
-  tmpdir     <- withr::local_tempdir()
-  token_file <- file.path(tmpdir, "token_with_newline")
-
-  # Deliberately write a token file WITH a trailing newline
-  cat("hf_test_token_abc\n", file = token_file, sep = "")
-
-  script <- llmtelemetry:::.hf_make_askpass(
-    token_path = token_file,
-    workdir    = tmpdir,
-    hf_repo    = "JohnGavin/llmtelemetry-metrics"
+test_that("hf_push_telemetry() push=TRUE aborts when CLI exits non-zero", {
+  # Shim that exits 1 (simulates upload failure)
+  shim_dir <- withr::local_tempdir()
+  fake_cli <- file.path(shim_dir, "huggingface-cli")
+  writeLines(
+    c("#!/bin/sh",
+      "echo 'simulated upload error' >&2",
+      "exit 1"),
+    fake_cli
   )
+  Sys.chmod(fake_cli, mode = "0755")
 
-  # system2() stdout captures lines (strips trailing newline per line — that is
-  # fine). The key assertion is that stdout is exactly one element equal to the
-  # bare token, NOT two elements (bare token + empty string from the \n).
-  result <- system2(script, args = "Password for 'https://huggingface.co'",
-                    stdout = TRUE, stderr = FALSE)
-  expect_length(result, 1L)
-  expect_equal(result[[1L]], "hf_test_token_abc")
+  tmpdir        <- withr::local_tempdir()
+  sessions_path <- .make_test_parquet(.clean_sessions(), tmpdir)
+  costs_path    <- .make_test_parquet(.clean_costs(),    tmpdir)
+
+  withr::with_envvar(c(PATH = paste0(shim_dir, ":", Sys.getenv("PATH"))), {
+    expect_error(
+      hf_push_telemetry(
+        sessions_parquet = sessions_path,
+        costs_parquet    = costs_path,
+        push             = TRUE
+      ),
+      regexp = "upload failed"
+    )
+  })
 })

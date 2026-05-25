@@ -8,7 +8,7 @@ on:
     - cron: "30 7 * * *"
   workflow_dispatch: {}
 
-# Token has no push authority to this repo — only outbound HF git operations.
+# Token has no push authority to this repo — only outbound HF upload operations.
 permissions:
   contents: read
 
@@ -42,11 +42,12 @@ jobs:
         with:
           fetch-depth: 1
 
-      # git-lfs must be available before the R push script clones the HF repo.
-      - name: Install git-lfs
-        run: |
-          git lfs install
-          git lfs version
+      # Install the huggingface_hub Python package, which provides the
+      # `huggingface-cli` command used by R/hf_push.R for the actual upload.
+      # Authentication is handled automatically via the HF_TOKEN env var —
+      # no git credential helper or ASKPASS script required.
+      - name: Install huggingface_hub CLI
+        run: pip install --quiet --upgrade huggingface_hub
 
       - uses: r-lib/actions/setup-r@v2
         with:
@@ -66,6 +67,7 @@ jobs:
       # -----------------------------------------------------------------------
       # Privacy guard: if any confidential row is detected the script exits
       # non-zero → CI fails closed.  Do NOT suppress this failure.
+      # huggingface-cli reads HF_TOKEN from the environment automatically.
       # -----------------------------------------------------------------------
       - name: Push sanitised telemetry archive to HuggingFace
         env:
