@@ -168,8 +168,8 @@ hf_push_telemetry <- function(
 
   clone_dir <- file.path(workdir, "repo")
 
-  # Build the GIT_ASKPASS helper: a transient prompt-aware shell script.
-  # Username prompt → repo owner; Password prompt → token file.
+  # Build the GIT_ASKPASS helper: a transient prompt-agnostic shell script.
+  # Returns the token for BOTH Username and Password prompts (HF token-auth).
   # The helper is deleted immediately after git clone completes so the file's
   # lifetime is minimised.  NEVER embed the token in the clone URL.
   askpass_script <- .hf_make_askpass(resolved_token, workdir, hf_repo)
@@ -379,19 +379,21 @@ hf_push_telemetry <- function(
 
 #' Create a transient GIT_ASKPASS helper script.
 #'
-#' Writes a minimal shell script that is prompt-aware: when git invokes
-#' `$GIT_ASKPASS "<prompt>"`, the helper checks the first word of the prompt:
-#' - `Username*` → prints the HF repo owner (the part before `/` in `hf_repo`)
-#'   using `printf` without a trailing newline.
-#' - Anything else (the Password prompt) → emits the token via
-#'   `printf '%s' "$(cat <file>)"`.  Command substitution strips trailing
-#'   newlines from the file; `printf %s` adds none.  This ensures git never
-#'   receives `hf_xxx\n` as the password even if the token file on disk
-#'   (e.g. `~/.cache/huggingface/token`) carries a trailing newline.
+#' Writes a minimal shell script that returns the HuggingFace token for
+#' BOTH the Username and Password prompts that git issues during
+#' `git clone`/`git push` over HTTPS.
 #'
-#' HuggingFace git-over-HTTPS requires username = the repo owner and
-#' password = the HF token.  Sending the token as the username causes
-#' "Invalid username or password".
+#' HuggingFace git-over-HTTPS uses **token authentication**: the token must
+#' be supplied as the username (and repeated as the password).  Supplying the
+#' repo owner as the username causes HF to fall back to account-password auth,
+#' which is deprecated and rejected with "Password authentication in git is
+#' no longer supported."
+#'
+#' The helper is prompt-agnostic: regardless of whether git asks for
+#' `Username` or `Password`, it emits `printf '%s' "$(cat <token-file>)"`.
+#' The `printf '%s'` form guarantees no trailing newline, which is required
+#' for git to accept the credential without an empty-line suffix.  This is
+#' the trailing-newline safety introduced in #214.
 #'
 #' The caller is responsible for deleting the script after use.
 #' The token is NEVER read into R memory — it flows only from the token file
@@ -399,30 +401,19 @@ hf_push_telemetry <- function(
 #'
 #' @param token_path Character.  Path to the HF token file.
 #' @param workdir Character.  Directory in which to create the helper.
-#' @param hf_repo Character.  Repository identifier, e.g.
-#'   `"JohnGavin/llmtelemetry-metrics"`.  The owner (part before `/`) is
-#'   embedded in the helper as the git username.
+#' @param hf_repo Character.  Repository identifier (kept for API
+#'   compatibility; no longer used internally now that the username is the
+#'   token rather than the repo owner).
 #' @return Character path to the helper script.
 #' @keywords internal
 .hf_make_askpass <- function(token_path, workdir, hf_repo) {
-  # Derive the repo owner: the substring before the first "/"
-  repo_owner <- sub("/.*$", "", hf_repo)
-
   helper_path <- file.path(workdir, "hf_askpass.sh")
+  # Prompt-agnostic: return the token for both Username and Password prompts.
+  # printf '%s' avoids a trailing newline; "$(cat ...)" reads the token file
+  # at invocation time so the value never enters the R session.
   writeLines(
     c("#!/bin/sh",
-      # Git passes the full prompt string as $1.
-      # "Username for 'https://...'" → return the repo owner (no trailing newline).
-      # "Password for 'https://...'" (or anything else) → cat the token file.
-      "case \"$1\" in",
-      paste0("  Username*) printf '%s' ", shQuote(repo_owner), " ;;"),
-      # Use printf '%s' "$(cat ...)" rather than plain cat: command substitution
-      # strips any trailing newlines from the file, and printf %s adds none.
-      # This is the belt-and-braces guard so even if the token file on disk
-      # somehow carries a trailing newline (e.g. the local ~/.cache/huggingface/token
-      # written by huggingface-cli), git never receives "hf_xxx\n" as the password.
-      paste0("  *)         printf '%s' \"$(cat ", shQuote(token_path), ")\" ;;"),
-      "esac"),
+      paste0("printf '%s' \"$(cat ", shQuote(token_path), ")\"")),
     con = helper_path
   )
   Sys.chmod(helper_path, mode = "0700")
