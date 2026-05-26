@@ -14,6 +14,7 @@ gmail_user <- Sys.getenv("GMAIL_USERNAME")
 gmail_pass <- Sys.getenv("GMAIL_APP_PASSWORD")
 
 recipient <- Sys.getenv("SR_TO", "")
+if (!nzchar(recipient)) recipient <- Sys.getenv("REPORT_RECIPIENT", "")
 if (!nzchar(recipient)) recipient <- gmail_user
 
 emoji   <- if (identical(result, "PASS")) "✅" else "⚠️"

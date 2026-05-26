@@ -72,10 +72,12 @@ if (send_only) {
     port        = 465,
     use_ssl     = TRUE
   )
+  report_to <- Sys.getenv("REPORT_RECIPIENT", "")
+  if (!nzchar(report_to)) report_to <- gmail_user
   tryCatch({
     smtp_send(
       email       = email,
-      to          = gmail_user,
+      to          = report_to,
       from        = gmail_user,
       subject     = sprintf("LLM Telemetry Report - %s", today),
       credentials = smtp_creds
@@ -1283,10 +1285,12 @@ smtp_creds <- creds_envvar(
   use_ssl = TRUE
 )
 
+report_to <- Sys.getenv("REPORT_RECIPIENT", "")
+if (!nzchar(report_to)) report_to <- gmail_user
 tryCatch({
   smtp_send(
     email = email,
-    to = gmail_user,
+    to = report_to,
     from = gmail_user,
     subject = sprintf("LLM Telemetry Report - %s", today),
     credentials = smtp_creds
