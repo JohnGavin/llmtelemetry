@@ -141,6 +141,9 @@ shorten_project <- function(x) {
 # parent project (roborev, ClaudeProbe, sonnet, cc, eval, subagents, worker).
 canonicalize_project <- function(name) {
   if (is.null(name) || is.na(name) || !nzchar(name)) return(NA_character_)
+  # Defensively drop "agent-tooling" label before any dash-to-slash conversion
+  # (the dash in "agent-tooling" would otherwise yield first segment "agent").
+  if (identical(name, "agent-tooling")) return(NA_character_)
 
   # 0a. Reject worktree-suffixed names (e.g. "roborev-worktree-3047898692",
   #    "llm-worktree-1234567890", or paths containing "/worktree/").
@@ -153,12 +156,8 @@ canonicalize_project <- function(name) {
   #     agent worktree hashes recorded as project names by some hooks.
   if (grepl("^[0-9a-f]{12,}$", name)) return(NA_character_)
 
-  # 1a. Bucket agent-tooling tokens: real Claude usage sessions with no
-  #     recoverable parent project. Preserved under "agent-tooling" label.
-  agent_tooling_tokens <- c(
-    "roborev", "ClaudeProbe", "sonnet", "cc", "eval", "subagents", "worker"
-  )
-  if (name %in% agent_tooling_tokens) return("agent-tooling")
+  # 1a. 2026-05-26 user decision: former "agent-tooling" tokens are noise (NA).
+  #     They are handled via meta_only below (reverses the 2026-05-25 bucketing).
 
   # 1b. Explicit single-token remaps: bare token → full canonical project name.
   token_remaps <- c(
@@ -181,7 +180,12 @@ canonicalize_project <- function(name) {
     # Added: user-confirmed noise (demos = demo content, wiki = internal wiki)
     "demos", "wiki",
     # Added: .claude/worktrees/agent sentinel from shorten_project()
-    ".claude/worktrees/agent"
+    ".claude/worktrees/agent",
+    # Added 2026-05-26: former agent-tooling tokens are now treated as noise
+    # (reverses 2026-05-25 bucketing decision). "agent-tooling" itself is added
+    # defensively so any pre-computed stale value re-canonicalizes to NA.
+    "roborev", "ClaudeProbe", "ClaudeProject",
+    "sonnet", "cc", "eval", "subagents", "worker", "agent-tooling"
   )
   if (name %in% meta_only) return(NA_character_)
 
@@ -231,9 +235,7 @@ canonicalize_project <- function(name) {
   first <- parts[1L]
   # Drop purely numeric segments (worktree numeric IDs, e.g. "1020043174")
   if (grepl("^[0-9]+$", first)) return(NA_character_)
-  # Bucket agent-tooling first-segments (e.g. "roborev/worktree/NNN")
-  if (first %in% agent_tooling_tokens) return("agent-tooling")
-  # Drop first segments that are meta-only (e.g. "feat/worktree/NNN")
+  # meta_only now includes former agent-tooling tokens (2026-05-26 decision)
   if (first %in% meta_only) return(NA_character_)
   first
 }
@@ -799,6 +801,8 @@ if (file.exists(cost_src) && file.exists(commits_src)) {
 
     # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
     cost_per_commit <- sanitize_for_public(cost_per_commit)
+    # Exclude confidential/demo projects from public output (#83 Phase B)
+    cost_per_commit <- clean_projects(cost_per_commit)
     write_json(cost_per_commit, file.path(out_dir, "cost_per_commit.json"), auto_unbox = TRUE)
     write_json(cost_per_commit, file.path(extdata, "cost_per_commit.json"), auto_unbox = TRUE)
     cat(sprintf("  -> %d project-day rows\n", nrow(cost_per_commit)))

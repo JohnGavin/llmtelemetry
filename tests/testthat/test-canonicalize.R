@@ -213,13 +213,22 @@ test_that("branch fragment tokens (feat, wt, scope, etc.) return NA", {
   }
 })
 
-test_that("agent-tooling tokens (roborev, sonnet, cc, eval, subagents, worker, ClaudeProbe) bucket to agent-tooling", {
-  # 2026-05-25: these are real Claude sessions, not noise — bucket to agent-tooling.
+test_that("former agent-tooling tokens (roborev, sonnet, cc, eval, subagents, worker, ClaudeProbe) now return NA", {
+  # 2026-05-26: these tokens are noise — drop to NA (reverses 2026-05-25 bucketing).
+  # They have no recoverable parent project and pollute by-project plots.
   agent_tooling <- c("roborev", "ClaudeProbe", "sonnet", "cc", "eval", "subagents", "worker")
   for (tok in agent_tooling) {
-    expect_equal(.canonicalize_project_local(tok), "agent-tooling",
-                 info = sprintf("'%s' should be agent-tooling", tok))
+    expect_equal(.canonicalize_project_local(tok), NA_character_,
+                 info = sprintf("'%s' should be NA", tok))
   }
+})
+
+test_that("ClaudeProject and literal agent-tooling return NA", {
+  # 2026-05-26: ClaudeProject is the Claude Code default project name — noise.
+  # The literal "agent-tooling" is added defensively: any pre-computed stale
+  # value re-canonicalizes to NA rather than passing through.
+  expect_equal(.canonicalize_project_local("ClaudeProject"), NA_character_)
+  expect_equal(.canonicalize_project_local("agent-tooling"), NA_character_)
 })
 
 test_that("network remaps to irish_buoy_network", {
@@ -266,10 +275,10 @@ test_that("vectorised branch-suffix stripping works across a mixed column", {
     "llm-feat-cc-20260521-092847",          # should give llm
     "llm-wt-193",                           # should give llm
     "llmtelemetry-feat-cc-20260524-102501", # should give llmtelemetry
-    "cc",                                   # agent-tooling bucket (not pure noise)
+    "cc",                                   # 2026-05-26: now NA (noise, not agent-tooling)
     "ab6f701adcaed79e9",                    # hex hash -> NA
     "footbet"                               # real project unchanged
   )
-  expected <- c("llm", "llm", "llmtelemetry", "agent-tooling", NA_character_, "footbet")
+  expected <- c("llm", "llm", "llmtelemetry", NA_character_, NA_character_, "footbet")
   expect_equal(.canonicalize_project_local(input), expected)
 })

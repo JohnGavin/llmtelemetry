@@ -174,6 +174,33 @@ append_sessions_from_staging <- function(
     }, numeric(1L))
   }
 
+  # Helper: redact private absolute paths from working_dir values.
+  # Strips the user-home prefix so e.g. "/Users/johngavin/docs_gh/foo"
+  # becomes "docs_gh/foo".  Falls back to NA_character_ when a forbidden
+  # pattern still matches after prefix-stripping (fail-safe).  NA inputs
+  # are preserved as NA.  See forbidden_patterns in sensitive_patterns.R.
+  # @keywords internal
+  .redact_working_dir <- function(x) {
+    vapply(x, function(v) {
+      if (is.na(v)) return(NA_character_)
+      v2 <- v
+      v2 <- sub("^/Users/[^/]+/",      "", v2)
+      v2 <- sub("^/private/tmp/[^/]+/", "", v2)
+      v2 <- sub("^/private/tmp/[^/]+$", "", v2)
+      v2 <- sub("^/tmp/[^/]+/",         "", v2)
+      v2 <- sub("^/tmp/[^/]+$",         "", v2)
+      # Fail-safe: if any forbidden pattern still matches, redact entirely
+      forbidden <- c(
+        "Users-johngavin", "/Users/", "/private/", "/tmp/", "/var/",
+        "-private-tmp-", "-tmp-", "-worktree-", "worktree-agent-", "johngavin"
+      )
+      if (any(vapply(forbidden, function(p) grepl(p, v2, perl = TRUE), logical(1L)))) {
+        return(NA_character_)
+      }
+      v2
+    }, character(1L), USE.NAMES = FALSE)
+  }
+
   raw_project  <- chr_field(session_events$payload, "project")
   started_at_s <- chr_field(session_events$payload, "started_at")
   ended_at_s   <- chr_field(session_events$payload, "ended_at")
@@ -279,6 +306,13 @@ append_sessions_from_staging <- function(
     rbind(existing, new_rows)
   } else {
     new_rows
+  }
+
+  # Redact working_dir on ALL rows (new + legacy) before persisting.
+  # This cleans up any pre-existing absolute paths that may have been
+  # written before the sanitization was in place (#sanitize-working-dir).
+  if ("working_dir" %in% names(combined)) {
+    combined$working_dir <- .redact_working_dir(combined$working_dir)
   }
 
   tmp_path <- paste0(parquet_path, ".tmp")

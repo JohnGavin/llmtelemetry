@@ -62,15 +62,22 @@ test_that("agent-worktree ID prefix is stripped to reveal project", {
   expect_equal(canonicalize_project("kSBNJFuu6G/repo/llmtelemetry/vignettes"), "llmtelemetry")
 })
 
-# ── agent-tooling bucket ───────────────────────────────────────────────────────
-test_that("agent-tooling tokens bucket to agent-tooling (not NA)", {
-  expect_equal(canonicalize_project("roborev"),    "agent-tooling")
-  expect_equal(canonicalize_project("sonnet"),     "agent-tooling")
-  expect_equal(canonicalize_project("cc"),         "agent-tooling")
-  expect_equal(canonicalize_project("eval"),       "agent-tooling")
-  expect_equal(canonicalize_project("subagents"),  "agent-tooling")
-  expect_equal(canonicalize_project("worker"),     "agent-tooling")
-  expect_equal(canonicalize_project("ClaudeProbe"), "agent-tooling")
+# ── former agent-tooling tokens → NA ──────────────────────────────────────────
+test_that("former agent-tooling tokens now return NA (2026-05-26 decision reverses 2026-05-25)", {
+  expect_equal(canonicalize_project("roborev"),     NA_character_)
+  expect_equal(canonicalize_project("sonnet"),      NA_character_)
+  expect_equal(canonicalize_project("cc"),          NA_character_)
+  expect_equal(canonicalize_project("eval"),        NA_character_)
+  expect_equal(canonicalize_project("subagents"),   NA_character_)
+  expect_equal(canonicalize_project("worker"),      NA_character_)
+  expect_equal(canonicalize_project("ClaudeProbe"), NA_character_)
+})
+
+test_that("ClaudeProject and literal agent-tooling return NA", {
+  # ClaudeProject is the Claude Code default project name — treated as noise.
+  # The literal "agent-tooling" re-canonicalizes to NA defensively.
+  expect_equal(canonicalize_project("ClaudeProject"), NA_character_)
+  expect_equal(canonicalize_project("agent-tooling"), NA_character_)
 })
 
 # ── meta-only names → NA ───────────────────────────────────────────────────────
@@ -166,8 +173,9 @@ test_that("vectorised call over a column works correctly", {
   input    <- c("llm", "worktree/llm", "D73dOZsvyf/repo", "sonnet",
                 "buoy/network", "data/historical", NA_character_, "footbet/R",
                 "1020043174")
-  expected <- c("llm", "llm",          NA_character_,      "agent-tooling",
-                "irish_buoy_network", "historical",        NA_character_, "footbet",
+  # 2026-05-26: "sonnet" now returns NA (reverses 2026-05-25 agent-tooling bucket)
+  expected <- c("llm", "llm",       NA_character_, NA_character_,
+                "irish_buoy_network", "historical", NA_character_, "footbet",
                 NA_character_)
   result   <- canonicalize_project(input)
   expect_equal(result, expected)

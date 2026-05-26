@@ -3613,20 +3613,32 @@ server <- function(input, output, session) {
       return(ec_empty("roborev_resolution.json not yet available", h = "300px"))
     }
     weekly_raw <- roborev_resolution_raw$weekly
-    if (is.null(weekly_raw) || length(weekly_raw) == 0) {
+    weekly_empty <- is.null(weekly_raw) ||
+      (is.data.frame(weekly_raw) && nrow(weekly_raw) == 0L) ||
+      (!is.data.frame(weekly_raw) && length(weekly_raw) == 0L)
+    if (weekly_empty) {
       return(ec_empty("No weekly resolution trend data yet", h = "300px"))
     }
-    # Convert list-of-lists to data frame
-    wdf <- do.call(rbind, lapply(weekly_raw, function(r) {
-      data.frame(
-        week_start      = as.character(r$week_start),
-        resolved        = as.numeric(r$resolved),
-        open            = as.numeric(r$open),
-        total           = as.numeric(r$total),
-        resolution_rate = as.numeric(r$resolution_rate),
-        stringsAsFactors = FALSE
-      )
-    }))
+    # load_json() uses fromJSON(simplifyDataFrame = TRUE): a JSON array of objects
+    # arrives as a data.frame. Accept either a data.frame or a list-of-lists.
+    wdf <- if (is.data.frame(weekly_raw)) {
+      weekly_raw
+    } else {
+      do.call(rbind, lapply(weekly_raw, function(r) {
+        data.frame(
+          week_start      = as.character(r$week_start),
+          resolved        = as.numeric(r$resolved),
+          open            = as.numeric(r$open),
+          total           = as.numeric(r$total),
+          resolution_rate = as.numeric(r$resolution_rate),
+          stringsAsFactors = FALSE
+        )
+      }))
+    }
+    # Coerce to expected types (data.frame branch may carry integer/character cols).
+    wdf$week_start      <- as.character(wdf$week_start)
+    wdf$resolved        <- as.numeric(wdf$resolved)
+    wdf$open            <- as.numeric(wdf$open)
     wdf <- wdf[order(wdf$week_start), ]
 
     # Line chart: resolved vs open per week (NOT a bar/stacked bar per viz rules)
@@ -3677,20 +3689,46 @@ server <- function(input, output, session) {
   safe_ap <- function(raw) {
     if (is.null(raw) || !is.list(raw)) return(NULL)
     agents <- raw$agents
-    if (is.null(agents) || length(agents) == 0L) return(NULL)
-    # Convert list-of-lists to data frame
-    do.call(rbind, lapply(agents, function(r) {
-      data.frame(
-        agent       = as.character(r$agent),
-        n_runs      = as.integer(r$n_runs),
-        pass_count  = as.integer(r$pass_count),
-        fail_count  = as.integer(r$fail_count),
-        error_count = as.integer(r$error_count),
-        pass_rate   = as.numeric(r$pass_rate),
-        cost_per_review = if (!is.null(r$cost_per_review_usd)) as.numeric(r$cost_per_review_usd) else NA_real_,
-        stringsAsFactors = FALSE
-      )
-    }))
+    if (is.null(agents)) return(NULL)
+    # load_json() uses fromJSON(simplifyDataFrame = TRUE), so a JSON array of
+    # objects arrives as a data.frame, not a list-of-lists. lapply() over a
+    # data.frame iterates its columns (atomic vectors), so r$agent would throw
+    # "$ operator is invalid for atomic vectors". Accept either shape.
+    df <- if (is.data.frame(agents)) {
+      if (nrow(agents) == 0L) return(NULL)
+      agents
+    } else if (length(agents) > 0L) {
+      do.call(rbind, lapply(agents, function(r) {
+        data.frame(
+          agent               = as.character(r$agent),
+          n_runs              = as.integer(r$n_runs),
+          pass_count          = as.integer(r$pass_count),
+          fail_count          = as.integer(r$fail_count),
+          error_count         = as.integer(r$error_count),
+          pass_rate           = as.numeric(r$pass_rate),
+          cost_per_review_usd = if (!is.null(r$cost_per_review_usd)) as.numeric(r$cost_per_review_usd) else NA_real_,
+          stringsAsFactors    = FALSE
+        )
+      }))
+    } else {
+      return(NULL)
+    }
+    # Normalise column names/types from whichever shape arrived.
+    pick_num <- function(col) if (col %in% names(df)) as.numeric(df[[col]]) else NA_real_
+    pick_int <- function(col) if (col %in% names(df)) as.integer(df[[col]]) else NA_integer_
+    cost <- if ("cost_per_review_usd" %in% names(df)) as.numeric(df[["cost_per_review_usd"]])
+            else if ("cost_per_review" %in% names(df)) as.numeric(df[["cost_per_review"]])
+            else NA_real_
+    data.frame(
+      agent           = as.character(df$agent),
+      n_runs          = pick_int("n_runs"),
+      pass_count      = pick_int("pass_count"),
+      fail_count      = pick_int("fail_count"),
+      error_count     = pick_int("error_count"),
+      pass_rate       = pick_num("pass_rate"),
+      cost_per_review = cost,
+      stringsAsFactors = FALSE
+    )
   }
 
   output$rv_agent_perf_chart <- renderUI({
