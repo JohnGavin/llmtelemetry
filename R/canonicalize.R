@@ -75,16 +75,15 @@
 #' @keywords internal
 .canonicalize_project_local_scalar <- function(name) {
   if (is.null(name) || is.na(name) || !nzchar(name)) return(NA_character_)
+  # Defensively drop the literal "agent-tooling" label BEFORE shorten, because
+  # the dash in "agent-tooling" would otherwise be converted to a slash by
+  # .shorten_project_local(), yielding "agent/tooling" → first segment "agent".
+  if (identical(name, "agent-tooling")) return(NA_character_)
   # Convert dash-form project names emitted by the hook to slash-form first
   name <- .shorten_project_local(name)
 
-  # Tokens that represent real Claude usage sessions (agent tooling, model
-  # evaluation, etc.) but have NO recoverable parent project name.  These are
-  # bucketed under "agent-tooling" rather than dropped as NA.
-  agent_tooling_tokens <- c(
-    "roborev", "ClaudeProbe", "sonnet", "cc", "eval", "subagents", "worker"
-  )
-  if (name %in% agent_tooling_tokens) return("agent-tooling")
+  # 2026-05-26 user decision: former "agent-tooling" tokens are noise (NA).
+  # They are handled via meta_only below (reverses the 2026-05-25 bucketing).
 
   # Explicit single-token remaps: bare token recorded as project, remap to
   # the full canonical project name.
@@ -112,7 +111,12 @@
     # Added: user-confirmed noise (demos = demo content, wiki = internal wiki)
     "demos", "wiki",
     # Added: .claude/worktrees/agent sentinel returned by .shorten_project_local
-    ".claude/worktrees/agent"
+    ".claude/worktrees/agent",
+    # Added 2026-05-26: former agent-tooling tokens are now treated as noise
+    # (reverses 2026-05-25 bucketing decision). "agent-tooling" itself is added
+    # defensively so any pre-computed stale value re-canonicalizes to NA.
+    "roborev", "ClaudeProbe", "ClaudeProject",
+    "sonnet", "cc", "eval", "subagents", "worker", "agent-tooling"
   )
   if (name %in% meta_only) return(NA_character_)
 
@@ -160,8 +164,7 @@
   if (length(parts) == 0L || !nzchar(parts[1L])) return(NA_character_)
   first <- parts[1L]
   if (grepl("^[0-9]+$", first)) return(NA_character_)
-  # Bucket agent-tooling first-segments (e.g. "roborev/worktree/NNN")
-  if (first %in% agent_tooling_tokens) return("agent-tooling")
+  # meta_only now includes former agent-tooling tokens (2026-05-26 decision)
   if (first %in% meta_only) return(NA_character_)
   first
 }
