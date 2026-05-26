@@ -116,7 +116,9 @@
     # (reverses 2026-05-25 bucketing decision). "agent-tooling" itself is added
     # defensively so any pre-computed stale value re-canonicalizes to NA.
     "roborev", "ClaudeProbe", "ClaudeProject",
-    "sonnet", "cc", "eval", "subagents", "worker", "agent-tooling"
+    "sonnet", "cc", "eval", "subagents", "worker", "agent-tooling",
+    # 2026-05-26: 'agent' is an agent-<x> path residual, not a real project
+    "agent"
   )
   if (name %in% meta_only) return(NA_character_)
 
