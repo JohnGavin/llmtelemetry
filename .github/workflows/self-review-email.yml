@@ -20,6 +20,10 @@ on:
         description: "extra detail line"
         required: false
         default: ""
+      to:
+        description: "Override recipient (default: GMAIL_USERNAME)"
+        required: false
+        default: ""
 
 jobs:
   send:
@@ -31,6 +35,7 @@ jobs:
       SR_COUNT: ${{ github.event.inputs.count }}
       SR_RUN_DATE: ${{ github.event.inputs.run_date }}
       SR_DETAILS: ${{ github.event.inputs.details }}
+      SR_TO: ${{ github.event.inputs.to }}
     steps:
       - uses: actions/checkout@v4
       - uses: r-lib/actions/setup-r@v2
