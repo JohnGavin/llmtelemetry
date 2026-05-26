@@ -196,3 +196,9 @@ test_that("fragment-noise tokens (non-agent-tooling) return NA", {
                  info = sprintf("'%s' should be NA", tok))
   }
 })
+
+test_that("'agent' residual token returns NA (2026-05-26: agent-<x> path residual)", {
+  # User confirmed 2026-05-26: "agent" is NOT a real project — it is a noise
+  # token produced when an agent-<hex> worktree path collapses to its first segment.
+  expect_equal(canonicalize_project("agent"), NA_character_)
+})
