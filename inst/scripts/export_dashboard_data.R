@@ -248,8 +248,12 @@ canonicalize_project <- function(name) {
 canonicalize_session_project <- function(raw) {
   canonicalize_project(shorten_project(raw))
 }
-# Vectorise so it can be applied to a column directly:
+# Vectorise so they can be applied to a column directly. canonicalize_session_project
+# MUST also be vectorised: it is the function actually applied to project columns
+# (cost_by_project, unified_sessions, tokens). Its shorten_project() call is scalar-only,
+# so on a vector it errors with "'length = N' in coercion to 'logical(1)'".
 canonicalize_project <- Vectorize(canonicalize_project, USE.NAMES = FALSE)
+canonicalize_session_project <- Vectorize(canonicalize_session_project, USE.NAMES = FALSE)
 
 #' Sanitize a data frame before committing to public inst/extdata/ (#936)
 #'
