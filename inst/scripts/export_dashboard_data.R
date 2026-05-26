@@ -248,8 +248,12 @@ canonicalize_project <- function(name) {
 canonicalize_session_project <- function(raw) {
   canonicalize_project(shorten_project(raw))
 }
-# Vectorise so it can be applied to a column directly:
+# Vectorise so they can be applied to a column directly. canonicalize_session_project
+# MUST also be vectorised: it is the function actually applied to project columns
+# (cost_by_project, unified_sessions, tokens). Its shorten_project() call is scalar-only,
+# so on a vector it errors with "'length = N' in coercion to 'logical(1)'".
 canonicalize_project <- Vectorize(canonicalize_project, USE.NAMES = FALSE)
+canonicalize_session_project <- Vectorize(canonicalize_session_project, USE.NAMES = FALSE)
 
 #' Sanitize a data frame before committing to public inst/extdata/ (#936)
 #'
@@ -490,13 +494,24 @@ if (file.exists(gemini_db)) {
 # Then copies codex_daily.json and codex_sessions.json to vignettes/data/.
 cat("Refreshing Codex usage data...\n")
 codex_refresh_ok <- FALSE
-tryCatch({
-  source(here::here("inst", "scripts", "refresh_codex_cache.R"))
+# Run refresh_codex_cache.R as a SUBPROCESS, not via source(): it calls
+# quit(status = 0L) on the "no new turns" path, which — when sourced —
+# terminates THIS export process before the dashboard-data sections run.
+# A child Rscript isolates that quit().
+codex_script <- here::here("inst", "scripts", "refresh_codex_cache.R")
+codex_rc <- tryCatch(
+  system2("Rscript", args = shQuote(codex_script), stdout = "", stderr = ""),
+  error = function(e) {
+    cat(sprintf("  -> refresh_codex_cache.R error: %s\n", conditionMessage(e)))
+    1L
+  }
+)
+if (identical(as.integer(codex_rc), 0L)) {
   codex_refresh_ok <- TRUE
   cat("  -> refresh_codex_cache.R completed\n")
-}, error = function(e) {
-  cat(sprintf("  -> refresh_codex_cache.R error: %s\n", conditionMessage(e)))
-})
+} else {
+  cat(sprintf("  -> refresh_codex_cache.R exited non-zero (%s); continuing export\n", codex_rc))
+}
 
 codex_daily_src    <- file.path(extdata, "codex_daily.json")
 codex_sessions_src <- file.path(extdata, "codex_sessions.json")
