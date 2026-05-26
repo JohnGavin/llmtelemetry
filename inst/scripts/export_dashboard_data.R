@@ -490,13 +490,24 @@ if (file.exists(gemini_db)) {
 # Then copies codex_daily.json and codex_sessions.json to vignettes/data/.
 cat("Refreshing Codex usage data...\n")
 codex_refresh_ok <- FALSE
-tryCatch({
-  source(here::here("inst", "scripts", "refresh_codex_cache.R"))
+# Run refresh_codex_cache.R as a SUBPROCESS, not via source(): it calls
+# quit(status = 0L) on the "no new turns" path, which — when sourced —
+# terminates THIS export process before the dashboard-data sections run.
+# A child Rscript isolates that quit().
+codex_script <- here::here("inst", "scripts", "refresh_codex_cache.R")
+codex_rc <- tryCatch(
+  system2("Rscript", args = shQuote(codex_script), stdout = "", stderr = ""),
+  error = function(e) {
+    cat(sprintf("  -> refresh_codex_cache.R error: %s\n", conditionMessage(e)))
+    1L
+  }
+)
+if (identical(as.integer(codex_rc), 0L)) {
   codex_refresh_ok <- TRUE
   cat("  -> refresh_codex_cache.R completed\n")
-}, error = function(e) {
-  cat(sprintf("  -> refresh_codex_cache.R error: %s\n", conditionMessage(e)))
-})
+} else {
+  cat(sprintf("  -> refresh_codex_cache.R exited non-zero (%s); continuing export\n", codex_rc))
+}
 
 codex_daily_src    <- file.path(extdata, "codex_daily.json")
 codex_sessions_src <- file.path(extdata, "codex_sessions.json")
