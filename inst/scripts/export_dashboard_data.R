@@ -801,6 +801,8 @@ if (file.exists(cost_src) && file.exists(commits_src)) {
 
     # Sanitize before public commit: replace raw project with canonical, drop orphans (#936)
     cost_per_commit <- sanitize_for_public(cost_per_commit)
+    # Exclude confidential/demo projects from public output (#83 Phase B)
+    cost_per_commit <- clean_projects(cost_per_commit)
     write_json(cost_per_commit, file.path(out_dir, "cost_per_commit.json"), auto_unbox = TRUE)
     write_json(cost_per_commit, file.path(extdata, "cost_per_commit.json"), auto_unbox = TRUE)
     cat(sprintf("  -> %d project-day rows\n", nrow(cost_per_commit)))
