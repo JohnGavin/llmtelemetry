@@ -34,6 +34,9 @@ library(here)
 source(file.path(here::here(), "R", "email_helpers.R"))
 # Source CodexBar parsers (parse_codexbar_usage, parse_codexbar_cost).
 source(file.path(here::here(), "R", "codexbar.R"))
+# Source project-name canonicalization (canonicalize_project()).
+# Provides canonicalize_project() used to clean per-project cost/token breakdowns.
+source(file.path(here::here(), "R", "canonicalize.R"))
 
 # --send-only: read the already-built + QA-validated HTML and send it.
 # The CI send step uses this flag so the emailed bytes == the validated bytes.
@@ -159,6 +162,44 @@ parse_daily <- function(json) {
 }
 
 daily_data <- parse_daily(daily_raw)
+
+# Canonicalize project names in daily_data so the per-project email sections
+# (e.g. "Top Projects by Cost") never show branch/worktree fragments such as
+# "feat", "cc", "sonnet", or bare hex hashes.
+# Steps: (1) map each project to its canonical name; (2) drop rows whose
+# canonical result is NA (pure noise); (3) re-aggregate so that multiple raw
+# aliases that collapse to the same canonical name are summed.
+if (!is.null(daily_data) && nrow(daily_data) > 0 && "project" %in% names(daily_data)) {
+  daily_data$project <- canonicalize_project(daily_data$project)
+  # Drop rows with NA canonical project (noise: branch fragments, hashes, etc.)
+  daily_data <- daily_data[!is.na(daily_data$project), , drop = FALSE]
+  # Re-aggregate numeric columns by (project, date) so aliases that collapsed
+  # to the same canonical name are summed rather than listed separately.
+  if (nrow(daily_data) > 0) {
+    num_cols <- names(daily_data)[vapply(daily_data, is.numeric, logical(1L))]
+    non_num  <- setdiff(names(daily_data), c("project", "date", num_cols,
+                                              "modelsUsed"))
+    if (length(num_cols) > 0) {
+      agg_formula <- as.formula(
+        paste(
+          "cbind(", paste(num_cols, collapse = ", "), ") ~ project + date"
+        )
+      )
+      agg <- aggregate(agg_formula, data = daily_data, FUN = sum)
+      # Re-attach modelsUsed (concatenate unique models per project-date)
+      if ("modelsUsed" %in% names(daily_data)) {
+        mu_agg <- aggregate(modelsUsed ~ project + date, data = daily_data,
+                            FUN = function(x) {
+                              all_models <- unlist(x)
+                              unique(all_models[nzchar(all_models)])
+                            })
+        agg <- merge(agg, mu_agg, by = c("project", "date"), all.x = TRUE)
+      }
+      daily_data <- as_tibble(agg)
+    }
+  }
+}
+
 session_data <- if (!is.null(session_raw$sessions)) {
   as_tibble(session_raw$sessions)
 } else NULL
