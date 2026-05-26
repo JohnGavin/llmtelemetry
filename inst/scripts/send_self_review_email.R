@@ -13,6 +13,9 @@ if (!nzchar(run_date)) run_date <- format(Sys.Date())
 gmail_user <- Sys.getenv("GMAIL_USERNAME")
 gmail_pass <- Sys.getenv("GMAIL_APP_PASSWORD")
 
+recipient <- Sys.getenv("SR_TO", "")
+if (!nzchar(recipient)) recipient <- gmail_user
+
 emoji   <- if (identical(result, "PASS")) "✅" else "⚠️"
 subject <- sprintf("%s Overnight self-review: %s (%s)", emoji, result, run_date)
 
@@ -46,7 +49,7 @@ if (nzchar(gmail_user) && nzchar(gmail_pass)) {
   )
   tryCatch({
     smtp_send(
-      email = email, to = gmail_user, from = gmail_user,
+      email = email, to = recipient, from = gmail_user,
       subject = subject, credentials = smtp_creds
     )
     message("Self-review email sent: ", subject)
