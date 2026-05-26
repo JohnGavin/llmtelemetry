@@ -172,3 +172,34 @@
 #' @keywords internal
 .canonicalize_project_local <- Vectorize(.canonicalize_project_local_scalar,
                                          USE.NAMES = FALSE)
+
+#' Canonicalize raw project names recorded by hooks
+#'
+#' Maps raw project-path strings — as recorded by the Claude Code hook into
+#' `unified.duckdb` — to their canonical single-token project name, or
+#' `NA_character_` for pure noise (branch fragments, agent-worktree hashes,
+#' container-directory names).  Real Claude usage sessions with no recoverable
+#' parent project (e.g. `"roborev"`, `"sonnet"`, `"cc"`) are bucketed under
+#' `"agent-tooling"`.
+#'
+#' This is a vectorised wrapper around the internal
+#' `.canonicalize_project_local_scalar()` helper.  It is suitable for use in
+#' scripts that `source()` this file (e.g. `send_daily_email.R`) as well as
+#' in package code.
+#'
+#' @param x Character vector of raw project names (dash-form, slash-form, or
+#'   bare token).
+#' @return Character vector the same length as `x`.  Elements that represent
+#'   noise or agent worktrees are `NA_character_`; agent-tooling sessions are
+#'   `"agent-tooling"`; all others are the canonical single-token project name.
+#'
+#' @examples
+#' canonicalize_project(c("feat", "cc", "sonnet", "ab6f701adcaed79e9",
+#'                         "llm", "footbet"))
+#' # [1] NA             "agent-tooling" "agent-tooling" NA
+#' # [5] "llm"          "footbet"
+#'
+#' @export
+canonicalize_project <- function(x) {
+  .canonicalize_project_local(x)
+}
