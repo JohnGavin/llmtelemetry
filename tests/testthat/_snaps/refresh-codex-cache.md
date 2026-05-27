@@ -36,7 +36,7 @@
 # canonicalize_project snapshot — output for known paths is stable
 
     Code
-      canonicalize_project(paths)
+      canonicalize_project_cwd(paths)
     Output
       [1] "llmtelemetry" "llm"          "mycare"       NA            
 
