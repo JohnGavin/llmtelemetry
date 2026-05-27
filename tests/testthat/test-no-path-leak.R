@@ -34,8 +34,13 @@ base_forbidden <- sensitive_verify_patterns()
 # Additional structural patterns not in the verify set but relevant for the
 # committed-extdata regression gate.
 structural_forbidden <- c(
-  "[A-Za-z0-9]{8,}/repo", # agent-worktree-id/repo style (e.g. "D73dOZsvyf/repo")
-  "[A-Za-z0-9]{8,}-repo", # dash-form agent worktree     (e.g. "D73dOZsvyf-repo")
+  # Agent-worktree identifiers, e.g. "D73dOZsvyf/repo" / "D73dOZsvyf-repo".
+  # Require a DIGIT in the 8+ run AND a trailing word boundary so legitimate
+  # English words ("ephemeral-repos", #237) do NOT false-positive: "ephemeral"
+  # has no digit, and "-repos" is not a word boundary after "repo".
+  # Relies on perl=TRUE (scan_field uses it).
+  "(?=[A-Za-z0-9]*[0-9])[A-Za-z0-9]{8,}/repo\\b", # slash-form agent worktree id
+  "(?=[A-Za-z0-9]*[0-9])[A-Za-z0-9]{8,}-repo\\b", # dash-form agent worktree id
   "pers-NHS",              # specific medical project leak
   "antigravity"            # specific leaked name
 )
@@ -408,6 +413,25 @@ test_that("path-shape catches bare /private/<dir> (no trailing slash) in message
       grepl(p, bare_private_prefix_msg, perl = TRUE), logical(1))),
     label = "bare /private/ with no dir token must NOT match strict_message_patterns"
   )
+})
+
+# ---------------------------------------------------------------------------
+# Regression (#237): tightened -repo / /repo patterns must not false-positive
+# on legitimate hyphenated English words like "ephemeral-repos".
+# ---------------------------------------------------------------------------
+
+test_that("agent-worktree -repo/repo ids match but legit English words do not (#237)", {
+  # Real high-entropy worktree ids MUST still be caught:
+  expect_true(any(vapply(strict_message_patterns,
+    function(p) grepl(p, "merge D73dOZsvyf-repo into main", perl = TRUE), logical(1))),
+    info = "D73dOZsvyf-repo must match")
+  expect_true(any(vapply(strict_message_patterns,
+    function(p) grepl(p, "see D73dOZsvyf/repo path", perl = TRUE), logical(1))),
+    info = "D73dOZsvyf/repo must match")
+  # Legitimate hyphenated English words MUST NOT false-positive:
+  expect_false(any(vapply(strict_message_patterns,
+    function(p) grepl(p, "feat(roborev): ephemeral-repos cleanup script (#217)", perl = TRUE), logical(1))),
+    info = "ephemeral-repos must NOT match")
 })
 
 # ---------------------------------------------------------------------------
