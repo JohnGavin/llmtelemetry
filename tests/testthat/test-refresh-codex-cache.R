@@ -44,6 +44,15 @@ local({
   # suppressMessages suppresses library() startup banners
   suppressMessages(source(tmp, local = FALSE))
   unlink(tmp)
+  # devtools::test() loads the package, which exports its own canonicalize_project()
+  # that takes SHORT names (not full paths). The script version in .GlobalEnv takes
+  # FULL filesystem paths. To prevent the package export shadowing the script version
+  # in the test lookup chain, alias the script's function under a non-conflicting name.
+  if (exists("canonicalize_project", envir = .GlobalEnv, inherits = FALSE)) {
+    assign("canonicalize_project_cwd",
+           get("canonicalize_project", envir = .GlobalEnv, inherits = FALSE),
+           envir = .GlobalEnv)
+  }
 })
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -308,9 +317,9 @@ test_that("aggregate_daily returns empty tibble for empty input", {
 # ── canonicalize_project (cwd sanitisation) ───────────────────────────────────
 
 test_that("canonicalize_project extracts project name from /docs_gh/llmtelemetry path", {
-  skip_if(is.null(canonicalize_project), "canonicalize_project not found")
+  skip_if(is.null(canonicalize_project_cwd), "canonicalize_project_cwd not found")
 
-  result <- canonicalize_project("/Users/johngavin/docs_gh/llmtelemetry/foo/bar")
+  result <- canonicalize_project_cwd("/Users/johngavin/docs_gh/llmtelemetry/foo/bar")
   expect_equal(result, "llmtelemetry")
 })
 
@@ -342,14 +351,14 @@ test_that("canonicalize_project handles docs_gh/proj/pers/<project> paths", {
 })
 
 test_that("canonicalize_project handles NA and empty cwd", {
-  skip_if(is.null(canonicalize_project), "canonicalize_project not found")
+  skip_if(is.null(canonicalize_project_cwd), "canonicalize_project_cwd not found")
 
-  expect_true(is.na(canonicalize_project(NA_character_)))
-  expect_true(is.na(canonicalize_project("")))
+  expect_true(is.na(canonicalize_project_cwd(NA_character_)))
+  expect_true(is.na(canonicalize_project_cwd("")))
 })
 
 test_that("canonicalize_project snapshot — output for known paths is stable", {
-  skip_if(is.null(canonicalize_project), "canonicalize_project not found")
+  skip_if(is.null(canonicalize_project_cwd), "canonicalize_project_cwd not found")
 
   paths <- c(
     "/Users/johngavin/docs_gh/llmtelemetry",
@@ -357,7 +366,7 @@ test_that("canonicalize_project snapshot — output for known paths is stable", 
     "/Users/johngavin/docs_gh/mycare",
     NA_character_
   )
-  expect_snapshot(canonicalize_project(paths))
+  expect_snapshot(canonicalize_project_cwd(paths))
 })
 
 # ── stale pricing warning ─────────────────────────────────────────────────────
