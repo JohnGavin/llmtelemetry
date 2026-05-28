@@ -1,0 +1,230 @@
+{
+  "generated_at": "2026-05-27T22:00:00Z",
+  "schema_version": "1.0",
+  "windows": {
+    "1d": {
+      "label": "Last 1 day",
+      "period_start": "2026-05-26T22:00:00Z",
+      "period_end": "2026-05-27T22:00:00Z",
+      "total_reviews": 8,
+      "total_closed": 3,
+      "resolution_rate": 0.375,
+      "verdict_counts": {
+        "closed": 3,
+        "open": 5
+      },
+      "severity_counts": {
+        "critical": 1,
+        "high": 3,
+        "medium": 3,
+        "low": 1
+      },
+      "median_hours_to_close": 2.5,
+      "p90_hours_to_close": 6.1,
+      "p99_hours_to_close": 9.8,
+      "by_verdict": [
+        { "verdict": "fixed",    "n": 2, "pct": 0.250 },
+        { "verdict": "wontfix",  "n": 1, "pct": 0.125 },
+        { "verdict": "open",     "n": 5, "pct": 0.625 }
+      ],
+      "outliers": [
+        {
+          "review_id": "rev-2026-05-27-0001",
+          "repo": "llmtelemetry",
+          "file": "R/server.R",
+          "severity": "critical",
+          "hours_open": 18.2,
+          "verdict": "open",
+          "summary": "NA dereference in reactive pipeline on empty data"
+        }
+      ]
+    },
+    "3d": {
+      "label": "Last 3 days",
+      "period_start": "2026-05-24T22:00:00Z",
+      "period_end": "2026-05-27T22:00:00Z",
+      "total_reviews": 27,
+      "total_closed": 14,
+      "resolution_rate": 0.519,
+      "verdict_counts": {
+        "closed": 14,
+        "open": 13
+      },
+      "severity_counts": {
+        "critical": 3,
+        "high": 10,
+        "medium": 11,
+        "low": 3
+      },
+      "median_hours_to_close": 3.2,
+      "p90_hours_to_close": 14.5,
+      "p99_hours_to_close": 28.1,
+      "by_verdict": [
+        { "verdict": "fixed",    "n": 11, "pct": 0.407 },
+        { "verdict": "wontfix",  "n": 3,  "pct": 0.111 },
+        { "verdict": "open",     "n": 13, "pct": 0.481 }
+      ],
+      "outliers": [
+        {
+          "review_id": "rev-2026-05-25-0042",
+          "repo": "llm",
+          "file": ".claude/hooks/session_stop.sh",
+          "severity": "high",
+          "hours_open": 41.3,
+          "verdict": "open",
+          "summary": "Unbound variable in launchd job PATH export"
+        },
+        {
+          "review_id": "rev-2026-05-27-0001",
+          "repo": "llmtelemetry",
+          "file": "R/server.R",
+          "severity": "critical",
+          "hours_open": 18.2,
+          "verdict": "open",
+          "summary": "NA dereference in reactive pipeline on empty data"
+        }
+      ]
+    },
+    "7d": {
+      "label": "Last 7 days",
+      "period_start": "2026-05-20T22:00:00Z",
+      "period_end": "2026-05-27T22:00:00Z",
+      "total_reviews": 73,
+      "total_closed": 44,
+      "resolution_rate": 0.603,
+      "verdict_counts": {
+        "closed": 44,
+        "open": 29
+      },
+      "severity_counts": {
+        "critical": 6,
+        "high": 28,
+        "medium": 31,
+        "low": 8
+      },
+      "median_hours_to_close": 4.1,
+      "p90_hours_to_close": 22.8,
+      "p99_hours_to_close": 72.4,
+      "by_verdict": [
+        { "verdict": "fixed",    "n": 36, "pct": 0.493 },
+        { "verdict": "wontfix",  "n": 8,  "pct": 0.110 },
+        { "verdict": "open",     "n": 29, "pct": 0.397 }
+      ],
+      "outliers": [
+        {
+          "review_id": "rev-2026-05-21-0007",
+          "repo": "mycare",
+          "file": "inst/scripts/export_pdf.R",
+          "severity": "high",
+          "hours_open": 139.5,
+          "verdict": "open",
+          "summary": "Silent data loss when PDF extraction returns NULL"
+        },
+        {
+          "review_id": "rev-2026-05-25-0042",
+          "repo": "llm",
+          "file": ".claude/hooks/session_stop.sh",
+          "severity": "high",
+          "hours_open": 41.3,
+          "verdict": "open",
+          "summary": "Unbound variable in launchd job PATH export"
+        },
+        {
+          "review_id": "rev-2026-05-27-0001",
+          "repo": "llmtelemetry",
+          "file": "R/server.R",
+          "severity": "critical",
+          "hours_open": 18.2,
+          "verdict": "open",
+          "summary": "NA dereference in reactive pipeline on empty data"
+        }
+      ]
+    },
+    "14d": {
+      "label": "Last 14 days",
+      "period_start": "2026-05-13T22:00:00Z",
+      "period_end": "2026-05-27T22:00:00Z",
+      "total_reviews": 142,
+      "total_closed": 98,
+      "resolution_rate": 0.690,
+      "verdict_counts": {
+        "closed": 98,
+        "open": 44
+      },
+      "severity_counts": {
+        "critical": 9,
+        "high": 52,
+        "medium": 63,
+        "low": 18
+      },
+      "median_hours_to_close": 5.8,
+      "p90_hours_to_close": 38.2,
+      "p99_hours_to_close": 168.0,
+      "by_verdict": [
+        { "verdict": "fixed",    "n": 79, "pct": 0.556 },
+        { "verdict": "wontfix",  "n": 19, "pct": 0.134 },
+        { "verdict": "open",     "n": 44, "pct": 0.310 }
+      ],
+      "outliers": [
+        {
+          "review_id": "rev-2026-05-14-0003",
+          "repo": "irishbuoys",
+          "file": "R/erddap_fetch.R",
+          "severity": "critical",
+          "hours_open": 307.2,
+          "verdict": "open",
+          "summary": "Memory leak in streaming ERDDAP fetch accumulates unbounded data"
+        },
+        {
+          "review_id": "rev-2026-05-21-0007",
+          "repo": "mycare",
+          "file": "inst/scripts/export_pdf.R",
+          "severity": "high",
+          "hours_open": 139.5,
+          "verdict": "open",
+          "summary": "Silent data loss when PDF extraction returns NULL"
+        },
+        {
+          "review_id": "rev-2026-05-25-0042",
+          "repo": "llm",
+          "file": ".claude/hooks/session_stop.sh",
+          "severity": "high",
+          "hours_open": 41.3,
+          "verdict": "open",
+          "summary": "Unbound variable in launchd job PATH export"
+        },
+        {
+          "review_id": "rev-2026-05-27-0001",
+          "repo": "llmtelemetry",
+          "file": "R/server.R",
+          "severity": "critical",
+          "hours_open": 18.2,
+          "verdict": "open",
+          "summary": "NA dereference in reactive pipeline on empty data"
+        }
+      ]
+    }
+  },
+  "trends": {
+    "resolution_rate_delta_7d_vs_prior7d": 0.041,
+    "median_hours_delta_7d_vs_prior7d": -1.2,
+    "open_critical_delta_7d_vs_prior7d": -1,
+    "open_high_delta_7d_vs_prior7d": 3
+  },
+  "time_series": [
+    { "date": "2026-05-14", "opened": 8,  "closed": 6,  "cumulative_open": 44 },
+    { "date": "2026-05-15", "opened": 11, "closed": 7,  "cumulative_open": 48 },
+    { "date": "2026-05-16", "opened": 6,  "closed": 9,  "cumulative_open": 45 },
+    { "date": "2026-05-17", "opened": 4,  "closed": 5,  "cumulative_open": 44 },
+    { "date": "2026-05-18", "opened": 9,  "closed": 8,  "cumulative_open": 45 },
+    { "date": "2026-05-19", "opened": 3,  "closed": 7,  "cumulative_open": 41 },
+    { "date": "2026-05-20", "opened": 7,  "closed": 5,  "cumulative_open": 43 },
+    { "date": "2026-05-21", "opened": 12, "closed": 8,  "cumulative_open": 47 },
+    { "date": "2026-05-22", "opened": 5,  "closed": 11, "cumulative_open": 41 },
+    { "date": "2026-05-23", "opened": 8,  "closed": 6,  "cumulative_open": 43 },
+    { "date": "2026-05-24", "opened": 10, "closed": 7,  "cumulative_open": 46 },
+    { "date": "2026-05-25", "opened": 6,  "closed": 8,  "cumulative_open": 44 },
+    { "date": "2026-05-26", "opened": 9,  "closed": 4,  "cumulative_open": 49 },
+    { "date": "2026-05-27", "opened": 8,  "closed": 3,  "cumulative_open": 54 }
+  ]
+}

@@ -1,0 +1,527 @@
+---
+title: ""
+engine: knitr
+format:
+  html:
+    page-layout: full
+    embed-resources: false
+    resources:
+      - shinylive-sw.js
+      - data/roborev/latest.json
+filters:
+  - shinylive
+---
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 900
+
+# WebR bundles rlang 1.1.6. dplyr 1.2.1/echarts4r need rlang >= 1.1.7.
+# Solution: use base R + JS ECharts (no dplyr/echarts4r).
+library(shiny)
+library(bslib)
+library(jsonlite)
+
+# --- Helpers ------------------------------------------------------------------
+ec <- function(option, h = "300px", aria_label = "Interactive chart") {
+  id <- paste0("ec", sample.int(1e7, 1))
+  j <- toJSON(option, auto_unbox = TRUE, null = "null")
+  tagList(
+    tags$div(id = id, class = "echart-div", role = "button", `aria-label` = aria_label,
+             tabindex = "0",
+             style = paste0("width:100%;height:", h, ";cursor:zoom-in")),
+    tags$script(HTML(paste0(
+      "(function(){var c=echarts.init(document.getElementById('", id,
+      "'),'dark');c.setOption(", j, ");new ResizeObserver(function(){c.resize()})",
+      ".observe(document.getElementById('", id, "'));",
+      "function fs(){var url=c.getDataURL({type:'png',pixelRatio:2,backgroundColor:'#000'});",
+      "var ov=document.createElement('div');ov.className='fullscreen-overlay';",
+      "var img=document.createElement('img');img.src=url;ov.appendChild(img);",
+      "ov.onclick=function(){ov.remove()};document.body.appendChild(ov)}",
+      "document.getElementById('", id, "').addEventListener('click',fs);",
+      "document.getElementById('", id, "').addEventListener('keydown',function(e){",
+      "if(e.key==='Enter'||e.key===' '){e.preventDefault();fs()}})})();"
+    )))
+  )
+}
+
+ec_empty <- function(msg = "No data available", h = "300px") {
+  ec(list(title = list(text = msg, textStyle = list(color = "#ccc", fontSize = 14)),
+          grid = list(containLabel = TRUE)), h, aria_label = msg)
+}
+
+ec_line <- function(dates, series, h = "300px", y_name = NULL,
+                    aria_label = "Line chart", default_window_days = 90) {
+  y_axis <- list(type = "value", scale = TRUE)
+  if (!is.null(y_name)) y_axis$name <- y_name
+  dz_start <- 0
+  if (length(dates) > 1) {
+    d_dates <- tryCatch(as.Date(as.character(dates)), error = function(e) NULL)
+    if (!is.null(d_dates) && !all(is.na(d_dates))) {
+      total_days <- as.numeric(max(d_dates, na.rm = TRUE) - min(d_dates, na.rm = TRUE))
+      if (!is.na(total_days) && total_days > default_window_days) {
+        dz_start <- round(100 * (1 - default_window_days / total_days))
+      }
+    }
+  }
+  ec(list(
+    tooltip = list(trigger = "axis"),
+    legend = list(bottom = 30, textStyle = list(color = "#ccc")),
+    toolbox = list(feature = list(
+      dataZoom = list(yAxisIndex = "none"),
+      restore = list(),
+      saveAsImage = list()
+    )),
+    dataZoom = list(
+      list(type = "inside", start = dz_start, end = 100, filterMode = "filter"),
+      list(type = "slider", start = dz_start, end = 100, bottom = 5, filterMode = "filter")
+    ),
+    grid = list(containLabel = TRUE, bottom = 80),
+    xAxis = list(type = "category", data = I(as.character(dates))),
+    yAxis = y_axis,
+    series = series
+  ), h, aria_label = aria_label)
+}
+
+has_rows <- function(x) is.data.frame(x) && nrow(x) > 0
+
+# NULL-coalescing operator — defined early so helpers and server can use it
+`%||%` <- function(a, b) if (!is.null(a)) a else b
+
+# --- Data loading -------------------------------------------------------------
+# Origin-absolute path so WebR Worker resolves correctly on GH Pages.
+# The fixture at tests/testthat/fixtures/roborev_daily_sample.json is copied
+# to vignettes/data/roborev/latest.json by export_dashboard_data.R (section 8g).
+base_url <- "/llmtelemetry/data/"
+
+load_json <- function(filename) {
+  tryCatch({
+    tmp <- tempfile(fileext = ".json")
+    download.file(paste0(base_url, filename), tmp, mode = "w", quiet = TRUE)
+    fromJSON(txt = tmp, simplifyDataFrame = TRUE)
+  }, error = function(e) {
+    message("Failed to load ", filename, ": ", e$message)
+    NULL
+  })
+}
+
+raw <- load_json("roborev/latest.json")
+
+# --- UI -----------------------------------------------------------------------
+ui <- page_navbar(
+  title = tags$span(
+    tags$a(href = "dashboard_shinylive.html",
+           style = "color:#7cb5ec;text-decoration:none;margin-right:12px;font-size:0.85em;",
+           "← Dashboard"),
+    "Roborev Resolution"
+  ),
+  theme = bs_theme(
+    bg = "#1a1a1a", fg = "#e0e0e0",
+    primary = "#377eb8", secondary = "#555555",
+    font_scale = 0.85
+  ),
+  header = tagList(
+    tags$script(src = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"),
+    tags$style(HTML("
+      .kpi-table { width: 100%; font-size: 0.82em; }
+      .kpi-table td, .kpi-table th { padding: 3px 8px; }
+      .kpi-table td:last-child { text-align: right; font-weight: bold; }
+      .section-hdr { color: #4ea8de; font-size: 0.9em; font-weight: 600;
+                     border-bottom: 1px solid #333; padding-bottom: 3px; margin-bottom: 6px; }
+      .delta-pos { color: #69d4a0; }
+      .delta-neg { color: #f08080; }
+      .delta-neu { color: #ccc; }
+      .outlier-sev-critical { color: #f08080; font-weight: bold; }
+      .outlier-sev-high { color: #ffd93d; }
+      .outlier-sev-medium { color: #a0c8ff; }
+      .fullscreen-overlay {
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background: rgba(0,0,0,0.92); z-index: 99999; display: flex;
+        align-items: center; justify-content: center; cursor: zoom-out;
+      }
+      .fullscreen-overlay img { max-width: 95vw; max-height: 95vh; object-fit: contain; }
+    "))
+  ),
+  # Window selector in header area
+  nav_panel("Resolution", value = "Resolution",
+    layout_sidebar(
+      sidebar = sidebar(
+        width = 200,
+        div(class = "section-hdr", "Window"),
+        radioButtons("window_sel", label = NULL,
+          choices = c("1d" = "1d", "3d" = "3d", "7d" = "7d", "14d" = "14d"),
+          selected = "7d"
+        ),
+        hr(style = "border-color:#333"),
+        div(class = "section-hdr", "Links"),
+        tags$a(href = "dashboard_shinylive.html", style = "color:#7cb5ec;font-size:0.82em;",
+               "← Main Dashboard"),
+        br(),
+        tags$a(href = "roborev_summary.html", style = "color:#7cb5ec;font-size:0.82em;",
+               "Review Summary")
+      ),
+      # Main content
+      fluidRow(
+        # Headline KPI strip
+        column(12,
+          div(class = "section-hdr", style = "font-size:1em;", "Headline KPIs"),
+          div(style = "margin-bottom:12px;",
+            tableOutput("headline_kpis")
+          )
+        )
+      ),
+      fluidRow(
+        # Section 1: Frequency × Verdict (Cleveland dot chart)
+        column(6,
+          div(class = "section-hdr", "§ 1 — Frequency × Verdict"),
+          p(style = "color:#aaa;font-size:0.8em;margin-bottom:4px;",
+            "Review count broken down by verdict. ",
+            "Each dot is a verdict category. Dot position = count."),
+          uiOutput("s1_verdict_chart")
+        ),
+        # Section 1b: Severity breakdown
+        column(6,
+          div(class = "section-hdr", "§ 1b — Severity Breakdown"),
+          p(style = "color:#aaa;font-size:0.8em;margin-bottom:4px;",
+            "Open + closed reviews split by severity for the selected window."),
+          uiOutput("s1_severity_chart")
+        )
+      ),
+      fluidRow(
+        # Section 2: Time-to-close (p50/p90/p99 + time series)
+        column(6,
+          div(class = "section-hdr", "§ 2 — Time to Close"),
+          div(style = "margin-bottom:8px;", tableOutput("s2_ttc_table")),
+          p(style = "color:#aaa;font-size:0.8em;margin-bottom:4px;",
+            "Daily opened vs closed with cumulative open count (range slider defaults to last 90 days)."),
+          uiOutput("s2_timeseries_chart")
+        ),
+        # Section 3: Trends delta table
+        column(6,
+          div(class = "section-hdr", "§ 3 — Trends vs Prior Period"),
+          p(style = "color:#aaa;font-size:0.8em;margin-bottom:4px;",
+            "7-day window vs prior 7 days. Green = improved, red = worsened."),
+          tableOutput("s3_trends_table"),
+          div(class = "section-hdr", style = "margin-top:12px;",
+              "§ 3b — Resolution Rate Dot"),
+          p(style = "color:#aaa;font-size:0.8em;margin-bottom:4px;",
+            "Resolution rate for 1d / 3d / 7d / 14d windows at a glance."),
+          uiOutput("s3_rate_chart")
+        )
+      ),
+      fluidRow(
+        # Section 4: Outliers table
+        column(12,
+          div(class = "section-hdr", "§ 4 — Outliers (Longest Open)"),
+          p(style = "color:#aaa;font-size:0.8em;margin-bottom:4px;",
+            "Reviews open the longest in the selected window, ranked by hours open."),
+          tableOutput("s4_outliers_table")
+        )
+      )
+    )
+  )
+)
+
+# --- Server -------------------------------------------------------------------
+server <- function(input, output, session) {
+
+  # Reactive: selected window data
+  win_data <- reactive({
+    w <- input$window_sel
+    if (is.null(raw) || !is.list(raw) || is.null(raw$windows)) return(NULL)
+    raw$windows[[w]]
+  })
+
+  # Helper: format delta with colour class
+  fmt_delta <- function(val, reverse = FALSE) {
+    if (is.null(val) || is.na(val)) return(tags$span(class = "delta-neu", "—"))
+    is_pos <- as.numeric(val) > 0
+    is_neg <- as.numeric(val) < 0
+    cls <- if (reverse) {
+      if (is_pos) "delta-neg" else if (is_neg) "delta-pos" else "delta-neu"
+    } else {
+      if (is_pos) "delta-pos" else if (is_neg) "delta-neg" else "delta-neu"
+    }
+    prefix <- if (is_pos) "+" else ""
+    tags$span(class = cls, paste0(prefix, val))
+  }
+
+  # Headline KPIs table
+  output$headline_kpis <- renderTable({
+    w <- win_data()
+    if (is.null(w)) return(data.frame(Metric = "No data", Value = "—"))
+    label <- if (!is.null(w$label)) w$label else input$window_sel
+    data.frame(
+      Metric = c("Window", "Total Reviews", "Closed", "Open",
+                 "Resolution Rate", "Median Hours to Close",
+                 "p90 Hours to Close", "p99 Hours to Close"),
+      Value  = c(
+        label,
+        as.character(w$total_reviews %||% "—"),
+        as.character(w$total_closed %||% "—"),
+        as.character((w$total_reviews %||% 0) - (w$total_closed %||% 0)),
+        if (!is.null(w$resolution_rate)) paste0(round(w$resolution_rate * 100, 1), "%") else "—",
+        if (!is.null(w$median_hours_to_close)) paste0(round(w$median_hours_to_close, 1), " h") else "—",
+        if (!is.null(w$p90_hours_to_close)) paste0(round(w$p90_hours_to_close, 1), " h") else "—",
+        if (!is.null(w$p99_hours_to_close)) paste0(round(w$p99_hours_to_close, 1), " h") else "—"
+      ),
+      stringsAsFactors = FALSE
+    )
+  }, striped = TRUE, hover = TRUE, bordered = FALSE, spacing = "xs",
+     rownames = FALSE, width = "100%",
+     sanitize.text.function = function(x) x,
+     sanitize.colnames.function = function(x) x)
+
+  # Section 1: Verdict Cleveland dot chart
+  output$s1_verdict_chart <- renderUI({
+    w <- win_data()
+    if (is.null(w) || is.null(w$by_verdict)) return(ec_empty("No verdict data", "220px"))
+    vd <- w$by_verdict
+    if (!is.data.frame(vd) || nrow(vd) == 0) return(ec_empty("No verdict data", "220px"))
+    # Sort descending by n
+    vd <- vd[order(-vd$n), ]
+    color_map <- c(fixed = "#69d4a0", wontfix = "#ffd93d", open = "#f08080")
+    colors <- vapply(vd$verdict, function(v) {
+      if (v %in% names(color_map)) color_map[[v]] else "#aaa"
+    }, character(1))
+    # Cleveland dot chart: scatter on horizontal axis, category on y
+    ec(list(
+      grid = list(left = 90, right = 40, containLabel = FALSE),
+      tooltip = list(
+        trigger = "item",
+        formatter = "function(p){return p.name+': '+p.value+' reviews'}"
+      ),
+      xAxis = list(
+        type = "value", name = "Reviews", nameLocation = "middle", nameGap = 28,
+        axisLabel = list(color = "#ccc"),
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        type = "category", data = I(rev(vd$verdict)),
+        axisLabel = list(color = "#ccc", fontSize = 11)
+      ),
+      series = list(list(
+        type = "scatter",
+        data = I(as.list(rev(vd$n))),
+        symbolSize = 14,
+        itemStyle = list(color = I(rev(colors)))
+      ))
+    ), h = "220px", aria_label = "Verdict breakdown dot chart")
+  })
+
+  # Section 1b: Severity breakdown Cleveland dot chart
+  output$s1_severity_chart <- renderUI({
+    w <- win_data()
+    if (is.null(w) || is.null(w$severity_counts)) return(ec_empty("No severity data", "220px"))
+    sc <- w$severity_counts
+    if (!is.list(sc)) return(ec_empty("No severity data", "220px"))
+    sevs <- c("critical", "high", "medium", "low")
+    counts <- sapply(sevs, function(s) if (!is.null(sc[[s]])) as.numeric(sc[[s]]) else 0)
+    # Only keep non-zero
+    keep <- counts > 0
+    if (!any(keep)) return(ec_empty("No severity data", "220px"))
+    sev_labels <- sevs[keep]
+    sev_vals   <- counts[keep]
+    sev_colors <- c(critical = "#f08080", high = "#ffd93d", medium = "#a0c8ff", low = "#69d4a0")
+    colors_used <- vapply(sev_labels, function(s) sev_colors[[s]], character(1))
+    ec(list(
+      grid = list(left = 90, right = 40, containLabel = FALSE),
+      tooltip = list(
+        trigger = "item",
+        formatter = "function(p){return p.name+': '+p.value+' reviews'}"
+      ),
+      xAxis = list(
+        type = "value", name = "Reviews", nameLocation = "middle", nameGap = 28,
+        axisLabel = list(color = "#ccc"),
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        type = "category", data = I(rev(sev_labels)),
+        axisLabel = list(color = "#ccc", fontSize = 11)
+      ),
+      series = list(list(
+        type = "scatter",
+        data = I(as.list(rev(sev_vals))),
+        symbolSize = 14,
+        itemStyle = list(color = I(rev(colors_used)))
+      ))
+    ), h = "220px", aria_label = "Severity breakdown dot chart")
+  })
+
+  # Section 2: Time-to-close KPI table
+  output$s2_ttc_table <- renderTable({
+    w <- win_data()
+    if (is.null(w)) return(data.frame(Percentile = "—", Hours = "—"))
+    data.frame(
+      Percentile = c("p50 (median)", "p90", "p99"),
+      `Hours to close` = c(
+        if (!is.null(w$median_hours_to_close)) paste0(round(w$median_hours_to_close, 1), " h") else "—",
+        if (!is.null(w$p90_hours_to_close)) paste0(round(w$p90_hours_to_close, 1), " h") else "—",
+        if (!is.null(w$p99_hours_to_close)) paste0(round(w$p99_hours_to_close, 1), " h") else "—"
+      ),
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  }, striped = FALSE, hover = TRUE, bordered = FALSE, spacing = "xs",
+     rownames = FALSE, width = "100%")
+
+  # Section 2: Time-series chart (opened/closed/cumulative open)
+  output$s2_timeseries_chart <- renderUI({
+    if (is.null(raw) || is.null(raw$time_series)) return(ec_empty("No time series data", "260px"))
+    ts <- raw$time_series
+    if (!is.data.frame(ts) || nrow(ts) == 0) return(ec_empty("No time series data", "260px"))
+    dates  <- ts$date
+    opened <- as.numeric(ts$opened)
+    closed <- as.numeric(ts$closed)
+    cumopen <- if ("cumulative_open" %in% names(ts)) as.numeric(ts$cumulative_open) else NULL
+    series <- list(
+      list(name = "Opened", type = "bar", data = I(opened),
+           itemStyle = list(color = "#f08080")),
+      list(name = "Closed", type = "bar", data = I(closed),
+           itemStyle = list(color = "#69d4a0"))
+    )
+    if (!is.null(cumopen)) {
+      series <- c(series, list(list(
+        name = "Cumulative open", type = "line", data = I(cumopen),
+        yAxisIndex = 1L,
+        itemStyle = list(color = "#ffd93d"),
+        lineStyle = list(width = 2, type = "dashed")
+      )))
+    }
+    y_axes <- list(
+      list(type = "value", name = "Reviews/day", nameTextStyle = list(color = "#ccc"),
+           axisLabel = list(color = "#ccc")),
+      list(type = "value", name = "Cumulative open", position = "right",
+           nameTextStyle = list(color = "#ccc"), axisLabel = list(color = "#ccc"))
+    )
+    # Compute dataZoom start to default last 90 days
+    dz_start <- 0
+    d_dates <- tryCatch(as.Date(as.character(dates)), error = function(e) NULL)
+    if (!is.null(d_dates) && !all(is.na(d_dates))) {
+      total_days <- as.numeric(max(d_dates, na.rm = TRUE) - min(d_dates, na.rm = TRUE))
+      if (!is.na(total_days) && total_days > 90) {
+        dz_start <- round(100 * (1 - 90 / total_days))
+      }
+    }
+    ec(list(
+      tooltip = list(trigger = "axis"),
+      legend = list(bottom = 30, textStyle = list(color = "#ccc")),
+      toolbox = list(feature = list(
+        dataZoom = list(yAxisIndex = "none"),
+        restore = list(),
+        saveAsImage = list()
+      )),
+      dataZoom = list(
+        list(type = "inside", start = dz_start, end = 100, filterMode = "filter"),
+        list(type = "slider", start = dz_start, end = 100, bottom = 5, filterMode = "filter")
+      ),
+      grid = list(containLabel = TRUE, bottom = 80),
+      xAxis = list(type = "category", data = I(as.character(dates))),
+      yAxis = y_axes,
+      series = series
+    ), h = "260px", aria_label = "Daily opened vs closed reviews with cumulative open count")
+  })
+
+  # Section 3: Trends table
+  output$s3_trends_table <- renderTable({
+    if (is.null(raw) || is.null(raw$trends)) {
+      return(data.frame(Metric = "No trend data", Delta = "—"))
+    }
+    tr <- raw$trends
+    rows <- list(
+      list(metric = "Resolution rate (7d vs prior 7d)",
+           val = tr$resolution_rate_delta_7d_vs_prior7d,
+           format_fn = function(v) paste0(if (v > 0) "+" else "", round(v * 100, 1), " pp"),
+           reverse = FALSE),
+      list(metric = "Median time-to-close (7d vs prior 7d)",
+           val = tr$median_hours_delta_7d_vs_prior7d,
+           format_fn = function(v) paste0(if (v > 0) "+" else "", round(v, 1), " h"),
+           reverse = TRUE),
+      list(metric = "Open critical (7d vs prior 7d)",
+           val = tr$open_critical_delta_7d_vs_prior7d,
+           format_fn = function(v) paste0(if (v > 0) "+" else "", as.integer(v)),
+           reverse = TRUE),
+      list(metric = "Open high (7d vs prior 7d)",
+           val = tr$open_high_delta_7d_vs_prior7d,
+           format_fn = function(v) paste0(if (v > 0) "+" else "", as.integer(v)),
+           reverse = TRUE)
+    )
+    vals <- sapply(rows, function(r) {
+      if (is.null(r$val) || is.na(r$val)) "—" else r$format_fn(as.numeric(r$val))
+    })
+    data.frame(
+      Metric = sapply(rows, `[[`, "metric"),
+      Delta  = vals,
+      stringsAsFactors = FALSE
+    )
+  }, striped = TRUE, hover = TRUE, bordered = FALSE, spacing = "xs",
+     rownames = FALSE, width = "100%")
+
+  # Section 3b: Resolution rate dot chart (one dot per window)
+  output$s3_rate_chart <- renderUI({
+    if (is.null(raw) || is.null(raw$windows)) return(ec_empty("No window data", "180px"))
+    wins <- c("1d", "3d", "7d", "14d")
+    rates <- sapply(wins, function(w) {
+      wd <- raw$windows[[w]]
+      if (!is.null(wd) && !is.null(wd$resolution_rate)) round(wd$resolution_rate * 100, 1) else NA_real_
+    })
+    keep <- !is.na(rates)
+    if (!any(keep)) return(ec_empty("No window data", "180px"))
+    win_labels <- wins[keep]
+    rate_vals  <- rates[keep]
+    # Colour: green >= 60%, amber >= 40%, red < 40%
+    colors <- ifelse(rate_vals >= 60, "#69d4a0", ifelse(rate_vals >= 40, "#ffd93d", "#f08080"))
+    ec(list(
+      grid = list(left = 60, right = 60, containLabel = FALSE),
+      tooltip = list(
+        trigger = "item",
+        formatter = "function(p){return p.name+': '+p.value+'%'}"
+      ),
+      xAxis = list(
+        type = "value", min = 0, max = 100,
+        name = "Resolution %", nameLocation = "middle", nameGap = 28,
+        axisLabel = list(color = "#ccc", formatter = "{value}%"),
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        type = "category", data = I(rev(win_labels)),
+        axisLabel = list(color = "#ccc", fontSize = 11)
+      ),
+      series = list(list(
+        type = "scatter",
+        data = I(as.list(rev(rate_vals))),
+        symbolSize = 16,
+        itemStyle = list(color = I(rev(colors)))
+      ))
+    ), h = "180px", aria_label = "Resolution rate by window dot chart")
+  })
+
+  # Section 4: Outliers table
+  output$s4_outliers_table <- renderTable({
+    w <- win_data()
+    if (is.null(w) || is.null(w$outliers)) {
+      return(data.frame(Message = "No outliers in this window"))
+    }
+    ol <- w$outliers
+    if (!is.data.frame(ol) || nrow(ol) == 0) {
+      return(data.frame(Message = "No outliers in this window"))
+    }
+    # Build display table
+    data.frame(
+      `Review ID`    = ol$review_id %||% "",
+      Repo           = ol$repo %||% "",
+      File           = ol$file %||% "",
+      Severity       = ol$severity %||% "",
+      `Hours open`   = if ("hours_open" %in% names(ol)) paste0(round(ol$hours_open, 1), " h") else "—",
+      Verdict        = ol$verdict %||% "",
+      Summary        = ol$summary %||% "",
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  }, striped = TRUE, hover = TRUE, bordered = FALSE, spacing = "xs",
+     rownames = FALSE, width = "100%",
+     sanitize.text.function = function(x) x)
+}
+
+shinyApp(ui, server)
+```

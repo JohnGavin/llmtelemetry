@@ -43,6 +43,7 @@ format:
       - data/roborev_by_repo.json
       - data/roborev_resolution.json
       - data/roborev_agent_perf.json
+      - data/roborev/latest.json
       - data/v1/sessions.parquet
 filters:
   - shinylive
@@ -1406,7 +1407,10 @@ ui <- page_navbar(
                 tags$code("unified.duckdb"), ". For the full interactive summary ",
                 "see the ",
                 tags$a(href = "roborev_summary.html", target = "_blank",
-                       style = "color:#7cb5ec;", "roborev_summary vignette"), "."
+                       style = "color:#7cb5ec;", "roborev_summary vignette"),
+                " or the detailed ",
+                tags$a(href = "roborev_resolution.html", target = "_blank",
+                       style = "color:#7cb5ec;", "Roborev Resolution page"), "."
               )
             ),
             card_footer(class = "text-muted small",

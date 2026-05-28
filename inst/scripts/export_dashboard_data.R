@@ -2446,6 +2446,323 @@ tryCatch({
   )
 })
 
+# --- 8g. Export data/roborev/latest.json (llm#287 Part B — resolution page) --
+# Aggregated roborev resolution metrics across 1d/3d/7d/14d windows plus a
+# 14-day daily time-series and 7d-vs-prior-7d trend deltas.
+# Schema is documented in tests/testthat/fixtures/roborev_daily_sample.json.
+# Codex pattern: regenerate from unified.duckdb when available; always copy
+# committed source (inst/extdata/roborev_latest.json) to vignettes/data/roborev/.
+cat("Exporting roborev/latest.json...\n")
+tryCatch({
+  roborev_latest_src <- file.path(extdata, "roborev_latest.json")
+  roborev_latest_dir <- file.path(out_dir, "roborev")
+  if (!dir.exists(roborev_latest_dir)) dir.create(roborev_latest_dir, recursive = TRUE)
+  roborev_latest_dst <- file.path(roborev_latest_dir, "latest.json")
+
+  # Helper: compute window aggregate from roborev_review_lifecycle
+  compute_window <- function(rl_clean, days, label) {
+    cutoff <- Sys.time() - days * 86400
+    in_win <- as.POSIXct(rl_clean$created_at, tz = "UTC") >= cutoff
+    w <- rl_clean[in_win, ]
+    if (nrow(w) == 0L) {
+      return(list(
+        label = label,
+        period_start = format(cutoff, "%Y-%m-%dT%H:%M:%SZ"),
+        period_end   = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+        total_reviews = 0L, total_closed = 0L, resolution_rate = 0,
+        verdict_counts = list(closed = 0L, open = 0L),
+        severity_counts = list(critical = 0L, high = 0L, medium = 0L, low = 0L),
+        median_hours_to_close = NULL, p90_hours_to_close = NULL,
+        p99_hours_to_close = NULL,
+        by_verdict = list(), outliers = list()
+      ))
+    }
+    is_closed <- !is.na(w$close_reason) & nzchar(as.character(w$close_reason))
+    total      <- nrow(w)
+    n_closed   <- sum(is_closed)
+    n_open     <- total - n_closed
+    res_rate   <- if (total > 0L) round(n_closed / total, 4) else 0
+
+    # Severity counts
+    sev_col <- if ("severity_max" %in% names(w)) w$severity_max else rep(NA_character_, nrow(w))
+    sev_counts <- list(
+      critical = sum(!is.na(sev_col) & tolower(sev_col) == "critical"),
+      high     = sum(!is.na(sev_col) & tolower(sev_col) == "high"),
+      medium   = sum(!is.na(sev_col) & tolower(sev_col) == "medium"),
+      low      = sum(!is.na(sev_col) & tolower(sev_col) == "low")
+    )
+    sev_counts <- lapply(sev_counts, as.integer)
+
+    # by_verdict: simplified — fixed = has close_reason, wontfix if close_reason='wontfix',
+    # open = no close_reason. This is best-effort; roborev doesn't log verdict subtypes yet.
+    n_wontfix <- if ("close_reason" %in% names(w))
+      sum(!is.na(w$close_reason) & tolower(as.character(w$close_reason)) == "wontfix") else 0L
+    n_fixed   <- n_closed - as.integer(n_wontfix)
+    by_verdict <- list(
+      list(verdict = "fixed",   n = as.integer(n_fixed),
+           pct = if (total > 0L) round(n_fixed / total, 4) else 0),
+      list(verdict = "wontfix", n = as.integer(n_wontfix),
+           pct = if (total > 0L) round(n_wontfix / total, 4) else 0),
+      list(verdict = "open",    n = as.integer(n_open),
+           pct = if (total > 0L) round(n_open / total, 4) else 0)
+    )
+
+    # Time-to-close percentiles (only for closed reviews with both created_at and closed_at)
+    p50 <- p90 <- p99 <- NULL
+    closed_rows <- w[is_closed, ]
+    if (nrow(closed_rows) > 0L && "closed_at" %in% names(closed_rows) &&
+        "created_at" %in% names(closed_rows)) {
+      created_ts <- as.POSIXct(closed_rows$created_at, tz = "UTC")
+      closed_ts  <- as.POSIXct(closed_rows$closed_at,  tz = "UTC")
+      hours_open <- as.numeric(difftime(closed_ts, created_ts, units = "hours"))
+      hours_open <- hours_open[!is.na(hours_open) & hours_open >= 0]
+      if (length(hours_open) > 0L) {
+        p50 <- round(quantile(hours_open, 0.50, na.rm = TRUE)[[1]], 2)
+        p90 <- round(quantile(hours_open, 0.90, na.rm = TRUE)[[1]], 2)
+        p99 <- round(quantile(hours_open, 0.99, na.rm = TRUE)[[1]], 2)
+      }
+    }
+
+    # Outliers: open reviews sorted by time open DESC (top 10)
+    open_rows <- w[!is_closed, ]
+    outliers <- list()
+    if (nrow(open_rows) > 0L && "created_at" %in% names(open_rows)) {
+      open_rows$hours_open_val <- as.numeric(
+        difftime(Sys.time(),
+                 as.POSIXct(open_rows$created_at, tz = "UTC"),
+                 units = "hours")
+      )
+      open_rows <- open_rows[order(-open_rows$hours_open_val), ]
+      n_out <- min(10L, nrow(open_rows))
+      file_col <- if ("primary_file" %in% names(open_rows)) "primary_file" else
+                  if ("file" %in% names(open_rows)) "file" else NULL
+      repo_col_out <- if ("repo" %in% names(open_rows)) "repo" else
+                      if ("project" %in% names(open_rows)) "project" else NULL
+      for (i in seq_len(n_out)) {
+        row <- open_rows[i, ]
+        entry <- list(
+          review_id  = if ("id" %in% names(row)) as.character(row$id[[1]]) else paste0("row-", i),
+          repo       = if (!is.null(repo_col_out)) as.character(row[[repo_col_out]][[1]]) else "",
+          file       = if (!is.null(file_col)) as.character(row[[file_col]][[1]]) else "",
+          severity   = if (!is.null(sev_col)) tolower(as.character(row$severity_max[[1]])) else "",
+          hours_open = round(row$hours_open_val[[1]], 2),
+          verdict    = "open",
+          summary    = if ("summary" %in% names(row)) as.character(row$summary[[1]]) else ""
+        )
+        outliers <- c(outliers, list(entry))
+      }
+    }
+
+    list(
+      label          = label,
+      period_start   = format(cutoff, "%Y-%m-%dT%H:%M:%SZ"),
+      period_end     = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+      total_reviews  = as.integer(total),
+      total_closed   = as.integer(n_closed),
+      resolution_rate = res_rate,
+      verdict_counts  = list(closed = as.integer(n_closed), open = as.integer(n_open)),
+      severity_counts = sev_counts,
+      median_hours_to_close = p50,
+      p90_hours_to_close    = p90,
+      p99_hours_to_close    = p99,
+      by_verdict = by_verdict,
+      outliers   = outliers
+    )
+  }
+
+  empty_latest <- list(
+    generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+    schema_version = "1.0",
+    windows = list(`1d` = list(), `3d` = list(), `7d` = list(), `14d` = list()),
+    trends = list(),
+    time_series = list()
+  )
+
+  if (file.exists(unified_db)) {
+    lcon <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(lcon, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    ltbls <- dbListTables(lcon)
+
+    if ("roborev_review_lifecycle" %in% ltbls) {
+      rl_latest <- dbReadTable(lcon, "roborev_review_lifecycle")
+
+      # Privacy: apply clean_projects on repo/project column
+      repo_col_l <- if ("repo" %in% names(rl_latest)) "repo" else
+                    if ("project" %in% names(rl_latest)) "project" else NULL
+      if (!is.null(repo_col_l)) {
+        names(rl_latest)[names(rl_latest) == repo_col_l] <- "repo"
+        rl_latest <- clean_projects(rl_latest, project_col = "repo")
+      }
+
+      # Per-window aggregates
+      windows_out <- list(
+        `1d`  = compute_window(rl_latest, 1,  "Last 1 day"),
+        `3d`  = compute_window(rl_latest, 3,  "Last 3 days"),
+        `7d`  = compute_window(rl_latest, 7,  "Last 7 days"),
+        `14d` = compute_window(rl_latest, 14, "Last 14 days")
+      )
+
+      # 7d-vs-prior-7d trend deltas
+      w7  <- compute_window(rl_latest, 7, "Last 7 days")
+      # Prior 7d: created_at between 14d and 7d ago
+      cutoff_7  <- Sys.time() - 7  * 86400
+      cutoff_14 <- Sys.time() - 14 * 86400
+      if ("created_at" %in% names(rl_latest)) {
+        ca <- as.POSIXct(rl_latest$created_at, tz = "UTC")
+        prior_mask <- ca >= cutoff_14 & ca < cutoff_7
+        rl_prior   <- rl_latest[prior_mask, ]
+        if (nrow(rl_prior) > 0L) {
+          is_closed_prior <- !is.na(rl_prior$close_reason) & nzchar(as.character(rl_prior$close_reason))
+          n_tot_p  <- nrow(rl_prior)
+          n_cl_p   <- sum(is_closed_prior)
+          rr_prior <- if (n_tot_p > 0L) n_cl_p / n_tot_p else 0
+
+          # Median hours to close prior
+          med_h_prior <- NULL
+          closed_prior <- rl_prior[is_closed_prior, ]
+          if (nrow(closed_prior) > 0L && "closed_at" %in% names(closed_prior)) {
+            h_p <- as.numeric(difftime(
+              as.POSIXct(closed_prior$closed_at,  tz = "UTC"),
+              as.POSIXct(closed_prior$created_at, tz = "UTC"),
+              units = "hours"
+            ))
+            h_p <- h_p[!is.na(h_p) & h_p >= 0]
+            if (length(h_p) > 0L) med_h_prior <- median(h_p, na.rm = TRUE)
+          }
+
+          sev_col_p  <- if ("severity_max" %in% names(rl_prior)) rl_prior$severity_max else NULL
+          n_crit_p   <- if (!is.null(sev_col_p)) sum(!is.na(sev_col_p) & tolower(sev_col_p) == "critical") else 0L
+          n_high_p   <- if (!is.null(sev_col_p)) sum(!is.na(sev_col_p) & tolower(sev_col_p) == "high") else 0L
+
+          # Current 7d
+          sev_col_7 <- if ("severity_max" %in% names(rl_latest)) {
+            rl_latest[as.POSIXct(rl_latest$created_at, tz = "UTC") >= cutoff_7, "severity_max"]
+          } else NULL
+          n_crit_7  <- if (!is.null(sev_col_7)) sum(!is.na(sev_col_7) & tolower(sev_col_7) == "critical") else 0L
+          n_high_7  <- if (!is.null(sev_col_7)) sum(!is.na(sev_col_7) & tolower(sev_col_7) == "high") else 0L
+
+          rr_curr <- if (!is.null(w7$resolution_rate)) w7$resolution_rate else 0
+          med_curr <- w7$median_hours_to_close
+
+          trends_out <- list(
+            resolution_rate_delta_7d_vs_prior7d = round(rr_curr - rr_prior, 4),
+            median_hours_delta_7d_vs_prior7d = if (!is.null(med_curr) && !is.null(med_h_prior))
+              round(med_curr - med_h_prior, 2) else NULL,
+            open_critical_delta_7d_vs_prior7d = as.integer(n_crit_7 - n_crit_p),
+            open_high_delta_7d_vs_prior7d     = as.integer(n_high_7 - n_high_p)
+          )
+        } else {
+          trends_out <- list(
+            resolution_rate_delta_7d_vs_prior7d = 0,
+            median_hours_delta_7d_vs_prior7d = NULL,
+            open_critical_delta_7d_vs_prior7d = 0L,
+            open_high_delta_7d_vs_prior7d     = 0L
+          )
+        }
+      } else {
+        trends_out <- list()
+      }
+
+      # Daily time-series: last 14 days, opened/closed/cumulative_open
+      ts_list <- list()
+      if ("created_at" %in% names(rl_latest)) {
+        ts_dates <- seq(as.Date(Sys.time()) - 13L, as.Date(Sys.time()), by = "day")
+        ts_dates_chr <- as.character(ts_dates)
+        is_closed_all <- !is.na(rl_latest$close_reason) & nzchar(as.character(rl_latest$close_reason))
+        created_dates <- as.Date(as.POSIXct(rl_latest$created_at, tz = "UTC"))
+
+        # closed_at date; fall back to NA for open rows
+        if ("closed_at" %in% names(rl_latest)) {
+          closed_dates <- as.Date(as.POSIXct(rl_latest$closed_at, tz = "UTC"))
+          closed_dates[!is_closed_all] <- NA
+        } else {
+          closed_dates <- rep(NA_integer_, nrow(rl_latest))
+        }
+
+        # Cumulative open as-of each date (reviews created before date and not closed before date)
+        for (d_chr in ts_dates_chr) {
+          d <- as.Date(d_chr)
+          n_opened  <- sum(!is.na(created_dates) & created_dates == d)
+          n_closed_d <- sum(!is.na(closed_dates) & closed_dates == d)
+          # Reviews open AT END of this date: created <= d AND (not closed OR closed > d)
+          cum_open  <- sum(
+            !is.na(created_dates) & created_dates <= d &
+            (is.na(closed_dates)  | closed_dates > d)
+          )
+          ts_list <- c(ts_list, list(list(
+            date            = d_chr,
+            opened          = as.integer(n_opened),
+            closed          = as.integer(n_closed_d),
+            cumulative_open = as.integer(cum_open)
+          )))
+        }
+      }
+
+      roborev_latest <- list(
+        generated_at   = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+        schema_version = "1.0",
+        windows        = windows_out,
+        trends         = trends_out,
+        time_series    = ts_list
+      )
+
+      write_json(roborev_latest, roborev_latest_src, auto_unbox = TRUE, null = "null")
+      cat(sprintf("  -> inst/extdata/roborev_latest.json written (7d: total=%d, closed=%d)\n",
+                  windows_out[["7d"]]$total_reviews,
+                  windows_out[["7d"]]$total_closed))
+      tryCatch(dbDisconnect(lcon, shutdown = TRUE), error = function(e) NULL)
+    } else {
+      cat("  -> roborev_review_lifecycle not found; using fixture as fallback\n")
+      # Copy sample fixture as fallback so the page renders in dev
+      fixture_path_l <- file.path(
+        Sys.getenv("HOME"),
+        "docs_gh/llmtelemetry/tests/testthat/fixtures/roborev_daily_sample.json"
+      )
+      if (!file.exists(fixture_path_l)) {
+        fixture_path_l <- file.path(
+          dirname(dirname(extdata)), "tests", "testthat", "fixtures",
+          "roborev_daily_sample.json"
+        )
+      }
+      if (file.exists(fixture_path_l)) {
+        file.copy(fixture_path_l, roborev_latest_src, overwrite = TRUE)
+        cat("  -> copied fixture to inst/extdata/roborev_latest.json\n")
+      } else {
+        write_json(empty_latest, roborev_latest_src, auto_unbox = TRUE)
+        cat("  -> wrote empty placeholder to inst/extdata/roborev_latest.json\n")
+      }
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  # Always copy committed source to vignettes/data/roborev/
+  if (file.exists(roborev_latest_src)) {
+    file.copy(roborev_latest_src, roborev_latest_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied inst/extdata/roborev_latest.json -> vignettes/data/roborev/latest.json (%d bytes)\n",
+                file.info(roborev_latest_src)$size))
+  } else {
+    write_json(empty_latest, roborev_latest_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/roborev/latest.json\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev/latest.json export error: %s\n", conditionMessage(e)))
+  roborev_latest_dir <- file.path(out_dir, "roborev")
+  if (!dir.exists(roborev_latest_dir)) dir.create(roborev_latest_dir, recursive = TRUE)
+  write_json(
+    list(
+      generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+      schema_version = "1.0",
+      windows = list(`1d` = list(), `3d` = list(), `7d` = list(), `14d` = list()),
+      trends = list(),
+      time_series = list()
+    ),
+    file.path(out_dir, "roborev", "latest.json"),
+    auto_unbox = TRUE, null = "null"
+  )
+})
+
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
 # ccusage_blocks is intentionally excluded from critical_files: the CI fallback
