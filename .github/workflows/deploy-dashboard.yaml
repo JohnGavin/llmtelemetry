@@ -133,20 +133,24 @@ jobs:
 
       - name: Stage parquet assets for Shinylive DuckDB-WASM
         run: |
-          PARQUET_SRC="inst/extdata/telemetry/v1/sessions.parquet"
-          PARQUET_DST="vignettes/data/v1/sessions.parquet"
           mkdir -p vignettes/data/v1
-          if [ ! -f "$PARQUET_SRC" ]; then
-            echo "::error::$PARQUET_SRC is missing — DuckDB-WASM 'Sessions by Project' panel will not load"
-            exit 1
-          fi
-          SIZE=$(stat -c%s "$PARQUET_SRC" 2>/dev/null || stat -f%z "$PARQUET_SRC" 2>/dev/null || echo "0")
-          if [ "$SIZE" -lt 1024 ]; then
-            echo "::error::$PARQUET_SRC is suspiciously small (${SIZE} bytes, expected >=1024)"
-            exit 1
-          fi
-          cp "$PARQUET_SRC" "$PARQUET_DST"
-          echo "Staged $PARQUET_SRC -> $PARQUET_DST (${SIZE} bytes)"
+          # Stage all three parquets used by DuckDB-WASM panels.
+          # #83 Phase 5: added costs.parquet + git_commits.parquet for Cost per Commit chart.
+          for PARQUET_NAME in sessions.parquet costs.parquet git_commits.parquet; do
+            PARQUET_SRC="inst/extdata/telemetry/v1/${PARQUET_NAME}"
+            PARQUET_DST="vignettes/data/v1/${PARQUET_NAME}"
+            if [ ! -f "$PARQUET_SRC" ]; then
+              echo "::error::$PARQUET_SRC is missing — DuckDB-WASM panels will not load"
+              exit 1
+            fi
+            SIZE=$(stat -c%s "$PARQUET_SRC" 2>/dev/null || stat -f%z "$PARQUET_SRC" 2>/dev/null || echo "0")
+            if [ "$SIZE" -lt 1024 ]; then
+              echo "::error::$PARQUET_SRC is suspiciously small (${SIZE} bytes, expected >=1024)"
+              exit 1
+            fi
+            cp "$PARQUET_SRC" "$PARQUET_DST"
+            echo "Staged $PARQUET_SRC -> $PARQUET_DST (${SIZE} bytes)"
+          done"
 
       - name: Prepare pages artifact
         run: |
@@ -358,22 +362,24 @@ jobs:
       - name: Verify deployed parquet (DuckDB-WASM guard)
         run: |
           BASE="https://johngavin.github.io/llmtelemetry"
-          PARQUET_PATH="/data/v1/sessions.parquet"
-          PARQUET_URL="${BASE}${PARQUET_PATH}"
-          echo "Verifying deployed parquet at ${PARQUET_URL}..."
-          # Allow up to 60s for Pages propagation before checking the parquet
+          # Allow up to 60s for Pages propagation before checking the parquets
           sleep 60
-          HTTP_STATUS=$(curl -s -o /tmp/parquet_check -w "%{http_code}" "$PARQUET_URL")
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::${PARQUET_URL} returned HTTP ${HTTP_STATUS} (expected 200)"
-            exit 1
-          fi
-          DEPLOYED_SIZE=$(stat -c%s /tmp/parquet_check 2>/dev/null || stat -f%z /tmp/parquet_check 2>/dev/null || echo "0")
-          if [ "$DEPLOYED_SIZE" -lt 1024 ]; then
-            echo "::error::Deployed parquet at ${PARQUET_URL} is too small (${DEPLOYED_SIZE} bytes, expected >=1024)"
-            exit 1
-          fi
-          echo "OK: ${PARQUET_URL} — HTTP 200, ${DEPLOYED_SIZE} bytes"
+          # Verify all three parquets deployed (#83 Phase 5: costs + git_commits added)
+          for PARQUET_NAME in sessions.parquet costs.parquet git_commits.parquet; do
+            PARQUET_URL="${BASE}/data/v1/${PARQUET_NAME}"
+            echo "Verifying deployed parquet at ${PARQUET_URL}..."
+            HTTP_STATUS=$(curl -s -o /tmp/parquet_check -w "%{http_code}" "$PARQUET_URL")
+            if [ "$HTTP_STATUS" != "200" ]; then
+              echo "::error::${PARQUET_URL} returned HTTP ${HTTP_STATUS} (expected 200)"
+              exit 1
+            fi
+            DEPLOYED_SIZE=$(stat -c%s /tmp/parquet_check 2>/dev/null || stat -f%z /tmp/parquet_check 2>/dev/null || echo "0")
+            if [ "$DEPLOYED_SIZE" -lt 1024 ]; then
+              echo "::error::Deployed parquet at ${PARQUET_URL} is too small (${DEPLOYED_SIZE} bytes, expected >=1024)"
+              exit 1
+            fi
+            echo "OK: ${PARQUET_URL} — HTTP 200, ${DEPLOYED_SIZE} bytes"
+          done"
 
       - name: Verify deployment
         run: |
