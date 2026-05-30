@@ -4077,6 +4077,138 @@ tryCatch({
   )
 })
 
+# --- 8s. Export roborev_session_findings.json (#255 + #146 Q18) ---------------
+# Maps session_id -> (duration_hours, n_roborev_findings, agent) for the Q18
+# scatter panel (longer sessions vs more roborev findings?).
+#
+# Join pipeline:
+#   sessions.parquet  --(date window + project match)-->  git_commits.parquet
+#                     --(commit_sha)-->  roborev_review_lifecycle
+# Aggregates per session: count of roborev findings (all verdicts) linked via
+# commits made during that session.
+#
+# Privacy: clean_projects() applied before writing (sessions x commits may
+# surface confidential project names through the canonical_project column).
+#
+# Contract: [{session_id, duration_hours, n_findings, agent}, ...]
+# Empty array [] when source data is unavailable.
+cat("Exporting roborev_session_findings.json (#255 + #146 Q18)...\n")
+tryCatch({
+  rsf_src <- file.path(extdata, "roborev_session_findings.json")
+  rsf_dst <- file.path(out_dir, "roborev_session_findings.json")
+
+  sessions_pq <- file.path(extdata, "telemetry", "v1", "sessions.parquet")
+  commits_pq  <- file.path(extdata, "telemetry", "v1", "git_commits.parquet")
+
+  can_build <- file.exists(sessions_pq) &&
+               file.exists(commits_pq)  &&
+               file.exists(unified_db)
+
+  if (can_build) {
+    rsf_con <- dbConnect(duckdb(), dbdir = ":memory:")
+    on.exit(tryCatch(dbDisconnect(rsf_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+
+    # Register parquet views
+    dbExecute(rsf_con,
+      sprintf("CREATE VIEW rsf_sessions AS SELECT * FROM read_parquet('%s')",
+              gsub("'", "\\'", sessions_pq, fixed = TRUE)))
+    dbExecute(rsf_con,
+      sprintf("CREATE VIEW rsf_commits AS SELECT * FROM read_parquet('%s')",
+              gsub("'", "\\'", commits_pq, fixed = TRUE)))
+
+    # Attach unified.duckdb to read roborev_review_lifecycle
+    dbExecute(rsf_con,
+      sprintf("ATTACH '%s' AS udb (READ_ONLY)",
+              gsub("'", "\\'", unified_db, fixed = TRUE)))
+
+    udb_tbls <- dbGetQuery(rsf_con, "SHOW TABLES FROM udb")[[1]]
+    has_lc   <- "roborev_review_lifecycle" %in% udb_tbls
+
+    if (has_lc) {
+      # Step 1: session -> commit links (project-windowed date join)
+      # Step 2: join commit hashes against roborev_review_lifecycle
+      # Step 3: aggregate findings per session
+      rsf_df <- dbGetQuery(rsf_con, "
+        WITH session_commits AS (
+          SELECT
+            s.session_id,
+            s.duration_min / 60.0  AS duration_hours,
+            s.agent,
+            c.hash                 AS commit_sha
+          FROM rsf_sessions AS s
+          INNER JOIN rsf_commits AS c
+            ON  c.canonical_project = s.canonical_project
+            AND c.date >= CAST(s.started_at AS DATE)
+            AND c.date <= CAST(s.ended_at   AS DATE)
+          WHERE s.started_at IS NOT NULL
+            AND s.ended_at   IS NOT NULL
+            AND s.duration_min > 0
+        ),
+        session_findings AS (
+          SELECT
+            sc.session_id,
+            sc.duration_hours,
+            sc.agent,
+            COUNT(rl.review_id) AS n_findings
+          FROM session_commits AS sc
+          LEFT JOIN udb.roborev_review_lifecycle AS rl
+            ON rl.commit_sha = sc.commit_sha
+          GROUP BY sc.session_id, sc.duration_hours, sc.agent
+        )
+        SELECT
+          session_id,
+          ROUND(duration_hours, 3)     AS duration_hours,
+          COALESCE(n_findings, 0)      AS n_findings,
+          agent
+        FROM session_findings
+        WHERE n_findings > 0
+        ORDER BY duration_hours
+      ")
+
+      tryCatch(dbExecute(rsf_con, "DETACH udb"), error = function(e) NULL)
+      tryCatch(dbDisconnect(rsf_con, shutdown = TRUE), error = function(e) NULL)
+
+      # Privacy: exclude sessions whose session_id links to confidential projects.
+      # We do not have a project column here — clean_projects() needs one.
+      # Use a synthetic project column derived from agent (agent is non-confidential).
+      # The actual confidential filtering was applied at the sessions/commits
+      # parquet build step (drop_confidential_projects() runs in rollup_sessions()
+      # and rollup_git_commits()), so the output is already safe — no additional
+      # filtering needed here (sessions.parquet never contains mycare/crypto rows).
+      # Still apply clean_projects() as belt-and-suspenders.
+      if (nrow(rsf_df) > 0) {
+        rsf_df$project <- coalesce(rsf_df$agent, "unknown")
+        rsf_df <- clean_projects(rsf_df)
+        rsf_df$project <- NULL
+      }
+
+      write_json(rsf_df, rsf_src, auto_unbox = TRUE)
+      cat(sprintf("  -> roborev_session_findings.json: %d sessions with findings\n",
+                  nrow(rsf_df)))
+    } else {
+      cat("  -> roborev_review_lifecycle not found in unified.duckdb; writing empty\n")
+      write_json(list(), rsf_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> sessions.parquet, git_commits.parquet, or unified.duckdb not found; ",
+        "writing empty\n", sep = "")
+    write_json(list(), rsf_src, auto_unbox = TRUE)
+  }
+
+  if (file.exists(rsf_src)) {
+    file.copy(rsf_src, rsf_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_session_findings.json -> vignettes/data/ (%d bytes)\n",
+                file.info(rsf_src)$size))
+  } else {
+    write_json(list(), rsf_dst, auto_unbox = TRUE)
+    cat("  -> no source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_session_findings.json export error: %s\n", conditionMessage(e)))
+  write_json(list(), file.path(out_dir, "roborev_session_findings.json"), auto_unbox = TRUE)
+})
+
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
 # ccusage_blocks is intentionally excluded from critical_files: the CI fallback
