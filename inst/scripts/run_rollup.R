@@ -18,6 +18,18 @@ package_dir <- normalizePath(file.path(dirname(script_path), "..", ".."),
 
 pkgload::load_all(package_dir, quiet = TRUE)
 
+# Privacy exclusion — single source of truth (#265).
+# excluded_dashboard_projects() is now exported from R/privacy_exclusion.R.
+# The rollup_* functions call drop_confidential_projects() internally (#83),
+# which uses confidential_project_names().  The full dashboard exclusion list
+# (including demo projects) is available here for any future post-rollup filter.
+local({
+  helper <- file.path(package_dir, "R", "privacy_exclusion.R")
+  if (file.exists(helper) && !exists("excluded_dashboard_projects", mode = "function")) {
+    source(helper, local = FALSE)
+  }
+})
+
 extdata  <- file.path(package_dir, "inst", "extdata")
 telv1    <- file.path(extdata, "telemetry", "v1")
 
