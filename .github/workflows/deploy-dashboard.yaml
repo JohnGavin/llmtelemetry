@@ -14,6 +14,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  issues: write
 
 concurrency:
   group: "pages"
@@ -29,6 +30,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Ensure ci-failure label exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create ci-failure --repo "${{ github.repository }}" \
+            --color B60205 --description "Automated CI failure tracker" 2>/dev/null || true
 
       - uses: r-lib/actions/setup-r@v2
         with:
@@ -482,4 +490,26 @@ jobs:
             exit 1
           else
             echo "All deployment checks passed"
+          fi
+
+      - name: Alert on failure — file/update tracking issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BODY="Deploy run [${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) failed at $(date -u +%FT%TZ).
+
+          Commit: ${{ github.sha }}
+          Branch: ${{ github.ref }}
+          Tracked: JohnGavin/llmtelemetry#263"
+
+          # Look for an existing open tracking issue; comment if exists, create if not.
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" --label "ci-failure" --state open --json number --jq '.[0].number' || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "${{ github.repository }}" --body "$BODY"
+          else
+            gh issue create --repo "${{ github.repository }}" \
+              --title "[CI failure] Dashboard deploy failed run ${{ github.run_id }}" \
+              --body "$BODY" \
+              --label "ci-failure"
           fi
