@@ -45,6 +45,9 @@ format:
       - data/roborev_agent_perf.json
       - data/roborev_backlog_age.json
       - data/roborev_repo_signal.json
+      - data/roborev_cost_per_finding.json
+      - data/roborev_cost_per_agent.json
+      - data/roborev_vs_session_cost.json
       - data/roborev/latest.json
       - data/v1/sessions.parquet
       - data/v1/costs.parquet
@@ -1345,6 +1348,37 @@ ui <- page_navbar(
               "totalCost for Claude, est_cost_usd for Codex, and total_cost for Gemini. ",
               "Time horizon slider applies. Absent or zero data for a tool renders gracefully without error. ",
               "Source: ccusage_daily.json, codex_daily.json, gemini_daily.json."))
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Session Cost vs roborev Review Cost (#146 Q20)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Stacked area chart: session execution cost (blue) vs roborev review cost (green). ",
+                "Session cost = daily Claude API spend (opus + sonnet + haiku) from unified_costs. ",
+                "Review cost = roborev_agent_performance.total_cost_usd — not yet instrumented ",
+                "(shows zero until tracking lands). A healthy ratio: review cost should be ",
+                "<10–20% of session cost."
+              )
+            ),
+            uiOutput("rv_vsr_chart"),
+            tags$table(class = "table table-sm table-dark mt-2 mb-0",
+              tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
+              tags$tbody(
+                tags$tr(tags$td("Session cost (all-time)"),
+                        tags$td(textOutput("rv_vsr_session_total", inline = TRUE))),
+                tags$tr(tags$td("Review cost (all-time)"),
+                        tags$td(textOutput("rv_vsr_review_total", inline = TRUE))),
+                tags$tr(tags$td("Review/session ratio"),
+                        tags$td(textOutput("rv_vsr_pct", inline = TRUE)))
+              )
+            ),
+            card_footer(class = "text-muted small",
+              "Session cost sourced from unified_costs.json (total daily Claude API spend: opus+sonnet+haiku). ",
+              "Review cost sourced from roborev_agent_performance.total_cost_usd (not yet instrumented as of 2026-05-30). ",
+              "Healthy target: review overhead <10-20% of session cost. ",
+              "Source: roborev_vs_session_cost.json from unified.duckdb.")
+          )
         )
       ),
       nav_panel("Token Analysis", value = "Token Analysis",
@@ -1684,6 +1718,51 @@ ui <- page_navbar(
               "Source: roborev_daily_metrics table in unified.duckdb, aggregated across all dates. ",
               "Confidential repos (mycare, crypto, swarms) are excluded via clean_projects(). ",
               "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Cost per Finding Resolved (#146 Q1)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Addressed findings per agent over time. Dollar cost per finding is not yet ",
+                "instrumented — ", tags$code("roborev_agent_performance.total_cost_usd"),
+                " is NULL as of 2026-05-30. The chart shows addressed finding count ",
+                "(", tags$code("close_reason='manual'"), ") as the actionable proxy. ",
+                "Addressed = a human manually closed the review after the fixer acted."
+              )
+            ),
+            uiOutput("rv_cpf_chart"),
+            tags$table(class = "table table-sm table-dark mt-2 mb-0",
+              tags$thead(tags$tr(
+                tags$th("Agent"), tags$th("Addressed"), tags$th("Passed"),
+                tags$th("Cost/finding (USD)")
+              )),
+              uiOutput("rv_cpf_table")
+            ),
+            card_footer(class = "text-muted small",
+              "Addressed = close_reason='manual' in roborev_review_lifecycle. ",
+              "Passed = pass_count in roborev_agent_performance (critic found no issues). ",
+              "Cost per finding will show once total_cost_usd instrumentation lands. ",
+              "PALETTE: codex=#4ea8de, claude-code=#69d4a0, gemini=#ffd93d. ",
+              "Source: roborev_review_lifecycle + roborev_agent_performance in unified.duckdb.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Cheapest Agent per Resolved Finding (#146 Q11)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Cleveland dot chart: addressed finding count per agent (x-axis). ",
+                "When cost instrumentation is available, the x-axis will show USD per finding. ",
+                "Lower x-value = better ROI (more addressed findings per dollar)."
+              )
+            ),
+            uiOutput("rv_cpa_chart"),
+            card_footer(class = "text-muted small",
+              "X-axis: addressed finding count per agent (cost_usd_per_finding when instrumented). ",
+              "Source: roborev_cost_per_agent.json from unified.duckdb. ",
+              "PALETTE: codex=#4ea8de, claude-code=#69d4a0, gemini=#ffd93d.")
           )
         )
       )
@@ -3643,6 +3722,20 @@ server <- function(input, output, session) {
   # Contract: {repos:[{repo,n_created,n_passed,n_failed,n_autoclosed,n_parse_fail,
   #   signal_ratio,noise_ratio},...], generated_at}
   roborev_repo_signal_raw <- load_json("roborev_repo_signal.json")
+  # roborev_cost_per_finding.json — cost per finding resolved (#146 Q1).
+  # Contract: {series:[{agent,date,pass_count,addressed_count,cost_usd_per_finding}],
+  #   summary:[{agent,total_pass,total_addressed,cost_usd_per_finding}],
+  #   cost_instrumented:bool, generated_at}
+  roborev_cpf_raw <- load_json("roborev_cost_per_finding.json")
+  # roborev_cost_per_agent.json — cheapest agent per resolved finding (#146 Q11).
+  # Contract: {agents:[{agent,total_pass,total_addressed,cost_usd_per_finding}],
+  #   cost_instrumented:bool, generated_at}
+  roborev_cpa_raw <- load_json("roborev_cost_per_agent.json")
+  # roborev_vs_session_cost.json — session cost vs review cost (#146 Q20).
+  # Contract: {daily:[{date,session_cost_usd,review_cost_usd,review_pct}],
+  #   overall:{session_total,review_total,review_pct}, cost_instrumented:bool,
+  #   note:str, generated_at}
+  roborev_vsr_raw <- load_json("roborev_vs_session_cost.json")
 
   rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
     roborev_summary_raw$pulse
@@ -4219,6 +4312,311 @@ server <- function(input, output, session) {
       "Buckets from youngest (0-1d) at bottom to oldest (>14d) at top. ",
       "Source: roborev_backlog_age.json from reviews.db."
     ))
+  })
+
+  # --- Cost ROI panels: Q1, Q11, Q20 (#146) ------------------------------------
+  # Named palette: same colour per agent across all three panels.
+  # Accessibility: all colours meet 4.5:1 contrast on dark bg (per accessibility rule).
+  AGENT_PALETTE <- c(
+    "codex"       = "#4ea8de",   # primary blue
+    "claude-code" = "#69d4a0",   # success green
+    "gemini"      = "#ffd93d"    # warm yellow
+  )
+  agent_colour <- function(agent_name) {
+    col <- AGENT_PALETTE[agent_name]
+    if (is.na(col)) "#c084fc" else col   # purple fallback for unknown agents
+  }
+
+  # Helper: parse cost per finding series (list-of-lists or data frame)
+  safe_cpf_series <- function(raw) {
+    if (is.null(raw) || !is.list(raw)) return(NULL)
+    s <- raw$series
+    if (is.null(s) || length(s) == 0L) return(NULL)
+    if (is.data.frame(s)) {
+      if (nrow(s) == 0L) return(NULL)
+      s
+    } else {
+      tryCatch(
+        do.call(rbind, lapply(s, function(r) {
+          data.frame(
+            agent           = as.character(r$agent),
+            date            = as.character(r$date),
+            pass_count      = as.integer(r$pass_count),
+            addressed_count = as.integer(r$addressed_count),
+            stringsAsFactors = FALSE
+          )
+        })),
+        error = function(e) NULL
+      )
+    }
+  }
+
+  safe_cpf_summary <- function(raw) {
+    if (is.null(raw) || !is.list(raw)) return(NULL)
+    s <- raw$summary
+    if (is.null(s) || length(s) == 0L) return(NULL)
+    if (is.data.frame(s)) {
+      if (nrow(s) == 0L) return(NULL)
+      s
+    } else {
+      tryCatch(
+        do.call(rbind, lapply(s, function(r) {
+          data.frame(
+            agent           = as.character(r$agent),
+            total_pass      = as.integer(r$total_pass),
+            total_addressed = as.integer(r$total_addressed),
+            stringsAsFactors = FALSE
+          )
+        })),
+        error = function(e) NULL
+      )
+    }
+  }
+
+  # Q1: cost per finding — line chart over time, per-agent, showing addressed counts
+  output$rv_cpf_chart <- renderUI({
+    s <- safe_cpf_series(roborev_cpf_raw)
+    if (is.null(s))
+      return(ec_empty(
+        "No cost-per-finding data yet — roborev_cost_per_finding.json not deployed",
+        h = "300px"))
+
+    dates   <- sort(unique(s$date))
+    agents  <- sort(unique(s$agent))
+
+    series_list <- lapply(agents, function(ag) {
+      ag_df  <- s[s$agent == ag, ]
+      ag_df  <- ag_df[order(ag_df$date), ]
+      # Reindex to all dates (fill 0 for missing dates)
+      counts <- setNames(ag_df$addressed_count, ag_df$date)
+      vals   <- as.integer(counts[dates])
+      vals[is.na(vals)] <- 0L
+      list(
+        name      = ag,
+        type      = "line",
+        data      = I(vals),
+        smooth    = TRUE,
+        itemStyle = list(color = agent_colour(ag))
+      )
+    })
+
+    n_total <- sum(s$addressed_count, na.rm = TRUE)
+    ec_line(
+      dates   = dates,
+      series  = series_list,
+      h       = "300px",
+      y_name  = "Addressed findings",
+      aria_label = paste0(
+        "Line chart: addressed roborev findings per agent over time. ",
+        length(agents), " agents: ", paste(agents, collapse = ", "), ". ",
+        "Total addressed: ", n_total, ". ",
+        "Addressed = close_reason='manual' in roborev_review_lifecycle. ",
+        "Cost per finding not yet available — total_cost_usd not instrumented. ",
+        "Source: roborev_cost_per_finding.json."
+      )
+    )
+  })
+
+  output$rv_cpf_table <- renderUI({
+    sm <- safe_cpf_summary(roborev_cpf_raw)
+    if (is.null(sm)) {
+      return(tags$tbody(tags$tr(tags$td(colspan = "4", "No data yet"))))
+    }
+    sm <- sm[order(sm$total_addressed, decreasing = TRUE), ]
+    rows <- lapply(seq_len(nrow(sm)), function(i) {
+      r <- sm[i, , drop = FALSE]
+      cost_str <- if ("cost_usd_per_finding" %in% names(r) &&
+                      !is.null(r$cost_usd_per_finding) &&
+                      !is.na(r$cost_usd_per_finding)) {
+        sprintf("$%.4f", r$cost_usd_per_finding)
+      } else "— (not instrumented)"
+      tags$tr(
+        style = paste0("color:", agent_colour(r$agent), ";"),
+        tags$td(r$agent),
+        tags$td(formatC(r$total_addressed, format = "d", big.mark = ",")),
+        tags$td(formatC(r$total_pass,      format = "d", big.mark = ",")),
+        tags$td(cost_str)
+      )
+    })
+    tags$tbody(rows)
+  })
+
+  # Q11: cheapest agent per resolved finding — Cleveland dot chart
+  output$rv_cpa_chart <- renderUI({
+    raw <- roborev_cpa_raw
+    if (is.null(raw) || !is.list(raw)) {
+      return(ec_empty(
+        "No cost-per-agent data yet — roborev_cost_per_agent.json not deployed",
+        h = "250px"))
+    }
+    agents_raw <- raw$agents
+    if (is.null(agents_raw) || length(agents_raw) == 0L) {
+      return(ec_empty("No agent data available yet", h = "250px"))
+    }
+    cpa_df <- if (is.data.frame(agents_raw)) {
+      agents_raw
+    } else {
+      tryCatch(
+        do.call(rbind, lapply(agents_raw, function(r) {
+          data.frame(
+            agent           = as.character(r$agent),
+            total_addressed = as.integer(r$total_addressed),
+            stringsAsFactors = FALSE
+          )
+        })),
+        error = function(e) NULL
+      )
+    }
+    if (is.null(cpa_df) || nrow(cpa_df) == 0L)
+      return(ec_empty("Agent data could not be parsed", h = "250px"))
+
+    # Sort ascending for Cleveland dot (lowest count at bottom = best per-dollar)
+    cpa_df <- cpa_df[order(cpa_df$total_addressed, decreasing = FALSE), ]
+
+    colours <- vapply(cpa_df$agent, agent_colour, character(1))
+    best_agent <- cpa_df$agent[which.max(cpa_df$total_addressed)]
+    best_n     <- max(cpa_df$total_addressed)
+
+    ec(list(
+      tooltip = list(
+        trigger = "axis",
+        axisPointer = list(type = "shadow"),
+        formatter  = DT::JS(
+          "function(params) {",
+          "  var d = params[0];",
+          "  return d.name + '<br/>Addressed: ' + d.value;",
+          "}"
+        )
+      ),
+      grid = list(left = 120, containLabel = FALSE),
+      xAxis = list(
+        type          = "value",
+        name          = "Addressed findings",
+        nameLocation  = "middle",
+        nameGap       = 28,
+        axisLabel     = list(color = "#ccc"),
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        type      = "category",
+        data      = I(cpa_df$agent),
+        axisLabel = list(color = "#ccc", fontSize = 12)
+      ),
+      series = list(list(
+        type       = "scatter",
+        data       = I(cpa_df$total_addressed),
+        symbolSize = 14,
+        itemStyle  = list(
+          color = DT::JS(paste0(
+            "function(params) {",
+            "var m = ", toJSON(setNames(as.list(colours), cpa_df$agent), auto_unbox = TRUE), ";",
+            "return m[params.name] || '#c084fc';",
+            "}"
+          ))
+        )
+      ))
+    ), h = "250px",
+    aria_label = paste0(
+      "Cleveland dot chart: addressed finding count per roborev review agent. ",
+      "Most addressed: ", best_agent, " with ", best_n, " findings. ",
+      "When cost instrumentation lands, x-axis will show USD per finding. ",
+      "Source: roborev_cost_per_agent.json."
+    ))
+  })
+
+  # Q20: session cost vs review cost — stacked area chart over time
+  safe_vsr_daily <- function(raw) {
+    if (is.null(raw) || !is.list(raw)) return(NULL)
+    d <- raw$daily
+    if (is.null(d) || length(d) == 0L) return(NULL)
+    if (is.data.frame(d)) {
+      if (nrow(d) == 0L) return(NULL)
+      d
+    } else {
+      tryCatch(
+        do.call(rbind, lapply(d, function(r) {
+          data.frame(
+            date             = as.character(r$date),
+            session_cost_usd = as.numeric(r$session_cost_usd),
+            review_cost_usd  = as.numeric(r$review_cost_usd),
+            stringsAsFactors = FALSE
+          )
+        })),
+        error = function(e) NULL
+      )
+    }
+  }
+
+  output$rv_vsr_chart <- renderUI({
+    d <- safe_vsr_daily(roborev_vsr_raw)
+    if (is.null(d))
+      return(ec_empty(
+        "No session vs review cost data yet — roborev_vs_session_cost.json not deployed",
+        h = "320px"))
+
+    d <- d[order(d$date), ]
+
+    series_list <- list(
+      list(
+        name      = "Session cost (USD)",
+        type      = "line",
+        stack     = "cost",
+        areaStyle = list(opacity = 0.6),
+        data      = I(round(d$session_cost_usd, 4)),
+        itemStyle = list(color = "#4ea8de")   # primary blue (session)
+      ),
+      list(
+        name      = "Review cost (USD)",
+        type      = "line",
+        stack     = "cost",
+        areaStyle = list(opacity = 0.6),
+        data      = I(round(d$review_cost_usd, 4)),
+        itemStyle = list(color = "#69d4a0")   # success green (review)
+      )
+    )
+
+    overall <- if (!is.null(roborev_vsr_raw$overall)) roborev_vsr_raw$overall else NULL
+    total_s  <- if (!is.null(overall$session_total)) round(overall$session_total, 2) else sum(d$session_cost_usd, na.rm=TRUE)
+    review_p <- if (!is.null(overall$review_pct)) overall$review_pct else 0
+
+    ec_line(
+      dates   = d$date,
+      series  = series_list,
+      h       = "320px",
+      y_name  = "USD",
+      aria_label = paste0(
+        "Stacked area chart: daily session cost (blue) vs roborev review cost (green). ",
+        "Total session cost: $", sprintf("%.2f", total_s), ". ",
+        "Review overhead: ", review_p, "% of session cost. ",
+        "Review costs are not yet instrumented (all zero as of 2026-05-30). ",
+        "Healthy target: review overhead <10-20% of session cost. ",
+        "Source: roborev_vs_session_cost.json."
+      )
+    )
+  })
+
+  output$rv_vsr_session_total <- renderText({
+    if (is.null(roborev_vsr_raw) || !is.list(roborev_vsr_raw)) return("—")
+    ov <- roborev_vsr_raw$overall
+    if (is.null(ov) || is.null(ov$session_total)) return("—")
+    sprintf("$%s", formatC(round(ov$session_total, 2), format = "f", digits = 2,
+                           big.mark = ","))
+  })
+
+  output$rv_vsr_review_total <- renderText({
+    if (is.null(roborev_vsr_raw) || !is.list(roborev_vsr_raw)) return("—")
+    ov <- roborev_vsr_raw$overall
+    if (is.null(ov) || is.null(ov$review_total)) return("—")
+    v <- round(ov$review_total, 4)
+    if (v == 0) "— (not instrumented)" else sprintf("$%.4f", v)
+  })
+
+  output$rv_vsr_pct <- renderText({
+    if (is.null(roborev_vsr_raw) || !is.list(roborev_vsr_raw)) return("—")
+    ov <- roborev_vsr_raw$overall
+    if (is.null(ov) || is.null(ov$review_pct)) return("—")
+    v <- ov$review_pct
+    if (v == 0) "— (not instrumented)" else sprintf("%.2f%%", v)
   })
 }
 

@@ -1776,6 +1776,42 @@ api_index <- list(
         repos = "array of {repo, n_created, n_passed, n_failed, n_autoclosed, n_parse_fail, signal_ratio, noise_ratio}",
         generated_at = "string (ISO 8601)"
       )
+    ),
+    list(
+      path        = "/roborev_cost_per_finding.json",
+      description = "Cost per finding actually resolved, per agent, over time (#146 Q1). cost_instrumented=false until total_cost_usd is populated.",
+      type        = "object",
+      source      = "~/.claude/logs/unified.duckdb (roborev_review_lifecycle + roborev_agent_performance)",
+      schema      = list(
+        series            = "array of {agent, date, pass_count, addressed_count, cost_usd_per_finding}",
+        summary           = "array of {agent, total_pass, total_addressed, cost_usd_per_finding}",
+        cost_instrumented = "boolean",
+        generated_at      = "string (ISO 8601)"
+      )
+    ),
+    list(
+      path        = "/roborev_cost_per_agent.json",
+      description = "Cheapest agent per resolved finding (#146 Q11). cost_instrumented=false until total_cost_usd is populated.",
+      type        = "object",
+      source      = "~/.claude/logs/unified.duckdb (roborev_review_lifecycle + roborev_agent_performance)",
+      schema      = list(
+        agents            = "array of {agent, total_pass, total_addressed, cost_usd_per_finding}",
+        cost_instrumented = "boolean",
+        generated_at      = "string (ISO 8601)"
+      )
+    ),
+    list(
+      path        = "/roborev_vs_session_cost.json",
+      description = "Session execution cost vs roborev review cost, daily (#146 Q20). cost_instrumented=false until review costs are tracked.",
+      type        = "object",
+      source      = "~/.claude/logs/unified.duckdb (costs + roborev_agent_performance)",
+      schema      = list(
+        daily             = "array of {date, session_cost_usd, review_cost_usd, review_pct}",
+        overall           = "object {session_total, review_total, review_pct}",
+        cost_instrumented = "boolean",
+        note              = "string",
+        generated_at      = "string (ISO 8601)"
+      )
     )
   )
 )
@@ -3059,6 +3095,442 @@ tryCatch({
   write_json(
     list(repos = list(), generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
     file.path(out_dir, "roborev_repo_signal.json"),
+    auto_unbox = TRUE
+  )
+})
+
+# --- 8n. Export roborev_cost_per_finding.json (#146 Q1) ----------------------
+# Cost per finding actually resolved (USD), per agent, over time.
+# Numerator proxy: pass_count per agent per day (total_cost_usd is not yet
+#   instrumented in roborev_agent_performance — all NULL as of 2026-05-30).
+# Denominator: close_reason='manual' count from roborev_review_lifecycle.
+# NOTE: Dollar cost column is always NA until cost instrumentation lands.
+#   pass_count is used as the actionable-findings proxy.
+# Contract: {
+#   series: [{agent, date, pass_count, addressed_count, cost_usd_per_finding}],
+#   summary: [{agent, total_pass, total_addressed, cost_usd_per_finding}],
+#   cost_instrumented: false,
+#   generated_at: "ISO8601"
+# }
+cat("Exporting roborev_cost_per_finding.json (#146 Q1)...\n")
+tryCatch({
+  cpf_src <- file.path(extdata, "roborev_cost_per_finding.json")
+  cpf_dst <- file.path(out_dir, "roborev_cost_per_finding.json")
+
+  empty_cpf <- list(
+    series             = list(),
+    summary            = list(),
+    cost_instrumented  = FALSE,
+    generated_at       = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  if (file.exists(unified_db)) {
+    cpf_con <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(cpf_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    cpf_tbls <- dbListTables(cpf_con)
+
+    has_lifecycle <- "roborev_review_lifecycle" %in% cpf_tbls
+    has_perf      <- "roborev_agent_performance" %in% cpf_tbls
+
+    if (has_lifecycle && has_perf) {
+      lifecycle_raw <- dbReadTable(cpf_con, "roborev_review_lifecycle") |> as_tibble()
+      perf_raw      <- dbReadTable(cpf_con, "roborev_agent_performance") |> as_tibble()
+
+      # --- per-agent per-day addressed count from lifecycle ---
+      req_lc <- c("agent", "created_at", "close_reason")
+      if (!all(req_lc %in% names(lifecycle_raw))) {
+        cat(sprintf("  -> roborev_review_lifecycle missing cols: %s; writing empty\n",
+                    paste(setdiff(req_lc, names(lifecycle_raw)), collapse = ", ")))
+        write_json(empty_cpf, cpf_src, auto_unbox = TRUE)
+      } else {
+        # Addressed = close_reason='manual' (human manually closed after fixer acted)
+        lifecycle_raw$date_str <- as.character(as.Date(
+          as.POSIXct(lifecycle_raw$created_at, tz = "UTC")
+        ))
+        addressed_by_day <- lifecycle_raw |>
+          filter(!is.na(agent)) |>
+          group_by(agent, date = date_str) |>
+          summarise(
+            addressed_count = sum(close_reason == "manual", na.rm = TRUE),
+            .groups = "drop"
+          )
+
+        # --- per-agent per-day pass_count from performance (proxy for findings) ---
+        req_perf <- c("agent", "date", "pass_count")
+        if (!all(req_perf %in% names(perf_raw))) {
+          cat(sprintf("  -> roborev_agent_performance missing cols: %s\n",
+                      paste(setdiff(req_perf, names(perf_raw)), collapse = ", ")))
+          write_json(empty_cpf, cpf_src, auto_unbox = TRUE)
+        } else {
+          perf_by_day <- perf_raw |>
+            filter(!is.na(agent)) |>
+            mutate(date = as.character(date)) |>
+            group_by(agent, date) |>
+            summarise(
+              pass_count     = sum(pass_count, na.rm = TRUE),
+              total_cost_usd = if ("total_cost_usd" %in% names(perf_raw))
+                                 sum(total_cost_usd, na.rm = TRUE)
+                               else NA_real_,
+              .groups = "drop"
+            )
+
+          # Join lifecycle addressed counts with performance pass counts
+          series_df <- perf_by_day |>
+            left_join(addressed_by_day, by = c("agent", "date")) |>
+            mutate(
+              addressed_count      = coalesce(addressed_count, 0L),
+              cost_usd_per_finding = ifelse(
+                !is.na(total_cost_usd) & total_cost_usd > 0 & addressed_count > 0,
+                total_cost_usd / addressed_count,
+                NA_real_
+              )
+            ) |>
+            arrange(agent, date)
+
+          # Apply privacy filter on agent column (no project data here, but defensive)
+          # Agent names are not project names — no clean_projects() needed.
+
+          # Summary: aggregate across all dates
+          summary_df <- series_df |>
+            group_by(agent) |>
+            summarise(
+              total_pass      = sum(pass_count,      na.rm = TRUE),
+              total_addressed = sum(addressed_count, na.rm = TRUE),
+              total_cost_usd  = if (all(is.na(total_cost_usd))) NA_real_
+                                else sum(total_cost_usd, na.rm = TRUE),
+              .groups = "drop"
+            ) |>
+            mutate(
+              cost_usd_per_finding = ifelse(
+                !is.na(total_cost_usd) & total_cost_usd > 0 & total_addressed > 0,
+                total_cost_usd / total_addressed,
+                NA_real_
+              )
+            ) |>
+            arrange(desc(total_addressed))
+
+          cpf_out <- list(
+            series = lapply(seq_len(nrow(series_df)), function(i) {
+              r <- series_df[i, , drop = FALSE]
+              list(
+                agent               = r$agent,
+                date                = r$date,
+                pass_count          = as.integer(r$pass_count),
+                addressed_count     = as.integer(r$addressed_count),
+                cost_usd_per_finding = if (is.na(r$cost_usd_per_finding)) NULL
+                                       else r$cost_usd_per_finding
+              )
+            }),
+            summary = lapply(seq_len(nrow(summary_df)), function(i) {
+              r <- summary_df[i, , drop = FALSE]
+              list(
+                agent                = r$agent,
+                total_pass           = as.integer(r$total_pass),
+                total_addressed      = as.integer(r$total_addressed),
+                cost_usd_per_finding = if (is.na(r$cost_usd_per_finding)) NULL
+                                       else r$cost_usd_per_finding
+              )
+            }),
+            cost_instrumented = FALSE,
+            generated_at      = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+          )
+          write_json(cpf_out, cpf_src, auto_unbox = TRUE)
+          cat(sprintf(
+            "  -> roborev_cost_per_finding.json: %d agent-day rows, %d agents\n",
+            nrow(series_df), nrow(summary_df)
+          ))
+        }
+      }
+      tryCatch(dbDisconnect(cpf_con, shutdown = TRUE), error = function(e) NULL)
+    } else {
+      missing_t <- paste(c(
+        if (!has_lifecycle) "roborev_review_lifecycle",
+        if (!has_perf)      "roborev_agent_performance"
+      ), collapse = ", ")
+      cat(sprintf("  -> tables not found (%s); writing empty\n", missing_t))
+      write_json(empty_cpf, cpf_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  if (file.exists(cpf_src)) {
+    file.copy(cpf_src, cpf_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_cost_per_finding.json -> vignettes/data/ (%d bytes)\n",
+                file.info(cpf_src)$size))
+  } else {
+    write_json(empty_cpf, cpf_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_cost_per_finding.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(series = list(), summary = list(), cost_instrumented = FALSE,
+         generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_cost_per_finding.json"),
+    auto_unbox = TRUE
+  )
+})
+
+# --- 8o. Export roborev_cost_per_agent.json (#146 Q11) -----------------------
+# Cheapest agent per resolved finding — aggregate view (no time series).
+# Derived from roborev_cost_per_finding.json summary block.
+# Contract: {agents:[{agent,total_pass,total_addressed,cost_usd_per_finding}],
+#   cost_instrumented:false, generated_at:"ISO8601"}
+cat("Exporting roborev_cost_per_agent.json (#146 Q11)...\n")
+tryCatch({
+  cpa_src <- file.path(extdata, "roborev_cost_per_agent.json")
+  cpa_dst <- file.path(out_dir, "roborev_cost_per_agent.json")
+
+  empty_cpa <- list(
+    agents            = list(),
+    cost_instrumented = FALSE,
+    generated_at      = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  # Derive from unified.duckdb (same query as 8n but without the time series)
+  if (file.exists(unified_db)) {
+    cpa_con <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(cpa_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    cpa_tbls <- dbListTables(cpa_con)
+
+    has_lc_cpa <- "roborev_review_lifecycle" %in% cpa_tbls
+    has_perf_cpa <- "roborev_agent_performance" %in% cpa_tbls
+
+    if (has_lc_cpa && has_perf_cpa) {
+      lc_cpa   <- dbReadTable(cpa_con, "roborev_review_lifecycle") |> as_tibble()
+      perf_cpa <- dbReadTable(cpa_con, "roborev_agent_performance") |> as_tibble()
+
+      req_lc_cpa <- c("agent", "close_reason")
+      req_perf_cpa <- c("agent", "pass_count")
+
+      if (!all(req_lc_cpa %in% names(lc_cpa)) ||
+          !all(req_perf_cpa %in% names(perf_cpa))) {
+        cat("  -> required columns missing; writing empty roborev_cost_per_agent.json\n")
+        write_json(empty_cpa, cpa_src, auto_unbox = TRUE)
+      } else {
+        # Addressed per agent from lifecycle
+        addressed_cpa <- lc_cpa |>
+          filter(!is.na(agent)) |>
+          group_by(agent) |>
+          summarise(total_addressed = sum(close_reason == "manual", na.rm = TRUE),
+                    .groups = "drop")
+
+        # Pass count + cost per agent from performance
+        perf_agg_cpa <- perf_cpa |>
+          filter(!is.na(agent)) |>
+          group_by(agent) |>
+          summarise(
+            total_pass     = sum(pass_count, na.rm = TRUE),
+            total_cost_usd = if ("total_cost_usd" %in% names(perf_cpa))
+                               sum(total_cost_usd, na.rm = TRUE)
+                             else NA_real_,
+            .groups = "drop"
+          )
+
+        cpa_df <- perf_agg_cpa |>
+          left_join(addressed_cpa, by = "agent") |>
+          mutate(
+            total_addressed      = coalesce(total_addressed, 0L),
+            cost_usd_per_finding = ifelse(
+              !is.na(total_cost_usd) & total_cost_usd > 0 & total_addressed > 0,
+              total_cost_usd / total_addressed,
+              NA_real_
+            )
+          ) |>
+          arrange(cost_usd_per_finding, desc(total_addressed))  # cheapest first
+
+        cpa_out <- list(
+          agents = lapply(seq_len(nrow(cpa_df)), function(i) {
+            r <- cpa_df[i, , drop = FALSE]
+            list(
+              agent                = r$agent,
+              total_pass           = as.integer(r$total_pass),
+              total_addressed      = as.integer(r$total_addressed),
+              cost_usd_per_finding = if (is.na(r$cost_usd_per_finding)) NULL
+                                     else r$cost_usd_per_finding
+            )
+          }),
+          cost_instrumented = FALSE,
+          generated_at      = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        )
+        write_json(cpa_out, cpa_src, auto_unbox = TRUE)
+        cat(sprintf("  -> roborev_cost_per_agent.json: %d agents\n", nrow(cpa_df)))
+        tryCatch(dbDisconnect(cpa_con, shutdown = TRUE), error = function(e) NULL)
+      }
+    } else {
+      cat("  -> required tables missing; writing empty roborev_cost_per_agent.json\n")
+      write_json(empty_cpa, cpa_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  if (file.exists(cpa_src)) {
+    file.copy(cpa_src, cpa_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_cost_per_agent.json -> vignettes/data/ (%d bytes)\n",
+                file.info(cpa_src)$size))
+  } else {
+    write_json(empty_cpa, cpa_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_cost_per_agent.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(agents = list(), cost_instrumented = FALSE,
+         generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_cost_per_agent.json"),
+    auto_unbox = TRUE
+  )
+})
+
+# --- 8p. Export roborev_vs_session_cost.json (#146 Q20) ----------------------
+# Session execution cost vs roborev review cost, daily, over time.
+# Session cost proxy: unified_costs.json total_cost (claude API daily cost).
+# Review cost proxy: roborev_agent_performance.total_cost_usd (NULL until
+#   cost instrumentation lands — column will be zero-filled with a note).
+# Healthy ratio: roborev review cost should be <10-20% of session cost.
+# Contract: {
+#   daily: [{date, session_cost_usd, review_cost_usd, review_pct}],
+#   overall: {session_total, review_total, review_pct},
+#   cost_instrumented: false,
+#   note: "Review costs not yet instrumented ...",
+#   generated_at: "ISO8601"
+# }
+cat("Exporting roborev_vs_session_cost.json (#146 Q20)...\n")
+tryCatch({
+  vsr_src <- file.path(extdata, "roborev_vs_session_cost.json")
+  vsr_dst <- file.path(out_dir, "roborev_vs_session_cost.json")
+
+  empty_vsr <- list(
+    daily             = list(),
+    overall           = list(session_total = 0, review_total = 0, review_pct = 0),
+    cost_instrumented = FALSE,
+    note              = paste0(
+      "Review costs (roborev_agent_performance.total_cost_usd) are not yet ",
+      "instrumented — all NULL as of 2026-05-30. Session costs are the total ",
+      "Claude API daily cost from unified_costs.json. The review_cost_usd column ",
+      "is zero-filled until instrumentation lands."
+    ),
+    generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  if (file.exists(unified_db)) {
+    vsr_con <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(vsr_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    vsr_tbls <- dbListTables(vsr_con)
+
+    # Session cost: daily total from unified_costs (date, total_cost)
+    has_costs_tbl <- "costs" %in% vsr_tbls
+    has_perf_vsr  <- "roborev_agent_performance" %in% vsr_tbls
+
+    if (has_costs_tbl) {
+      costs_raw_vsr <- dbReadTable(vsr_con, "costs") |> as_tibble()
+      # unified_costs has columns: date, opus_cost, sonnet_cost, haiku_cost, total_cost
+      req_c <- c("date", "total_cost")
+      if (!all(req_c %in% names(costs_raw_vsr))) {
+        cat(sprintf("  -> costs table missing cols %s; writing empty\n",
+                    paste(setdiff(req_c, names(costs_raw_vsr)), collapse = ", ")))
+        write_json(empty_vsr, vsr_src, auto_unbox = TRUE)
+      } else {
+        session_by_day <- costs_raw_vsr |>
+          mutate(date = as.character(as.Date(date))) |>
+          group_by(date) |>
+          summarise(session_cost_usd = sum(total_cost, na.rm = TRUE), .groups = "drop")
+
+        # Review cost: from roborev_agent_performance.total_cost_usd (all NULL currently)
+        if (has_perf_vsr) {
+          perf_vsr <- dbReadTable(vsr_con, "roborev_agent_performance") |> as_tibble()
+          review_by_day <- if ("total_cost_usd" %in% names(perf_vsr)) {
+            perf_vsr |>
+              mutate(date = as.character(date)) |>
+              group_by(date) |>
+              summarise(review_cost_usd = sum(total_cost_usd, na.rm = TRUE), .groups = "drop")
+          } else {
+            tibble(date = character(0), review_cost_usd = numeric(0))
+          }
+        } else {
+          review_by_day <- tibble(date = character(0), review_cost_usd = numeric(0))
+        }
+
+        # Join session + review cost by date (left join on session dates)
+        daily_vsr <- session_by_day |>
+          left_join(review_by_day, by = "date") |>
+          mutate(
+            review_cost_usd = coalesce(review_cost_usd, 0.0),
+            review_pct      = ifelse(
+              session_cost_usd > 0,
+              round(review_cost_usd / session_cost_usd * 100, 2),
+              0.0
+            )
+          ) |>
+          arrange(date)
+
+        overall_session <- sum(daily_vsr$session_cost_usd, na.rm = TRUE)
+        overall_review  <- sum(daily_vsr$review_cost_usd,  na.rm = TRUE)
+        overall_pct     <- if (overall_session > 0) {
+          round(overall_review / overall_session * 100, 2)
+        } else 0.0
+
+        vsr_out <- list(
+          daily = lapply(seq_len(nrow(daily_vsr)), function(i) {
+            r <- daily_vsr[i, , drop = FALSE]
+            list(
+              date             = r$date,
+              session_cost_usd = round(as.numeric(r$session_cost_usd), 4),
+              review_cost_usd  = round(as.numeric(r$review_cost_usd),  4),
+              review_pct       = r$review_pct
+            )
+          }),
+          overall = list(
+            session_total = round(overall_session, 4),
+            review_total  = round(overall_review,  4),
+            review_pct    = overall_pct
+          ),
+          cost_instrumented = FALSE,
+          note = paste0(
+            "Review costs (roborev_agent_performance.total_cost_usd) are not yet ",
+            "instrumented — all NULL as of 2026-05-30. Session costs are the total ",
+            "Claude API daily cost from unified_costs (opus+sonnet+haiku). The ",
+            "review_cost_usd column is zero-filled until instrumentation lands."
+          ),
+          generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        )
+        write_json(vsr_out, vsr_src, auto_unbox = TRUE)
+        cat(sprintf(
+          "  -> roborev_vs_session_cost.json: %d daily rows, session=$%.2f, review=$%.4f\n",
+          nrow(daily_vsr), overall_session, overall_review
+        ))
+        tryCatch(dbDisconnect(vsr_con, shutdown = TRUE), error = function(e) NULL)
+      }
+    } else {
+      cat("  -> costs table not found; writing empty roborev_vs_session_cost.json\n")
+      write_json(empty_vsr, vsr_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  if (file.exists(vsr_src)) {
+    file.copy(vsr_src, vsr_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_vs_session_cost.json -> vignettes/data/ (%d bytes)\n",
+                file.info(vsr_src)$size))
+  } else {
+    write_json(empty_vsr, vsr_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_vs_session_cost.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(daily = list(),
+         overall = list(session_total = 0, review_total = 0, review_pct = 0),
+         cost_instrumented = FALSE,
+         note = "Export error — see server logs",
+         generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_vs_session_cost.json"),
     auto_unbox = TRUE
   )
 })
