@@ -53,6 +53,8 @@ format:
       - data/roborev_cost_per_finding.json
       - data/roborev_cost_per_agent.json
       - data/roborev_vs_session_cost.json
+      - data/roborev_commit_findings.json
+      - data/roborev_session_agent_noise.json
       - data/v1/sessions.parquet
       - data/v1/costs.parquet
       - data/v1/git_commits.parquet
@@ -1876,6 +1878,51 @@ ui <- page_navbar(
               "X-axis: addressed finding count per agent (cost_usd_per_finding when instrumented). ",
               "Source: roborev_cost_per_agent.json from unified.duckdb. ",
               "PALETTE: codex=#4ea8de, claude-code=#69d4a0, gemini=#ffd93d.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Top Commits by Finding Count (#146 Q16)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Top-10 commits ranked by the number of roborev findings triggered. ",
+                "Each row links to the GitHub commit. ",
+                "A high finding count on a single commit may indicate a large change set or a ",
+                "recurring pattern — cross-reference with the Active Loops panel above."
+              )
+            ),
+            uiOutput("rv_commit_findings_table"),
+            card_footer(class = "text-muted small",
+              "Source: roborev_commit_findings.json from roborev_review_lifecycle in unified.duckdb. ",
+              "Commit SHA (7-char prefix) is linked to the GitHub commit page. ",
+              "Confidential repos excluded via clean_projects(). ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Per-Agent Review Noise Rate (#146 Q19)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Noise rate = percentage of reviews that produced no actionable finding ",
+                "(failed without a manual close). ",
+                "A lower noise rate means the agent surfaces real findings more reliably. ",
+                "Bar chart shows noise rate per agent; summary table shows review volumes."
+              )
+            ),
+            uiOutput("rv_agent_noise_chart"),
+            tags$table(class = "table table-sm table-dark mt-2 mb-0",
+              tags$thead(tags$tr(
+                tags$th("Agent"), tags$th("Reviews"), tags$th("Addressed"),
+                tags$th("Passed"), tags$th("Noise rate")
+              )),
+              uiOutput("rv_agent_noise_table")
+            ),
+            card_footer(class = "text-muted small",
+              "Noise rate = 1 - (n_addressed + n_passed) / n_reviews. ",
+              "Source: roborev_session_agent_noise.json from roborev_review_lifecycle + roborev_agent_performance in unified.duckdb. ",
+              "PALETTE: codex=#4ea8de, claude-code=#69d4a0, gemini=#ffd93d. ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
           )
         )
       )
@@ -3858,6 +3905,14 @@ server <- function(input, output, session) {
   #   overall:{session_total,review_total,review_pct}, cost_instrumented:bool,
   #   note:str, generated_at}
   roborev_vsr_raw <- load_json("roborev_vs_session_cost.json")
+  # roborev_commit_findings.json — top-N commits by finding count (#146 Q16).
+  # Contract: {commits:[{commit_sha_short,commit_sha_full,repo,commit_msg,
+  #   n_findings,last_reviewed},...], generated_at}
+  roborev_commit_findings_raw <- load_json("roborev_commit_findings.json")
+  # roborev_session_agent_noise.json — per-agent noise rate (#146 Q19).
+  # Contract: {agents:[{agent,n_reviews,n_addressed,n_passed,n_autoclosed,n_parse_fail,
+  #   noise_rate,pass_rate},...], generated_at}
+  roborev_san_raw <- load_json("roborev_session_agent_noise.json")
 
   rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
     roborev_summary_raw$pulse
@@ -5324,6 +5379,194 @@ server <- function(input, output, session) {
     if (is.null(ov) || is.null(ov$review_pct)) return("—")
     v <- ov$review_pct
     if (v == 0) "— (not instrumented)" else sprintf("%.2f%%", v)
+  })
+
+  # --- Q16: Top commits by finding count (#146) ---------------------------------
+  # Reads roborev_commit_findings.json. Degrades gracefully when absent.
+  # Commit SHA (7-char) is HTML-linked to the GitHub commit URL.
+  safe_cf <- function(raw) {
+    if (is.null(raw) || !is.list(raw)) return(NULL)
+    d <- raw$commits
+    if (is.null(d) || length(d) == 0L) return(NULL)
+    if (is.data.frame(d)) {
+      if (nrow(d) == 0L) return(NULL)
+      d
+    } else {
+      tryCatch(
+        do.call(rbind, lapply(d, function(r) {
+          data.frame(
+            commit_sha_short = as.character(r$commit_sha_short),
+            commit_sha_full  = as.character(r$commit_sha_full),
+            repo             = as.character(r$repo),
+            commit_msg       = as.character(r$commit_msg),
+            n_findings       = as.integer(r$n_findings),
+            last_reviewed    = as.character(r$last_reviewed),
+            stringsAsFactors = FALSE
+          )
+        })),
+        error = function(e) NULL
+      )
+    }
+  }
+
+  output$rv_commit_findings_table <- renderUI({
+    d <- safe_cf(roborev_commit_findings_raw)
+    if (is.null(d)) {
+      return(tags$div(class = "p-3 text-muted",
+        "No commit-findings data yet — roborev_commit_findings.json not deployed."))
+    }
+    # Sort desc by finding count (should already be sorted, but be defensive)
+    d <- d[order(d$n_findings, decreasing = TRUE), ]
+    d <- head(d, 10L)
+
+    rows <- lapply(seq_len(nrow(d)), function(i) {
+      r <- d[i, , drop = FALSE]
+      # Build GitHub commit URL from repo name + full SHA
+      # Pattern: https://github.com/JohnGavin/<repo>/commit/<sha>
+      sha_link <- if (nzchar(r$commit_sha_full) && !is.na(r$commit_sha_full) &&
+                      nzchar(r$repo) && !is.na(r$repo)) {
+        tags$a(
+          href   = paste0("https://github.com/JohnGavin/", r$repo,
+                          "/commit/", r$commit_sha_full),
+          target = "_blank",
+          rel    = "noopener",
+          style  = "color:#7cb5ec; font-family:monospace;",
+          r$commit_sha_short
+        )
+      } else {
+        tags$code(r$commit_sha_short)
+      }
+      # Truncate commit message to 60 chars
+      msg_short <- if (!is.na(r$commit_msg) && nzchar(r$commit_msg)) {
+        if (nchar(r$commit_msg) > 60L) paste0(substr(r$commit_msg, 1L, 57L), "...") else r$commit_msg
+      } else "—"
+      tags$tr(
+        tags$td(sha_link),
+        tags$td(msg_short),
+        tags$td(r$repo),
+        tags$td(style = "text-align:right; font-weight:bold;", r$n_findings),
+        tags$td(substr(r$last_reviewed, 1L, 10L))
+      )
+    })
+
+    tagList(
+      tags$table(class = "table table-sm table-dark mb-0",
+        tags$thead(tags$tr(
+          tags$th("Commit"), tags$th("Message"), tags$th("Repo"),
+          tags$th("Findings"), tags$th("Last reviewed")
+        )),
+        tags$tbody(rows)
+      )
+    )
+  })
+
+  # --- Q19: Per-agent noise rate (#146) -----------------------------------------
+  # Reads roborev_session_agent_noise.json.
+  # Bar chart: noise rate per agent (AGENT_PALETTE colours — see Q1/Q11 above).
+  # Summary table: agent, n_reviews, n_addressed, noise_rate.
+  safe_san <- function(raw) {
+    if (is.null(raw) || !is.list(raw)) return(NULL)
+    d <- raw$agents
+    if (is.null(d) || length(d) == 0L) return(NULL)
+    if (is.data.frame(d)) {
+      if (nrow(d) == 0L) return(NULL)
+      d
+    } else {
+      tryCatch(
+        do.call(rbind, lapply(d, function(r) {
+          data.frame(
+            agent       = as.character(r$agent),
+            n_reviews   = as.integer(r$n_reviews),
+            n_addressed = as.integer(r$n_addressed),
+            n_passed    = as.integer(r$n_passed),
+            noise_rate  = as.numeric(r$noise_rate),
+            pass_rate   = as.numeric(r$pass_rate),
+            stringsAsFactors = FALSE
+          )
+        })),
+        error = function(e) NULL
+      )
+    }
+  }
+
+  output$rv_agent_noise_chart <- renderUI({
+    d <- safe_san(roborev_san_raw)
+    if (is.null(d))
+      return(ec_empty(
+        "No per-agent noise data yet — roborev_session_agent_noise.json not deployed",
+        h = "280px"))
+
+    # Sort by noise_rate ascending (highest noise at top in horizontal chart = most problematic)
+    d <- d[order(d$noise_rate, decreasing = FALSE), ]
+
+    colours <- vapply(d$agent, agent_colour, character(1))
+    noise_pct <- round(d$noise_rate * 100, 1)
+
+    ec(list(
+      tooltip = list(
+        trigger = "axis",
+        axisPointer = list(type = "shadow"),
+        formatter = DT::JS(
+          "function(params) {",
+          "  var d = params[0];",
+          "  return d.name + '<br/>Noise rate: ' + d.value.toFixed(1) + '%';",
+          "}"
+        )
+      ),
+      grid = list(left = 120, containLabel = FALSE),
+      xAxis = list(
+        type          = "value",
+        name          = "Noise rate (%)",
+        nameLocation  = "middle",
+        nameGap       = 28,
+        max           = 100,
+        axisLabel     = list(color = "#ccc", formatter = "{value}%"),
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        type      = "category",
+        data      = I(d$agent),
+        axisLabel = list(color = "#ccc", fontSize = 12)
+      ),
+      series = list(list(
+        type       = "bar",
+        data       = I(noise_pct),
+        itemStyle  = list(
+          color = DT::JS(paste0(
+            "function(params) {",
+            "var m = ", toJSON(setNames(as.list(colours), d$agent), auto_unbox = TRUE), ";",
+            "return m[params.name] || '#c084fc';",
+            "}"
+          ))
+        )
+      ))
+    ), h = "280px",
+    aria_label = paste0(
+      "Horizontal bar chart: per-agent review noise rate (percent of reviews with no actionable finding). ",
+      paste(d$agent, collapse = ", "), ". ",
+      "Lower noise rate = more reliable signal from that agent. ",
+      "Source: roborev_session_agent_noise.json."
+    ))
+  })
+
+  output$rv_agent_noise_table <- renderUI({
+    d <- safe_san(roborev_san_raw)
+    if (is.null(d)) {
+      return(tags$tbody(tags$tr(tags$td(colspan = "5", "No data yet"))))
+    }
+    d <- d[order(d$noise_rate, decreasing = TRUE), ]
+    rows <- lapply(seq_len(nrow(d)), function(i) {
+      r <- d[i, , drop = FALSE]
+      tags$tr(
+        style = paste0("color:", agent_colour(r$agent), ";"),
+        tags$td(r$agent),
+        tags$td(formatC(r$n_reviews,   format = "d", big.mark = ",")),
+        tags$td(formatC(r$n_addressed, format = "d", big.mark = ",")),
+        tags$td(formatC(r$n_passed,    format = "d", big.mark = ",")),
+        tags$td(sprintf("%.1f%%", r$noise_rate * 100))
+      )
+    })
+    tags$tbody(rows)
   })
 }
 
