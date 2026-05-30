@@ -53,6 +53,18 @@ fi
 
 echo "TELEMETRY: $CHANGED changed, $UNTRACKED new data files, $STAGED staged parquets"
 
+# ── Pull-rebase before push (JohnGavin/llmtelemetry#262) ──
+echo "TELEMETRY: rebasing onto origin/main before push..."
+if ! git -C "$TELEMETRY_REPO" fetch origin main 2>&1 | tail -3; then
+  echo "TELEMETRY: fetch failed — skipping push (data committed locally)"
+  exit 0
+fi
+if ! git -C "$TELEMETRY_REPO" pull --rebase --autostash origin main 2>&1 | tail -3; then
+  echo "TELEMETRY: rebase conflict — aborting; bailing out without pushing"
+  git -C "$TELEMETRY_REPO" rebase --abort 2>/dev/null || true
+  exit 0
+fi
+
 # Commit data-only changes
 git -C "$TELEMETRY_REPO" add vignettes/data/*.json
 git -C "$TELEMETRY_REPO" commit -m "data: update telemetry data $(date +%Y-%m-%d)
