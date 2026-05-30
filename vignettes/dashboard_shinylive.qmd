@@ -45,6 +45,8 @@ format:
       - data/roborev_agent_perf.json
       - data/roborev/latest.json
       - data/v1/sessions.parquet
+      - data/v1/costs.parquet
+      - data/v1/git_commits.parquet
 filters:
   - shinylive
 ---
@@ -355,7 +357,9 @@ git_file_growth <- load_json("git_file_growth.json")
 gh_events   <- load_json("github_issue_events.json")
 # Phase 2 data: new analytical JSON exports
 weekly_commits <- load_json("weekly_commits_by_project.json")
-cost_per_commit_data <- load_json("cost_per_commit.json")
+# DEPRECATED(#83 Phase 5): cost_per_commit migrated to DuckDB-WASM JOIN query.
+# cost_per_commit.json is no longer read at startup; kept for reference until JSON export is removed.
+cost_per_commit_data <- list()  # replaced by queryAndRenderCostPerCommit() JS function
 file_churn_data <- load_json("file_churn.json")
 change_coupling_data <- load_json("change_coupling.json")
 # Phase B: canonical project master list (excludes agent-worktree/orphan rows)
@@ -366,7 +370,7 @@ as_df <- function(x) if (is.data.frame(x)) x else NULL
 git_file_growth <- as_df(git_file_growth)
 gh_events <- as_df(gh_events)
 weekly_commits <- as_df(weekly_commits)
-cost_per_commit_data <- as_df(cost_per_commit_data)
+# cost_per_commit_data: no longer a data frame (deprecated, migrated to DuckDB-WASM)
 file_churn_data <- as_df(file_churn_data)
 change_coupling_data <- as_df(change_coupling_data)
 has_rows <- function(x) is.data.frame(x) && nrow(x) > 0
@@ -521,7 +525,7 @@ if (has_rows(u_sessions)) {
   u_sessions$started_at <- as.POSIXct(u_sessions$started_at, tz = "UTC")
 }
 if (has_rows(u_costs)) u_costs$date <- as.Date(u_costs$date)
-if (has_rows(cost_per_commit_data)) cost_per_commit_data$date <- as.Date(cost_per_commit_data$date)
+# cost_per_commit_data date coercion removed (#83 Phase 5) — migrated to DuckDB-WASM
 if (has_rows(file_churn_data) && "last_changed_date" %in% names(file_churn_data)) {
   file_churn_data$last_changed_date <- as.Date(file_churn_data$last_changed_date)
 }
@@ -765,6 +769,8 @@ ui <- page_navbar(
     # not end with a directory slash (e.g. ".../index.html" drops "data/" prefix).
     tags$script(type = "module", HTML('
       const PARQUET_URL = window.location.origin + "/llmtelemetry/data/v1/sessions.parquet";
+      const COSTS_URL   = window.location.origin + "/llmtelemetry/data/v1/costs.parquet";
+      const GIT_URL     = window.location.origin + "/llmtelemetry/data/v1/git_commits.parquet";
       let conn = null;
       try {
         const duckdb = await import("https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/+esm");
@@ -779,6 +785,14 @@ ui <- page_navbar(
         await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
         await db.registerFileURL(
           "sessions.parquet", PARQUET_URL,
+          duckdb.DuckDBDataProtocol.HTTP, false
+        );
+        await db.registerFileURL(
+          "costs.parquet", COSTS_URL,
+          duckdb.DuckDBDataProtocol.HTTP, false
+        );
+        await db.registerFileURL(
+          "git_commits.parquet", GIT_URL,
           duckdb.DuckDBDataProtocol.HTTP, false
         );
         conn = await db.connect();
@@ -952,6 +966,135 @@ ui <- page_navbar(
         }, true);
       };
 
+      // --- Cost per Commit Trend (#83 Phase 5) ---
+      // Queries costs.parquet JOIN git_commits.parquet to compute cost/commit by
+      // project and date. Replaces JSON-fetch from cost_per_commit.json.
+      // The granularity parameter is one of: "daily" | "weekly" | "monthly".
+      let _cpcChart = null;
+      window.queryAndRenderCostPerCommit = async function(projects, min_date, granularity) {
+        const el = document.getElementById("cost_per_commit_ec");
+        if (!el) return;
+        if (!_cpcChart) {
+          _cpcChart = echarts.init(el, "dark");
+          new ResizeObserver(function() { _cpcChart.resize(); }).observe(el);
+        }
+        if (projects === "__NONE__") {
+          _cpcChart.setOption({ backgroundColor:"#1a1a1a", series:[{type:"line",data:[]}] }, true);
+          return;
+        }
+        if (!conn) {
+          _cpcChart.setOption({ backgroundColor:"#1a1a1a",
+            title:{text:"Cost-per-commit data unavailable",textStyle:{color:"#ccc",fontSize:13}},
+            series:[] }, true);
+          return;
+        }
+        const gran = granularity || "weekly";
+        // Build project filter clause
+        // Build project filter clause (no table alias prefix — each CTE is unambiguous)
+        const projIn = (Array.isArray(projects) && projects.length > 0)
+          ? "canonical_project IN (" + projects.map(p => "\'" + p.replace(/\'/g, "\'\'") + "\'").join(",") + ")"
+          : null;
+        const dateFrom = min_date ? "date >= \'" + min_date + "\'" : null;
+
+        // Aggregate cost and commit count by (project, period), then compute ratio.
+        // costs.parquet: canonical_project, date, daily_cost_usd
+        // git_commits.parquet: canonical_project, date (one row per commit)
+        let periodExprCost, periodExprGit, groupExprCost, groupExprGit;
+        if (gran === "monthly") {
+          periodExprCost = "strftime(date, \'%Y-%m\')";
+          periodExprGit  = "strftime(date, \'%Y-%m\')";
+          groupExprCost  = "strftime(date, \'%Y-%m\')";
+          groupExprGit   = "strftime(date, \'%Y-%m\')";
+        } else if (gran === "weekly") {
+          periodExprCost = "strftime(date, \'%Y-W%W\')";
+          periodExprGit  = "strftime(date, \'%Y-W%W\')";
+          groupExprCost  = "strftime(date, \'%Y-W%W\')";
+          groupExprGit   = "strftime(date, \'%Y-W%W\')";
+        } else {
+          periodExprCost = "date::TEXT";
+          periodExprGit  = "date::TEXT";
+          groupExprCost  = "date";
+          groupExprGit   = "date";
+        }
+        const costWhere  = ["canonical_project IS NOT NULL"].concat(projIn ? [projIn] : []).concat(dateFrom ? [dateFrom] : []).join(" AND ");
+        const gitWhere   = ["canonical_project IS NOT NULL"].concat(projIn ? [projIn] : []).join(" AND ");
+        const sql =
+          "WITH cost_agg AS (" +
+          "  SELECT canonical_project, " + periodExprCost + " AS period, SUM(daily_cost_usd) AS total_cost" +
+          "  FROM \'costs.parquet\'" +
+          "  WHERE " + costWhere +
+          "  GROUP BY canonical_project, " + groupExprCost +
+          "), commit_agg AS (" +
+          "  SELECT canonical_project, " + periodExprGit + " AS period, COUNT(*) AS n_commits" +
+          "  FROM \'git_commits.parquet\'" +
+          "  WHERE " + gitWhere +
+          "  GROUP BY canonical_project, " + groupExprGit +
+          ") SELECT ca.canonical_project AS project, ca.period," +
+          "  ROUND(ca.total_cost / NULLIF(cb.n_commits, 0), 2) AS cost_per_commit" +
+          " FROM cost_agg ca JOIN commit_agg cb" +
+          "   ON ca.canonical_project = cb.canonical_project AND ca.period = cb.period" +
+          " WHERE ca.total_cost IS NOT NULL AND cb.n_commits > 0" +
+          " ORDER BY ca.period, ca.canonical_project";
+
+        let rows;
+        try {
+          const r = await conn.query(sql);
+          rows = r.toArray().map(function(row) {
+            return {
+              project: String(row.project),
+              period:  String(row.period),
+              cpc:     typeof row.cost_per_commit === "bigint" ? Number(row.cost_per_commit) : (row.cost_per_commit || 0)
+            };
+          });
+        } catch(qErr) {
+          console.error("queryAndRenderCostPerCommit failed:", qErr);
+          _cpcChart.setOption({ backgroundColor:"#1a1a1a",
+            title:{text:"Cost-per-commit query error",textStyle:{color:"#ccc",fontSize:13}},
+            series:[] }, true);
+          return;
+        }
+
+        if (rows.length === 0) {
+          _cpcChart.setOption({ backgroundColor:"#1a1a1a",
+            title:{text:"No cost-per-commit data for selection",textStyle:{color:"#ccc",fontSize:12}},
+            series:[] }, true);
+          return;
+        }
+
+        const xs = Array.from(new Set(rows.map(function(r){return r.period;}))).sort();
+        const projs = Array.from(new Set(rows.map(function(r){return r.project;}))).sort();
+        const palette = ["#377eb8","#4daf4a","#ff7f00","#e41a1c","#984ea3","#a65628","#f781bf","#999999"];
+        const series = projs.map(function(p, i) {
+          const vals = xs.map(function(x) {
+            const match = rows.find(function(r){return r.project === p && r.period === x;});
+            return match ? match.cpc : null;
+          });
+          return {
+            name: p, type: "line", data: I(vals),
+            connectNulls: true,
+            itemStyle: {color: palette[i % palette.length]}
+          };
+        });
+        _cpcChart.setOption({
+          backgroundColor: "#1a1a1a",
+          tooltip: {trigger: "axis", formatter: function(params) {
+            return params[0].axisValue + "<br/>" +
+              params.filter(function(p){return p.value !== null;})
+                    .map(function(p){return p.marker + p.seriesName + ": $" + (p.value || 0).toFixed(2);})
+                    .join("<br/>");
+          }},
+          legend: {textStyle:{color:"#ccc"}, top:0},
+          grid: {containLabel:true, top:40},
+          xAxis: {type:"category", data:xs, axisLabel:{color:"#ccc",rotate:30,fontSize:10}},
+          yAxis: {type:"value", name:"Cost per Commit ($)", nameTextStyle:{color:"#ccc"},
+                  axisLabel:{color:"#ccc",formatter:function(v){return "$"+v;}}},
+          dataZoom: [{type:"slider", bottom:0, height:20,
+                      start: Math.max(0, Math.round(100 - 90 * Math.min(1, 90/Math.max(1,xs.length))))
+                     }],
+          series: series
+        }, true);
+      };
+
       function registerHandler() {
         Shiny.addCustomMessageHandler("duckdb_sessions", function(msg) {
           // Pass msg.projects directly: null=All, "__NONE__"=None, Array=specific list
@@ -963,9 +1106,13 @@ ui <- page_navbar(
         Shiny.addCustomMessageHandler("duckdb_sessions_duration", function(msg) {
           window.queryAndRenderDuration(msg.projects || null, msg.min_date || null);
         });
+        Shiny.addCustomMessageHandler("duckdb_cost_per_commit", function(msg) {
+          window.queryAndRenderCostPerCommit(msg.projects || null, msg.min_date || null, msg.granularity || "weekly");
+        });
         window.queryAndRenderSessions(null, null);  // initial render (all projects, all dates)
         window.queryAndRenderSessionsTime(null, null);  // initial render for time chart
         window.queryAndRenderDuration(null, null);  // initial render for duration chart
+        window.queryAndRenderCostPerCommit(null, null, "weekly");  // initial render for cost-per-commit
       }
       if (window.Shiny && window.Shiny.addCustomMessageHandler) {
         registerHandler();
@@ -1183,8 +1330,9 @@ ui <- page_navbar(
             card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
         ),
         layout_columns(col_widths = c(12),
-          card(card_header("Cost per Commit Trend"), uiOutput("cost_per_commit_chart"),
-            card_footer(class = "text-muted small", "Estimated cost per commit (USD) over time by project. Lower = more efficient sessions per code change. Granularity toggle applies."))
+          card(card_header("Cost per Commit Trend"),
+            div(id = "cost_per_commit_ec", style = "height:350px;"),
+            card_footer(class = "text-muted small", "Estimated cost per commit (USD) over time by project. Powered by DuckDB-WASM (costs.parquet × git_commits.parquet). Lower = more efficient sessions per code change. Granularity toggle applies."))
         ),
         layout_columns(col_widths = c(12),
           card(card_header("Cross-Tool Daily Cost (Claude vs Codex vs Gemini)"),
@@ -2687,81 +2835,24 @@ server <- function(input, output, session) {
                aria_label = "Weekly commit heatmap: commit counts by week and project")
   })
 
-  # --- Phase 2: Cost-per-Commit Trend (Cost Trends tab) ----------------------
-  output$cost_per_commit_chart <- renderUI({
-    # TODO(#27 Phase 4): wire granularity to existing time-series charts
-    if (!has_rows(cost_per_commit_data)) return(ec_empty("No cost-per-commit data available"))
-    d <- cost_per_commit_data
-    # Use canonical_project column when available
-    if ("canonical_project" %in% names(d)) d$project <- d$canonical_project
-    # Apply project filter
+  # --- Phase 5 (#83): Cost-per-Commit Trend migrated to DuckDB-WASM ----------
+  # output$cost_per_commit_chart renderUI removed — replaced by queryAndRenderCostPerCommit()
+  # JS function that queries costs.parquet JOIN git_commits.parquet client-side.
+  # Fixed div#cost_per_commit_ec is in the UI. Observer below triggers re-query
+  # when the Cost Trends tab is active and filter/granularity inputs change.
+  observe({
+    req(input$tabs == "Usage", input$usage_tabs == "Cost Trends")
     sel <- resolve_sel(input$selected_projects)
-    if (!is.null(sel) && "project" %in% names(d))
-      d <- d[d$project %in% sel, ]
-    if (!is.null(cutoff())) d <- d[d$date >= cutoff(), ]
-    if (nrow(d) == 0) return(ec_empty("No data for selected projects / period"))
-    gran <- input$granularity
-    if (is.null(gran)) gran <- "weekly"
-
-    if (gran == "monthly") {
-      # Aggregate: sum cost and commits per project-month, then recompute ratio
-      d$month <- format(d$date, "%Y-%m")
-      agg_c <- aggregate(daily_cost_usd ~ project + month, data = d, FUN = sum, na.rm = TRUE)
-      agg_n <- aggregate(n_commits ~ project + month, data = d, FUN = sum, na.rm = TRUE)
-      d2 <- merge(agg_c, agg_n, by = c("project", "month"))
-      d2$cost_per_commit_usd <- ifelse(d2$n_commits > 0,
-        d2$daily_cost_usd / d2$n_commits, NA_real_)
-      d2 <- d2[!is.na(d2$cost_per_commit_usd), ]
-      x_col <- "month"
-      d2 <- d2[order(d2[[x_col]]), ]
-      xs <- sort(unique(d2[[x_col]]))
-      projects <- sort(unique(d2$project))
-      series <- lapply(projects, function(p) {
-        pd <- d2[d2$project == p, ]
-        vals <- rep(NA_real_, length(xs))
-        vals[match(pd[[x_col]], xs)] <- round(pd$cost_per_commit_usd, 2)
-        list(name = p, type = "line", data = I(vals),
-             connectNulls = TRUE)
-      })
-      ec_line(xs, series, h = "350px", y_name = "Cost per Commit ($)",
-              aria_label = "Cost per commit monthly trend by project",
-              default_window_days = 0)  # monthly labels, skip date calc
-    } else if (gran == "weekly") {
-      d$week <- format(as.Date(d$date), "%Y-W%V")
-      agg_c <- aggregate(daily_cost_usd ~ project + week, data = d, FUN = sum, na.rm = TRUE)
-      agg_n <- aggregate(n_commits ~ project + week, data = d, FUN = sum, na.rm = TRUE)
-      d2 <- merge(agg_c, agg_n, by = c("project", "week"))
-      d2$cost_per_commit_usd <- ifelse(d2$n_commits > 0,
-        d2$daily_cost_usd / d2$n_commits, NA_real_)
-      d2 <- d2[!is.na(d2$cost_per_commit_usd), ]
-      d2 <- d2[order(d2$week), ]
-      xs <- sort(unique(d2$week))
-      projects <- sort(unique(d2$project))
-      series <- lapply(projects, function(p) {
-        pd <- d2[d2$project == p, ]
-        vals <- rep(NA_real_, length(xs))
-        vals[match(pd$week, xs)] <- round(pd$cost_per_commit_usd, 2)
-        list(name = p, type = "line", data = I(vals), connectNulls = TRUE)
-      })
-      ec_line(xs, series, h = "350px", y_name = "Cost per Commit ($)",
-              aria_label = "Cost per commit weekly trend by project",
-              default_window_days = 0)
-    } else {
-      # daily: use data as-is
-      d <- d[order(d$date), ]
-      d <- d[!is.na(d$cost_per_commit_usd) & is.finite(d$cost_per_commit_usd), ]
-      xs <- sort(unique(d$date))
-      projects <- sort(unique(d$project))
-      series <- lapply(projects, function(p) {
-        pd <- d[d$project == p, ]
-        vals <- rep(NA_real_, length(xs))
-        vals[match(pd$date, xs)] <- round(pd$cost_per_commit_usd, 2)
-        list(name = p, type = "line", data = I(vals),
-             connectNulls = FALSE)
-      })
-      ec_line(xs, series, h = "350px", y_name = "Cost per Commit ($)",
-              aria_label = "Cost per commit daily trend by project")
-    }
+    projects_json <- if (is.null(sel)) list()
+                     else if (length(sel) == 0L) "__NONE__"
+                     else as.list(sel)
+    cutoff_str <- if (!is.null(cutoff())) format(cutoff(), "%Y-%m-%d") else NULL
+    gran <- if (!is.null(input$granularity)) input$granularity else "weekly"
+    session$sendCustomMessage("duckdb_cost_per_commit", list(
+      projects    = projects_json,
+      min_date    = cutoff_str,
+      granularity = gran
+    ))
   })
 
   # --- Phase 2: File Churn DataTable (Git tab) --------------------------------
