@@ -41,8 +41,12 @@ structural_forbidden <- c(
   # Relies on perl=TRUE (scan_field uses it).
   "(?=[A-Za-z0-9]*[0-9])[A-Za-z0-9]{8,}/repo\\b", # slash-form agent worktree id
   "(?=[A-Za-z0-9]*[0-9])[A-Za-z0-9]{8,}-repo\\b", # dash-form agent worktree id
-  "pers-NHS",              # specific medical project leak
-  "antigravity"            # specific leaked name
+  # `pers-NHS` is the unique sentinel for the medical-project path leak
+  # (`-Users-johngavin-docs--pers-NHS-health-data-antigravity-<project>`).
+  # It appears in 0 committed extdata files; any occurrence is a real leak.
+  # The standalone `antigravity` rule was redundant and caused false positives
+  # on legitimate provider telemetry in codexbar_usage.json.
+  "pers-NHS"
 )
 
 # Full set applied to all non-allowlisted fields.
