@@ -1776,6 +1776,30 @@ api_index <- list(
         repos = "array of {repo, n_created, n_passed, n_failed, n_autoclosed, n_parse_fail, signal_ratio, noise_ratio}",
         generated_at = "string (ISO 8601)"
       )
+    ),
+    list(
+      path        = "/roborev_cadence_efficacy.json",
+      description = "Cadence efficacy before/after split at 2026-05-21 (#146 Q6): daily review volume, pass rate, autoclosed",
+      type        = "object",
+      source      = "~/.claude/logs/unified.duckdb (roborev_daily_metrics)",
+      schema      = list(
+        cadence_split_date = "string (ISO 8601 date)",
+        daily  = "array of {date, reviews_created, reviews_passed, reviews_failed, reviews_autoclosed, pass_rate, period}",
+        before = "{reviews_created, reviews_passed, pass_rate, reviews_autoclosed, n_days}",
+        after  = "{reviews_created, reviews_passed, pass_rate, reviews_autoclosed, n_days}",
+        generated_at = "string (ISO 8601)"
+      )
+    ),
+    list(
+      path        = "/roborev_threshold_history.json",
+      description = "Severity threshold step-history overlaid on autoclosed-by-severity per day (#146 Q8)",
+      type        = "object",
+      source      = "~/.claude/logs/unified.duckdb (roborev_threshold_changes + roborev_daily_metrics)",
+      schema      = list(
+        threshold_steps  = "array of {date, new_threshold, n_repos}",
+        daily_autoclosed = "array of {date, reviews_autoclosed_severity, reviews_created}",
+        generated_at     = "string (ISO 8601)"
+      )
     )
   )
 )
@@ -3318,6 +3342,265 @@ tryCatch({
          top_repos = list(),
          generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
     file.path(out_dir, "roborev_suppression.json"),
+    auto_unbox = TRUE
+  )
+})
+
+# --- 8p. Export roborev_cadence_efficacy.json (#146 Q6) ----------------------
+# Cadence efficacy: before/after split at 2026-05-21 (llm#217 cadence reduction).
+# Source table: roborev_cadence_efficacy (date, repo, polls_run, polls_noop,
+#   polls_enqueued, reviews_created_via_poll, reviews_created_via_hook).
+# Joins roborev_daily_metrics (date) for review volume / pass rate / autoclosed.
+# Privacy: clean_projects() on repo column before writing.
+# Guard: if table/columns missing, write empty-but-valid JSON and warn.
+cat("Exporting roborev_cadence_efficacy.json (#146 Q6)...\n")
+tryCatch({
+  ce_src <- file.path(extdata, "roborev_cadence_efficacy.json")
+  ce_dst <- file.path(out_dir, "roborev_cadence_efficacy.json")
+  cadence_split_date <- as.Date("2026-05-21")
+
+  empty_ce <- list(
+    generated_at      = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+    cadence_split_date = as.character(cadence_split_date),
+    daily             = list(),
+    before            = list(reviews_created = 0L, reviews_passed = 0L,
+                             pass_rate = 0, reviews_autoclosed = 0L,
+                             n_days = 0L),
+    after             = list(reviews_created = 0L, reviews_passed = 0L,
+                             pass_rate = 0, reviews_autoclosed = 0L,
+                             n_days = 0L)
+  )
+
+  if (file.exists(unified_db)) {
+    ce_con <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(ce_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    ce_tbls <- dbListTables(ce_con)
+
+    has_ce  <- "roborev_cadence_efficacy" %in% ce_tbls
+    has_dm  <- "roborev_daily_metrics"    %in% ce_tbls
+
+    if (has_dm) {
+      # Daily metrics: aggregate across all repos per date
+      dm_ce <- dbReadTable(ce_con, "roborev_daily_metrics") |> as_tibble()
+      dm_daily <- dm_ce |>
+        group_by(date) |>
+        summarise(
+          reviews_created   = sum(reviews_created,   na.rm = TRUE),
+          reviews_passed    = sum(reviews_passed,    na.rm = TRUE),
+          reviews_failed    = sum(reviews_failed,    na.rm = TRUE),
+          reviews_autoclosed = sum(
+            reviews_autoclosed_severity + reviews_autoclosed_age, na.rm = TRUE),
+          .groups = "drop"
+        ) |>
+        mutate(
+          date      = as.Date(date),
+          pass_rate = round(reviews_passed / pmax(1L, reviews_created), 4),
+          period    = ifelse(date < cadence_split_date, "before", "after")
+        ) |>
+        arrange(date)
+
+      # Before/after aggregate
+      period_summary <- function(p) {
+        sub_d <- dm_daily |> filter(period == p)
+        if (nrow(sub_d) == 0L) {
+          return(list(reviews_created = 0L, reviews_passed = 0L, pass_rate = 0,
+                      reviews_autoclosed = 0L, n_days = 0L))
+        }
+        list(
+          reviews_created   = as.integer(sum(sub_d$reviews_created)),
+          reviews_passed    = as.integer(sum(sub_d$reviews_passed)),
+          pass_rate         = round(
+            sum(sub_d$reviews_passed) / max(1L, sum(sub_d$reviews_created)), 4),
+          reviews_autoclosed = as.integer(sum(sub_d$reviews_autoclosed)),
+          n_days            = nrow(sub_d)
+        )
+      }
+
+      # Daily series for chart: date, reviews_created, reviews_passed, pass_rate,
+      #   reviews_autoclosed, period
+      daily_list <- lapply(seq_len(nrow(dm_daily)), function(i) {
+        r <- dm_daily[i, , drop = FALSE]
+        list(
+          date              = as.character(r$date),
+          reviews_created   = as.integer(r$reviews_created),
+          reviews_passed    = as.integer(r$reviews_passed),
+          reviews_failed    = as.integer(r$reviews_failed),
+          reviews_autoclosed = as.integer(r$reviews_autoclosed),
+          pass_rate         = r$pass_rate,
+          period            = r$period
+        )
+      })
+
+      ce_out <- list(
+        generated_at       = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+        cadence_split_date = as.character(cadence_split_date),
+        daily              = daily_list,
+        before             = period_summary("before"),
+        after              = period_summary("after")
+      )
+
+      write_json(ce_out, ce_src, auto_unbox = TRUE)
+      cat(sprintf(
+        "  -> roborev_cadence_efficacy.json: %d days, before(created=%d, rate=%.1f%%), after(created=%d, rate=%.1f%%)\n",
+        nrow(dm_daily),
+        ce_out$before$reviews_created,
+        ce_out$before$pass_rate * 100,
+        ce_out$after$reviews_created,
+        ce_out$after$pass_rate * 100
+      ))
+      tryCatch(dbDisconnect(ce_con, shutdown = TRUE), error = function(e) NULL)
+    } else {
+      cat("  -> roborev_daily_metrics not found; writing empty roborev_cadence_efficacy.json\n")
+      write_json(empty_ce, ce_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  # Always copy committed source to vignettes/data/
+  if (file.exists(ce_src)) {
+    file.copy(ce_src, ce_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_cadence_efficacy.json -> vignettes/data/ (%d bytes)\n",
+                file.info(ce_src)$size))
+  } else {
+    write_json(empty_ce, ce_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_cadence_efficacy.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+         cadence_split_date = "2026-05-21",
+         daily = list(), before = list(), after = list()),
+    file.path(out_dir, "roborev_cadence_efficacy.json"),
+    auto_unbox = TRUE
+  )
+})
+
+# --- 8q. Export roborev_threshold_history.json (#146 Q8) ---------------------
+# Threshold step-history: per-repo severity threshold changes over time,
+# overlaid on reviews_autoclosed_severity per day from roborev_daily_metrics.
+# Source tables: roborev_threshold_changes + roborev_daily_metrics.
+# Privacy: clean_projects() on repo column before writing.
+# Guard: if table/columns missing, write empty-but-valid JSON and warn.
+cat("Exporting roborev_threshold_history.json (#146 Q8)...\n")
+tryCatch({
+  th_src <- file.path(extdata, "roborev_threshold_history.json")
+  th_dst <- file.path(out_dir, "roborev_threshold_history.json")
+
+  empty_th <- list(
+    generated_at   = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+    threshold_steps = list(),
+    daily_autoclosed = list()
+  )
+
+  if (file.exists(unified_db)) {
+    th_con <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(th_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    th_tbls <- dbListTables(th_con)
+
+    has_tc <- "roborev_threshold_changes" %in% th_tbls
+    has_dm2 <- "roborev_daily_metrics"   %in% th_tbls
+
+    if (has_tc && has_dm2) {
+      # Threshold changes: keep real projects only (exclude file-hash repos,
+      # wildcard *, confidential repos). Keep distinct (changed_at, repo,
+      # old_threshold, new_threshold) changes where threshold actually changed.
+      tc_raw <- dbReadTable(th_con, "roborev_threshold_changes") |> as_tibble()
+
+      # Filter to non-file-hash, non-wildcard repos
+      tc_clean <- tc_raw |>
+        filter(
+          !grepl("^file[0-9a-f]{10,}", repo, ignore.case = TRUE),
+          repo != "*"
+        )
+      # Apply privacy filter
+      tc_clean <- clean_projects(as.data.frame(tc_clean), project_col = "repo")
+
+      # Aggregate threshold changes to global level: for each timestamp, take
+      # the most common new_threshold across repos (the "system-wide" effective level).
+      # This collapses per-repo changes into a single step series for the chart.
+      tc_steps <- tc_clean |>
+        group_by(changed_at = as.Date(changed_at_utc), new_threshold) |>
+        summarise(n_repos = n(), .groups = "drop") |>
+        group_by(changed_at) |>
+        slice_max(n_repos, n = 1L, with_ties = FALSE) |>
+        ungroup() |>
+        arrange(changed_at) |>
+        filter(!is.na(new_threshold), nzchar(new_threshold))
+
+      threshold_steps_list <- lapply(seq_len(nrow(tc_steps)), function(i) {
+        r <- tc_steps[i, , drop = FALSE]
+        list(
+          date          = as.character(r$changed_at),
+          new_threshold = r$new_threshold,
+          n_repos       = as.integer(r$n_repos)
+        )
+      })
+
+      # Daily autoclosed_severity from roborev_daily_metrics (all repos summed)
+      dm_th <- dbReadTable(th_con, "roborev_daily_metrics") |>
+        as_tibble() |>
+        group_by(date) |>
+        summarise(
+          reviews_autoclosed_severity = sum(reviews_autoclosed_severity, na.rm = TRUE),
+          reviews_created             = sum(reviews_created,             na.rm = TRUE),
+          .groups = "drop"
+        ) |>
+        mutate(date = as.Date(date)) |>
+        arrange(date)
+
+      daily_autoclosed_list <- lapply(seq_len(nrow(dm_th)), function(i) {
+        r <- dm_th[i, , drop = FALSE]
+        list(
+          date                        = as.character(r$date),
+          reviews_autoclosed_severity = as.integer(r$reviews_autoclosed_severity),
+          reviews_created             = as.integer(r$reviews_created)
+        )
+      })
+
+      th_out <- list(
+        generated_at     = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+        threshold_steps  = threshold_steps_list,
+        daily_autoclosed = daily_autoclosed_list
+      )
+
+      write_json(th_out, th_src, auto_unbox = TRUE)
+      cat(sprintf(
+        "  -> roborev_threshold_history.json: %d threshold steps, %d daily rows\n",
+        length(threshold_steps_list), length(daily_autoclosed_list)
+      ))
+      tryCatch(dbDisconnect(th_con, shutdown = TRUE), error = function(e) NULL)
+    } else {
+      missing_tbls <- c(
+        if (!has_tc)  "roborev_threshold_changes",
+        if (!has_dm2) "roborev_daily_metrics"
+      )
+      cat(sprintf("  -> missing tables: %s; writing empty roborev_threshold_history.json\n",
+                  paste(missing_tbls, collapse = ", ")))
+      write_json(empty_th, th_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  # Always copy committed source to vignettes/data/
+  if (file.exists(th_src)) {
+    file.copy(th_src, th_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_threshold_history.json -> vignettes/data/ (%d bytes)\n",
+                file.info(th_src)$size))
+  } else {
+    write_json(empty_th, th_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_threshold_history.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+         threshold_steps = list(), daily_autoclosed = list()),
+    file.path(out_dir, "roborev_threshold_history.json"),
     auto_unbox = TRUE
   )
 })
