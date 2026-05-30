@@ -44,6 +44,7 @@ format:
       - data/roborev_resolution.json
       - data/roborev_agent_perf.json
       - data/roborev_backlog_age.json
+      - data/roborev_repo_signal.json
       - data/roborev/latest.json
       - data/v1/sessions.parquet
       - data/v1/costs.parquet
@@ -1661,6 +1662,28 @@ ui <- page_navbar(
               "Age = now minus enqueued_at from ~/.roborev/reviews.db. ",
               "Confidential repos (mycare, crypto, solwatch, swarms) excluded. ",
               "Source: roborev_backlog_age.json — refreshed on each local export run and committed to inst/extdata/.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Signal-to-Noise by Repo (#146 Q3)"),
+            uiOutput("rv_repo_signal_chart"),
+            tags$table(class = "table table-sm table-dark mt-2 mb-0",
+              tags$thead(tags$tr(
+                tags$th("Repo"), tags$th("Signal"), tags$th("Noise"),
+                tags$th("Created"), tags$th("Passed"), tags$th("Failed"),
+                tags$th("Autoclosed")
+              )),
+              uiOutput("rv_repo_signal_table")
+            ),
+            card_footer(class = "text-muted small",
+              "Signal ratio (signal-to-noise ratio, or SNR) = reviews_passed / reviews_created per repo. ",
+              "A high signal ratio means the roborev pipeline surfaces real, actionable findings ",
+              "for that repository. A high noise ratio means most reviews fail without producing fixes. ",
+              "Autoclosed = reviews suppressed by the pipeline (age/severity thresholds) before human review. ",
+              "Source: roborev_daily_metrics table in unified.duckdb, aggregated across all dates. ",
+              "Confidential repos (mycare, crypto, swarms) are excluded via clean_projects(). ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
           )
         )
       )
@@ -3616,6 +3639,10 @@ server <- function(input, output, session) {
   #   buckets:[{label,hours_min,hours_max,n},...], top_oldest:[{repo,hours_open},...]}
   # Source: ~/.roborev/reviews.db (open reviews × enqueued_at), refreshed locally.
   roborev_backlog_age_raw <- load_json("roborev_backlog_age.json")
+  # roborev_repo_signal.json — per-repo signal-to-noise ratio (#146 Q3).
+  # Contract: {repos:[{repo,n_created,n_passed,n_failed,n_autoclosed,n_parse_fail,
+  #   signal_ratio,noise_ratio},...], generated_at}
+  roborev_repo_signal_raw <- load_json("roborev_repo_signal.json")
 
   rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
     roborev_summary_raw$pulse
@@ -3802,6 +3829,155 @@ server <- function(input, output, session) {
       "Line chart: roborev resolved vs open reviews per week. ",
       "Green = resolved, red = open. Defaulting to last 3 months view."
     ))
+  })
+
+  # --- Signal-to-Noise by Repo panel (#146 Q3) ---------------------------------
+  # Cleveland dot chart: signal_ratio per repo, sorted ascending (lowest at bottom).
+  # Compact table: repo | signal | noise | created | passed | failed | autoclosed.
+  # Source: roborev_repo_signal.json {repos:[{repo,signal_ratio,noise_ratio,...}]}.
+  #
+  # Named colour palette — same repo gets same colour across all panels (per
+  # narrative-colour-persistence rule). Using project palette from accessibility rule.
+  REPO_PALETTE <- c(
+    "llm"              = "#4ea8de",
+    "llmtelemetry"     = "#69d4a0",
+    "historical"       = "#ffd93d",
+    "crypto_swarms"    = "#c084fc",
+    "irishbuoys"       = "#5edaff",
+    "irish_buoy_network" = "#5edaff",
+    "footbet"          = "#f08080",
+    "football"         = "#f08080",
+    "randomwalk"       = "#ffaa3d",
+    "mycare"           = "#98d8c8",
+    "knowledge"        = "#b0c4de"
+  )
+
+  safe_signal_repos <- function(raw) {
+    if (is.null(raw) || !is.list(raw)) return(NULL)
+    repos <- raw$repos
+    if (is.null(repos)) return(NULL)
+    df <- if (is.data.frame(repos)) {
+      if (nrow(repos) == 0L) return(NULL)
+      repos
+    } else if (length(repos) > 0L) {
+      do.call(rbind, lapply(repos, function(r) {
+        data.frame(
+          repo         = as.character(r$repo),
+          n_created    = as.integer(r$n_created),
+          n_passed     = as.integer(r$n_passed),
+          n_failed     = as.integer(r$n_failed),
+          n_autoclosed = as.integer(if (!is.null(r$n_autoclosed)) r$n_autoclosed else 0L),
+          n_parse_fail = as.integer(if (!is.null(r$n_parse_fail)) r$n_parse_fail else 0L),
+          signal_ratio = as.numeric(r$signal_ratio),
+          noise_ratio  = as.numeric(r$noise_ratio),
+          stringsAsFactors = FALSE
+        )
+      }))
+    } else {
+      return(NULL)
+    }
+    # Normalise column types from data.frame branch
+    data.frame(
+      repo         = as.character(df$repo),
+      n_created    = as.integer(df$n_created),
+      n_passed     = as.integer(df$n_passed),
+      n_failed     = as.integer(df$n_failed),
+      n_autoclosed = if ("n_autoclosed" %in% names(df)) as.integer(df$n_autoclosed) else 0L,
+      n_parse_fail = if ("n_parse_fail" %in% names(df)) as.integer(df$n_parse_fail) else 0L,
+      signal_ratio = as.numeric(df$signal_ratio),
+      noise_ratio  = as.numeric(df$noise_ratio),
+      stringsAsFactors = FALSE
+    )
+  }
+
+  output$rv_repo_signal_chart <- renderUI({
+    sig <- safe_signal_repos(roborev_repo_signal_raw)
+    if (is.null(sig))
+      return(ec_empty(
+        "No signal-to-noise data yet — roborev_repo_signal.json not deployed", h = "300px"))
+    # Sort ascending for Cleveland dot (lowest at bottom, highest at top)
+    sig <- sig[order(sig$signal_ratio, decreasing = FALSE), ]
+    n_repos   <- nrow(sig)
+    top_repo  <- sig$repo[n_repos]
+    top_rate  <- round(sig$signal_ratio[n_repos] * 100, 1)
+    # Assign colours from REPO_PALETTE; fall back to a neutral grey for unknown repos.
+    colours <- vapply(sig$repo, function(r) {
+      if (r %in% names(REPO_PALETTE)) REPO_PALETTE[[r]] else "#888888"
+    }, character(1))
+    # Build ECharts scatter series with per-point colour
+    point_data <- lapply(seq_len(n_repos), function(i) {
+      list(
+        value     = sig$signal_ratio[i],
+        itemStyle = list(color = colours[i])
+      )
+    })
+    ec(list(
+      tooltip = list(
+        trigger = "axis",
+        axisPointer = list(type = "shadow"),
+        formatter = DT::JS(
+          "function(params) {",
+          "  var d = params[0];",
+          "  return d.name + '<br/>Signal: ' + (d.value * 100).toFixed(1) + '%';",
+          "}"
+        )
+      ),
+      grid = list(left = 130, containLabel = FALSE),
+      xAxis = list(
+        type = "value",
+        name = "Signal ratio (passed / created)",
+        nameLocation = "middle", nameGap = 28,
+        min = 0, max = 1,
+        axisLabel = list(
+          color = "#ccc",
+          formatter = DT::JS("function(v){ return (v*100).toFixed(0)+'%'; }")
+        ),
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        type = "category",
+        data = I(sig$repo),
+        axisLabel = list(color = "#ccc", fontSize = 11)
+      ),
+      series = list(list(
+        type       = "scatter",
+        data       = I(point_data),
+        symbolSize = 14
+      ))
+    ), h = paste0(max(280, n_repos * 28), "px"),
+    aria_label = paste0(
+      "Cleveland dot chart: roborev signal-to-noise ratio per repository. ",
+      n_repos, " repos. Best signal: ", top_repo, " at ", top_rate, "%. ",
+      "X-axis shows signal ratio (reviews passed / reviews created)."
+    ))
+  })
+
+  output$rv_repo_signal_table <- renderUI({
+    sig <- safe_signal_repos(roborev_repo_signal_raw)
+    if (is.null(sig)) {
+      return(tags$tr(tags$td(colspan = "7", "No data available", class = "text-muted")))
+    }
+    # Sort by signal_ratio descending for table view
+    sig <- sig[order(sig$signal_ratio, decreasing = TRUE), ]
+    rows <- lapply(seq_len(nrow(sig)), function(i) {
+      r <- sig[i, , drop = FALSE]
+      sig_pct   <- sprintf("%.1f%%", r$signal_ratio * 100)
+      noise_pct <- sprintf("%.1f%%", r$noise_ratio  * 100)
+      # Colour-code signal cell: green >= 30%, yellow 10–30%, red < 10%
+      sig_style <- if (r$signal_ratio >= 0.30) "color:#69d4a0;font-weight:bold"
+                   else if (r$signal_ratio >= 0.10) "color:#ffd93d"
+                   else "color:#f08080"
+      tags$tr(
+        tags$td(r$repo),
+        tags$td(style = sig_style, sig_pct),
+        tags$td(noise_pct),
+        tags$td(as.character(r$n_created)),
+        tags$td(as.character(r$n_passed)),
+        tags$td(as.character(r$n_failed)),
+        tags$td(as.character(r$n_autoclosed))
+      )
+    })
+    tagList(rows)
   })
 
   # --- Agent Pass Rate panel (#146 Q10) ----------------------------------------
