@@ -53,7 +53,7 @@ touching the network.  A live push only happens with \code{push = TRUE}.
 }
 \section{Authentication}{
 
-The \code{huggingface-cli} command authenticates automatically from the
+The \code{hf} command authenticates automatically from the
 \code{HF_TOKEN} environment variable — no git credential helper, no token
 files, no ASKPASS script needed.  In CI, set the \code{HF_TOKEN} secret and
 pass it to the step via \verb{env: HF_TOKEN: $\{\{ secrets.HF_TOKEN \}\}}.
@@ -63,13 +63,14 @@ pass it to the step via \verb{env: HF_TOKEN: $\{\{ secrets.HF_TOKEN \}\}}.
 
 The live push calls (after staging sanitised parquets to a temp dir):
 
-\if{html}{\out{<div class="sourceCode">}}\preformatted{huggingface-cli upload <repo_id> <staging_dir> . \\
+\if{html}{\out{<div class="sourceCode">}}\preformatted{hf upload <repo_id> <staging_dir> . \\
   --repo-type dataset \\
   --commit-message "telemetry archive <date>"
 }\if{html}{\out{</div>}}
 
-The CLI binary is resolved by \code{.hf_cli_binary()}: tries \code{huggingface-cli}
-first, then \code{hf} as a fallback (both are installed by \code{huggingface_hub}).
+The CLI binary is resolved by \code{.hf_cli_binary()}: tries \code{hf} first
+(\code{huggingface-cli} is deprecated and a non-functional no-op in current
+\code{huggingface_hub}), then \code{huggingface-cli} as fallback for older installs.
 Aborts if neither is found.
 }
 

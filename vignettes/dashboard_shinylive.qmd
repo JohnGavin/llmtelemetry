@@ -53,6 +53,7 @@ format:
       - data/roborev_cost_per_finding.json
       - data/roborev_cost_per_agent.json
       - data/roborev_vs_session_cost.json
+      - data/roborev_location_findings.json
       - data/v1/sessions.parquet
       - data/v1/costs.parquet
       - data/v1/git_commits.parquet
@@ -1876,6 +1877,40 @@ ui <- page_navbar(
               "X-axis: addressed finding count per agent (cost_usd_per_finding when instrumented). ",
               "Source: roborev_cost_per_agent.json from unified.duckdb. ",
               "PALETTE: codex=#4ea8de, claude-code=#69d4a0, gemini=#ffd93d.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Top Files by Finding Frequency (#146 Q17)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Which files appear most frequently in roborev findings? ",
+                "Top-15 file paths by occurrence count across all public-repo reviews. ",
+                "Extracted by parsing ",
+                tags$code("**Location**:"), " markup from review output text. ",
+                "Severity breakdown (H/M/L) counts how often the file appeared in a ",
+                "High-, Medium-, or Low-severity finding. ",
+                "Only non-confidential repos included."
+              )
+            ),
+            tags$table(class = "table table-sm table-dark mb-0",
+              tags$thead(tags$tr(
+                tags$th("File"),
+                tags$th(title = "Total occurrences across all reviews", "Count"),
+                tags$th(title = "Number of distinct repositories", "Repos"),
+                tags$th(title = "Most recent review date containing this file", "Last seen"),
+                tags$th(title = "Occurrences in High-severity findings", "H"),
+                tags$th(title = "Occurrences in Medium-severity findings", "M"),
+                tags$th(title = "Occurrences in Low-severity findings", "L")
+              )),
+              uiOutput("rv_location_table")
+            ),
+            card_footer(class = "text-muted small",
+              "Parsed from roborev_location_findings.json — sourced from ~/.roborev/reviews.db 'output' column. ",
+              "Each **Location**: line per review contributes one occurrence. ",
+              "Confidential repos (mycare, crypto, swarms) excluded via EXCLUDED_DASHBOARD_PROJECTS filter. ",
+              "Absolute and sensitive filesystem paths stripped before aggregation. ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
           )
         )
       )
@@ -3858,6 +3893,10 @@ server <- function(input, output, session) {
   #   overall:{session_total,review_total,review_pct}, cost_instrumented:bool,
   #   note:str, generated_at}
   roborev_vsr_raw <- load_json("roborev_vs_session_cost.json")
+  # roborev_location_findings.json — top-N files by finding frequency (#146 Q17).
+  # Contract: {files:[{file_path,occurrences,distinct_repos,last_seen,n_high,n_medium,n_low}],
+  #   n_reviews:int, generated_at}
+  roborev_rlf_raw <- load_json("roborev_location_findings.json")
 
   rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
     roborev_summary_raw$pulse
@@ -5324,6 +5363,72 @@ server <- function(input, output, session) {
     if (is.null(ov) || is.null(ov$review_pct)) return("—")
     v <- ov$review_pct
     if (v == 0) "— (not instrumented)" else sprintf("%.2f%%", v)
+  })
+
+  # --- Top Files by Finding Frequency (#146 Q17) --------------------------------
+  # Compact table: File | Count | Repos | Last seen | H | M | L
+  # Source: roborev_location_findings.json — {files:[...], n_reviews, generated_at}
+  output$rv_location_table <- renderUI({
+    raw <- roborev_rlf_raw
+    files <- if (!is.null(raw) && is.list(raw)) {
+      if (is.data.frame(raw$files)) {
+        raw$files
+      } else if (is.list(raw$files) && length(raw$files) > 0L) {
+        tryCatch(
+          do.call(rbind, lapply(raw$files, function(r) {
+            data.frame(
+              file_path      = as.character(r$file_path),
+              occurrences    = as.integer(r$occurrences),
+              distinct_repos = as.integer(r$distinct_repos),
+              last_seen      = as.character(r$last_seen),
+              n_high         = as.integer(r$n_high),
+              n_medium       = as.integer(r$n_medium),
+              n_low          = as.integer(r$n_low),
+              stringsAsFactors = FALSE
+            )
+          })),
+          error = function(e) NULL
+        )
+      } else {
+        NULL
+      }
+    } else {
+      NULL
+    }
+
+    if (is.null(files) || nrow(files) == 0L) {
+      return(tags$tbody(
+        tags$tr(tags$td(colspan = "7", style = "color:#aaa; text-align:center;",
+          "No location data yet — run export_dashboard_data.R locally to populate roborev_location_findings.json"))
+      ))
+    }
+
+    # Top-15 (already sorted by export, but re-sort defensively)
+    files <- files[order(-files$occurrences, files$file_path), ]
+    top_n <- min(15L, nrow(files))
+    files <- files[seq_len(top_n), , drop = FALSE]
+
+    rows <- lapply(seq_len(nrow(files)), function(i) {
+      f <- files[i, ]
+      # Truncate long file paths at 50 chars with trailing ellipsis
+      fp_display <- if (nchar(f$file_path) > 50L) {
+        paste0("...", substr(f$file_path, nchar(f$file_path) - 46L, nchar(f$file_path)))
+      } else {
+        f$file_path
+      }
+      tags$tr(
+        tags$td(style = "font-family: monospace; font-size: 0.85em;",
+                title = f$file_path, fp_display),
+        tags$td(style = "text-align: right;",
+                formatC(f$occurrences, format = "d", big.mark = ",")),
+        tags$td(style = "text-align: right;", f$distinct_repos),
+        tags$td(substr(as.character(f$last_seen), 1L, 10L)),
+        tags$td(style = "text-align: right; color: #f08080;", f$n_high),
+        tags$td(style = "text-align: right; color: #ffd93d;", f$n_medium),
+        tags$td(style = "text-align: right; color: #69d4a0;", f$n_low)
+      )
+    })
+    tags$tbody(rows)
   })
 }
 

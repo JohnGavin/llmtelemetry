@@ -4077,6 +4077,203 @@ tryCatch({
   )
 })
 
+# --- 8t. Export roborev_location_findings.json (#146 Q17 — top-N files) ------
+# Q17: which files appear most frequently in roborev findings?
+# Schema: [{file_path, occurrences, distinct_repos, last_seen, n_high, n_medium, n_low}]
+# Top-50 file paths, sorted by occurrences desc, tie-break alphabetical file_path.
+# Privacy: confidential repos (EXCLUDED_DASHBOARD_PROJECTS) excluded before aggregation.
+# Sensitive path leak: file_paths containing sensitive_verify_patterns() are dropped.
+# Source: ~/.roborev/reviews.db reviews table — reads 'output' column and parses Location: lines.
+cat("Exporting roborev_location_findings.json (#146 Q17)...\n")
+tryCatch({
+  rlf_src <- file.path(extdata, "roborev_location_findings.json")
+  rlf_dst <- file.path(out_dir, "roborev_location_findings.json")
+
+  empty_rlf <- list(
+    files        = list(),
+    n_reviews    = 0L,
+    generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  reviews_db_rlf <- path.expand("~/.roborev/reviews.db")
+
+  sqlite3_candidates_rlf <- c(
+    "/nix/store/0hzmsbn5h50x7iyz1h5svbr68hppyicy-sqlite-3.51.2-bin/bin/sqlite3",
+    Sys.which("sqlite3")
+  )
+  sqlite3_bin_rlf <- sqlite3_candidates_rlf[
+    nzchar(sqlite3_candidates_rlf) & file.exists(sqlite3_candidates_rlf)
+  ][1L]
+
+  if (file.exists(reviews_db_rlf) && !is.na(sqlite3_bin_rlf) && nzchar(sqlite3_bin_rlf)) {
+    # Load the parser (available when sourcing within an R session with pkgload active,
+    # or explicitly via source for standalone Rscript runs).
+    parser_available <- is.function(tryCatch(parse_review_locations, error = function(e) NULL))
+    if (!parser_available) {
+      parser_file <- file.path(pkg_root, "R", "parse_roborev_output.R")
+      if (file.exists(parser_file)) {
+        source(parser_file, local = FALSE)
+        parser_available <- is.function(tryCatch(parse_review_locations, error = function(e) NULL))
+      }
+    }
+
+    if (parser_available) {
+      # Fetch id, repo name, and output text for all non-confidential reviews that
+      # contain at least one "Location" line.
+      sql_file_rlf <- tempfile(fileext = ".sql")
+      excluded_list <- paste0("'", tolower(EXCLUDED_DASHBOARD_PROJECTS), "'", collapse = ", ")
+      writeLines(c(
+        "SELECT r.id, repos.name as repo, r.output",
+        "FROM reviews r",
+        "LEFT JOIN review_jobs rj ON r.job_id = rj.id",
+        "LEFT JOIN repos ON rj.repo_id = repos.id",
+        "WHERE r.output LIKE '%Location%'",
+        "  AND r.output LIKE '%**Location**%'",
+        sprintf("  AND LOWER(COALESCE(repos.name, '')) NOT IN (%s)", excluded_list),
+        "  AND r.closed IS NOT NULL;"
+      ), sql_file_rlf)
+
+      # Use JSON output mode so multi-line output fields are safe.
+      rows_raw_rlf <- system(
+        paste0(sqlite3_bin_rlf, " -json ", shQuote(reviews_db_rlf), " < ", shQuote(sql_file_rlf)),
+        intern = TRUE
+      )
+      unlink(sql_file_rlf)
+
+      rows_json <- tryCatch(
+        jsonlite::fromJSON(paste(rows_raw_rlf, collapse = ""), simplifyDataFrame = TRUE),
+        error = function(e) NULL
+      )
+
+      if (!is.null(rows_json) && is.data.frame(rows_json) && nrow(rows_json) > 0L) {
+        cat(sprintf("  -> parsing %d reviews with Location lines\n", nrow(rows_json)))
+
+        # Parse each review's output for Location: lines.
+        parsed_list <- lapply(seq_len(nrow(rows_json)), function(k) {
+          row <- rows_json[k, ]
+          tryCatch(
+            parse_review_locations(
+              output_text = as.character(row$output),
+              review_id   = as.integer(row$id),
+              severity    = NA_character_,  # severity is embedded in output text
+              repo        = as.character(row$repo)
+            ),
+            error = function(e) NULL
+          )
+        })
+
+        parsed_df <- do.call(rbind, Filter(function(x) !is.null(x) && nrow(x) > 0L, parsed_list))
+
+        if (!is.null(parsed_df) && nrow(parsed_df) > 0L) {
+          # Privacy: drop file_paths that look like absolute filesystem paths or
+          # contain sensitive patterns (worktree paths, usernames, etc.).
+          sensitive_pats <- sensitive_verify_patterns()
+          is_sensitive <- vapply(parsed_df$file_path, function(fp) {
+            any(vapply(sensitive_pats, function(p) grepl(p, fp, fixed = TRUE), logical(1L)))
+          }, logical(1L))
+          parsed_df <- parsed_df[!is_sensitive, , drop = FALSE]
+
+          # Also drop absolute paths (start with /).
+          parsed_df <- parsed_df[!grepl("^/", parsed_df$file_path), , drop = FALSE]
+
+          # Extract severity from the review output.
+          # Build a lookup: review_id -> severity (first Severity: line in the output).
+          sev_lookup <- vapply(seq_len(nrow(rows_json)), function(k) {
+            txt <- as.character(rows_json$output[k])
+            m <- regexpr("\\*\\*Severity\\*\\*:\\s*(\\w+)", txt, perl = TRUE)
+            if (m > 0L) {
+              ms <- regmatches(txt, m)
+              tolower(trimws(sub("\\*\\*Severity\\*\\*:\\s*", "", ms, perl = TRUE)))
+            } else {
+              NA_character_
+            }
+          }, character(1L))
+          names(sev_lookup) <- as.character(rows_json$id)
+
+          parsed_df$severity <- sev_lookup[as.character(parsed_df$review_id)]
+
+          # last_seen: use review created_at from rows_json if available.
+          # Fallback: use today's date.
+          if ("created_at" %in% names(rows_json)) {
+            date_lookup <- setNames(
+              as.character(rows_json$created_at),
+              as.character(rows_json$id)
+            )
+            parsed_df$created_at <- date_lookup[as.character(parsed_df$review_id)]
+          } else {
+            parsed_df$created_at <- format(Sys.Date(), "%Y-%m-%d")
+          }
+
+          # Aggregate by file_path.
+          agg_df <- do.call(rbind, lapply(
+            split(parsed_df, parsed_df$file_path),
+            function(grp) {
+              sevs <- tolower(as.character(grp$severity))
+              data.frame(
+                file_path      = grp$file_path[1L],
+                occurrences    = nrow(grp),
+                distinct_repos = length(unique(grp$repo[!is.na(grp$repo)])),
+                last_seen      = max(grp$created_at, na.rm = TRUE),
+                n_high         = sum(sevs %in% c("high", "critical"), na.rm = TRUE),
+                n_medium       = sum(sevs == "medium", na.rm = TRUE),
+                n_low          = sum(sevs %in% c("low", "info"), na.rm = TRUE),
+                stringsAsFactors = FALSE
+              )
+            }
+          ))
+          rownames(agg_df) <- NULL
+
+          # Sort: occurrences desc, then alphabetical file_path for determinism.
+          agg_df <- agg_df[
+            order(-agg_df$occurrences, agg_df$file_path),
+          ]
+
+          # Top 50.
+          top_n <- min(50L, nrow(agg_df))
+          agg_df <- agg_df[seq_len(top_n), , drop = FALSE]
+
+          rlf_out <- list(
+            files        = agg_df,
+            n_reviews    = nrow(rows_json),
+            generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+          )
+          write_json(rlf_out, rlf_src, auto_unbox = TRUE, null = "null")
+          cat(sprintf("  -> roborev_location_findings.json: %d file paths (from %d reviews)\n",
+                      nrow(agg_df), nrow(rows_json)))
+        } else {
+          cat("  -> no Location lines parsed after privacy filtering; writing empty\n")
+          write_json(empty_rlf, rlf_src, auto_unbox = TRUE)
+        }
+      } else {
+        cat("  -> no reviews with Location lines found; writing empty\n")
+        write_json(empty_rlf, rlf_src, auto_unbox = TRUE)
+      }
+    } else {
+      cat("  -> parse_review_locations() not available; writing empty\n")
+      write_json(empty_rlf, rlf_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> reviews.db or sqlite3 not found; will copy committed source\n")
+  }
+
+  if (file.exists(rlf_src)) {
+    file.copy(rlf_src, rlf_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_location_findings.json -> vignettes/data/ (%d bytes)\n",
+                file.info(rlf_src)$size))
+  } else {
+    write_json(empty_rlf, rlf_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_location_findings.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(files = list(), n_reviews = 0L,
+         generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_location_findings.json"),
+    auto_unbox = TRUE
+  )
+})
+
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
 # ccusage_blocks is intentionally excluded from critical_files: the CI fallback
