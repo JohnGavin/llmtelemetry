@@ -2446,6 +2446,155 @@ tryCatch({
   )
 })
 
+# --- 8h. Export roborev_backlog_age.json (#146 Q15) ---------------------------
+# Open-review age distribution: for every open review in ~/.roborev/reviews.db,
+# compute hours_open = (now - enqueued_at) * 24 and bucket into:
+#   0-1d / 1-3d / 3-7d / 7-14d / >14d
+# Reads directly from reviews.db via sqlite3 CLI (no RSQLite dependency).
+# Codex pattern: regenerate locally; always copy committed source to vignettes/data/.
+# Privacy: confidential repos (mycare, crypto, solwatch, swarms) excluded.
+cat("Exporting roborev_backlog_age.json...\n")
+tryCatch({
+  ba_src <- file.path(extdata, "roborev_backlog_age.json")
+  ba_dst <- file.path(out_dir, "roborev_backlog_age.json")
+
+  empty_ba <- list(
+    generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+    n_open       = 0L,
+    median_hours = NULL,
+    p90_hours    = NULL,
+    max_hours    = 0,
+    buckets      = list(
+      list(label = "0-1d",  hours_min = 0L,   hours_max = 24L,  n = 0L),
+      list(label = "1-3d",  hours_min = 24L,  hours_max = 72L,  n = 0L),
+      list(label = "3-7d",  hours_min = 72L,  hours_max = 168L, n = 0L),
+      list(label = "7-14d", hours_min = 168L, hours_max = 336L, n = 0L),
+      list(label = ">14d",  hours_min = 336L, hours_max = NULL, n = 0L)
+    ),
+    top_oldest   = list()
+  )
+
+  reviews_db <- path.expand("~/.roborev/reviews.db")
+
+  # Detect sqlite3 binary (try nix store paths then system PATH)
+  sqlite3_candidates <- c(
+    "/nix/store/0hzmsbn5h50x7iyz1h5svbr68hppyicy-sqlite-3.51.2-bin/bin/sqlite3",
+    Sys.which("sqlite3")
+  )
+  sqlite3_bin <- sqlite3_candidates[nzchar(sqlite3_candidates) & file.exists(sqlite3_candidates)][1L]
+
+  if (file.exists(reviews_db) && !is.na(sqlite3_bin) && nzchar(sqlite3_bin)) {
+    sql_file_ba <- tempfile(fileext = ".sql")
+    writeLines(c(
+      "SELECT ROUND((julianday('now') - julianday(rj.enqueued_at)) * 24, 4) as hours_open,",
+      "       repos.name as repo",
+      "FROM reviews r",
+      "LEFT JOIN review_jobs rj ON r.job_id = rj.id",
+      "LEFT JOIN repos ON rj.repo_id = repos.id",
+      "WHERE r.closed = 0",
+      "  AND rj.enqueued_at IS NOT NULL",
+      "ORDER BY hours_open;"
+    ), sql_file_ba)
+
+    rows_raw_ba <- system(
+      paste0(sqlite3_bin, " -csv ", shQuote(reviews_db), " < ", shQuote(sql_file_ba)),
+      intern = TRUE
+    )
+    unlink(sql_file_ba)
+
+    if (length(rows_raw_ba) > 0L) {
+      rows_df_ba <- tryCatch(
+        read.csv(text = paste(rows_raw_ba, collapse = "\n"), header = FALSE,
+                 col.names = c("hours_open", "repo"), stringsAsFactors = FALSE),
+        error = function(e) NULL
+      )
+
+      if (!is.null(rows_df_ba) && nrow(rows_df_ba) > 0L) {
+        rows_df_ba$hours_open <- as.numeric(rows_df_ba$hours_open)
+        rows_df_ba <- rows_df_ba[!is.na(rows_df_ba$hours_open), ]
+
+        # Privacy: exclude confidential repos
+        rows_df_ba <- rows_df_ba[!tolower(rows_df_ba$repo) %in% tolower(EXCLUDED_DASHBOARD_PROJECTS), ]
+
+        n_ba   <- nrow(rows_df_ba)
+        hrs_ba <- rows_df_ba$hours_open
+
+        breaks_ba <- c(0, 24, 72, 168, 336, Inf)
+        labels_ba <- c("0-1d", "1-3d", "3-7d", "7-14d", ">14d")
+        mins_ba   <- c(0L, 24L, 72L, 168L, 336L)
+        maxs_ba   <- c(24L, 72L, 168L, 336L, NULL)
+
+        bucket_n <- as.integer(table(
+          cut(hrs_ba, breaks = breaks_ba, include.lowest = TRUE, right = FALSE, labels = labels_ba)
+        ))
+
+        buckets_ba <- lapply(seq_along(labels_ba), function(i) {
+          list(
+            label     = labels_ba[i],
+            hours_min = mins_ba[i],
+            hours_max = if (i < length(labels_ba)) as.integer(maxs_ba[[i]]) else NULL,
+            n         = bucket_n[i]
+          )
+        })
+
+        # Top 10 oldest open (confidential already excluded)
+        top_ba <- rows_df_ba[order(-rows_df_ba$hours_open), ][seq_len(min(10L, n_ba)), ]
+        top_list_ba <- lapply(seq_len(nrow(top_ba)), function(i) {
+          list(repo = top_ba$repo[i], hours_open = round(top_ba$hours_open[i], 2))
+        })
+
+        ba_out <- list(
+          generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+          n_open       = as.integer(n_ba),
+          median_hours = if (n_ba > 0L) round(median(hrs_ba, na.rm = TRUE), 2) else NULL,
+          p90_hours    = if (n_ba > 0L) round(quantile(hrs_ba, 0.90, na.rm = TRUE)[[1]], 2) else NULL,
+          max_hours    = if (n_ba > 0L) round(max(hrs_ba, na.rm = TRUE), 2) else 0,
+          buckets      = buckets_ba,
+          top_oldest   = top_list_ba
+        )
+
+        write_json(ba_out, ba_src, auto_unbox = TRUE, null = "null")
+        cat(sprintf(
+          "  -> roborev_backlog_age.json: n_open=%d, median=%.1fh, p90=%.1fh, max=%.1fh\n",
+          n_ba,
+          if (is.null(ba_out$median_hours)) 0 else ba_out$median_hours,
+          if (is.null(ba_out$p90_hours))    0 else ba_out$p90_hours,
+          ba_out$max_hours
+        ))
+      } else {
+        cat("  -> reviews.db query returned no parseable rows; writing empty\n")
+        write_json(empty_ba, ba_src, auto_unbox = TRUE, null = "null")
+      }
+    } else {
+      cat("  -> reviews.db: no open reviews found; writing empty\n")
+      write_json(empty_ba, ba_src, auto_unbox = TRUE, null = "null")
+    }
+  } else {
+    cat("  -> reviews.db or sqlite3 not found; will copy committed source\n")
+  }
+
+  # Always copy committed source to vignettes/data/
+  if (file.exists(ba_src)) {
+    file.copy(ba_src, ba_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_backlog_age.json -> vignettes/data/ (%d bytes)\n",
+                file.info(ba_src)$size))
+  } else {
+    write_json(empty_ba, ba_dst, auto_unbox = TRUE, null = "null")
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_backlog_age.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(
+      generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+      n_open = 0L, median_hours = NULL, p90_hours = NULL, max_hours = 0,
+      buckets = list(), top_oldest = list()
+    ),
+    file.path(out_dir, "roborev_backlog_age.json"),
+    auto_unbox = TRUE, null = "null"
+  )
+})
+
 # --- 8g. Export data/roborev/latest.json (llm#287 Part B — resolution page) --
 # Aggregated roborev resolution metrics across 1d/3d/7d/14d windows plus a
 # 14-day daily time-series and 7d-vs-prior-7d trend deltas.

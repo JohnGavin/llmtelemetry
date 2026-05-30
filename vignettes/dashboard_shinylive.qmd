@@ -43,6 +43,7 @@ format:
       - data/roborev_by_repo.json
       - data/roborev_resolution.json
       - data/roborev_agent_perf.json
+      - data/roborev_backlog_age.json
       - data/roborev/latest.json
       - data/v1/sessions.parquet
 filters:
@@ -1491,6 +1492,27 @@ ui <- page_navbar(
               "Agents sourced from roborev_agent_performance in unified.duckdb (no repo column — no confidential filtering needed). ",
               "Cost per review is shown only when total_cost_usd is available; NA values display as —. ",
               "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Review Backlog Age (#146 Q15)"),
+            tags$table(class = "table table-sm table-dark mb-2",
+              tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
+              tags$tbody(
+                tags$tr(tags$td("Open reviews"),   tags$td(textOutput("rv_ba_n_open",   inline = TRUE))),
+                tags$tr(tags$td("Median age"),      tags$td(textOutput("rv_ba_median",   inline = TRUE))),
+                tags$tr(tags$td("90th pct age"),    tags$td(textOutput("rv_ba_p90",      inline = TRUE))),
+                tags$tr(tags$td("Oldest review"),   tags$td(textOutput("rv_ba_max",      inline = TRUE)))
+              )
+            ),
+            uiOutput("rv_ba_chart"),
+            card_footer(class = "text-muted small",
+              "Horizontal bar chart (Cleveland-style): number of open reviews per age bucket ",
+              "(0-1d / 1-3d / 3-7d / 7-14d / >14d). ",
+              "Age = now minus enqueued_at from ~/.roborev/reviews.db. ",
+              "Confidential repos (mycare, crypto, solwatch, swarms) excluded. ",
+              "Source: roborev_backlog_age.json — refreshed on each local export run and committed to inst/extdata/.")
           )
         )
       )
@@ -3498,6 +3520,11 @@ server <- function(input, output, session) {
   # roborev_agent_perf.json — per-agent pass rate + review counts (#146 Q10).
   # Contract: {agents:[{agent,n_runs,pass_count,fail_count,error_count,pass_rate,...}], generated_at}
   roborev_agent_perf_raw <- load_json("roborev_agent_perf.json")
+  # roborev_backlog_age.json — open-review age distribution (#146 Q15).
+  # Contract: {generated_at, n_open, median_hours, p90_hours, max_hours,
+  #   buckets:[{label,hours_min,hours_max,n},...], top_oldest:[{repo,hours_open},...]}
+  # Source: ~/.roborev/reviews.db (open reviews × enqueued_at), refreshed locally.
+  roborev_backlog_age_raw <- load_json("roborev_backlog_age.json")
 
   rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
     roborev_summary_raw$pulse
@@ -3811,6 +3838,120 @@ server <- function(input, output, session) {
       )
     })
     tags$tbody(rows)
+  })
+
+  # --- Review Backlog Age panel (#146 Q15) -------------------------------------
+  # KPI text outputs from roborev_backlog_age.json top-level fields.
+  safe_ba <- function(key, fmt = "%s", default = "—") {
+    raw <- roborev_backlog_age_raw
+    if (is.null(raw) || !is.list(raw)) return(default)
+    v <- raw[[key]]
+    if (is.null(v) || (length(v) == 1 && is.na(v))) return(default)
+    tryCatch(sprintf(fmt, v), error = function(e) default)
+  }
+
+  output$rv_ba_n_open <- renderText(safe_ba("n_open", "%d"))
+  output$rv_ba_median <- renderText({
+    v <- safe_ba("median_hours")
+    if (v == "—") return("—")
+    h <- suppressWarnings(as.numeric(v))
+    if (is.na(h)) return("—")
+    if (h < 24) sprintf("%.1f h", h) else sprintf("%.1f d", h / 24)
+  })
+  output$rv_ba_p90 <- renderText({
+    v <- safe_ba("p90_hours")
+    if (v == "—") return("—")
+    h <- suppressWarnings(as.numeric(v))
+    if (is.na(h)) return("—")
+    if (h < 24) sprintf("%.1f h", h) else sprintf("%.1f d", h / 24)
+  })
+  output$rv_ba_max <- renderText({
+    v <- safe_ba("max_hours")
+    if (v == "—") return("—")
+    h <- suppressWarnings(as.numeric(v))
+    if (is.na(h)) return("—")
+    if (h < 24) sprintf("%.1f h", h) else sprintf("%.1f d", h / 24)
+  })
+
+  # Horizontal bar chart (Cleveland-style) — one bar per age bucket.
+  # x axis = count of open reviews; y axis = bucket label (oldest at top).
+  # Buckets: 0-1d / 1-3d / 3-7d / 7-14d / >14d
+  # Colour palette from accessibility rule (4.5:1 on dark bg): #4ea8de primary blue.
+  output$rv_ba_chart <- renderUI({
+    raw <- roborev_backlog_age_raw
+    if (is.null(raw) || !is.list(raw))
+      return(ec_empty("roborev_backlog_age.json not yet available", h = "260px"))
+    buckets_raw <- raw$buckets
+    if (is.null(buckets_raw) || length(buckets_raw) == 0L)
+      return(ec_empty("No backlog age data available yet", h = "260px"))
+
+    # Normalise: fromJSON(simplifyDataFrame=TRUE) returns a data.frame;
+    # list-of-lists shape is also accepted.
+    bdf <- if (is.data.frame(buckets_raw)) {
+      buckets_raw
+    } else {
+      do.call(rbind, lapply(buckets_raw, function(r) {
+        data.frame(label = as.character(r$label), n = as.integer(r$n),
+                   stringsAsFactors = FALSE)
+      }))
+    }
+    if (!all(c("label", "n") %in% names(bdf)) || nrow(bdf) == 0L)
+      return(ec_empty("Backlog age data malformed", h = "260px"))
+    bdf$n <- as.integer(bdf$n)
+
+    # Display oldest bucket at top (reverse order for horizontal bar)
+    bdf <- bdf[rev(seq_len(nrow(bdf))), ]
+
+    n_open   <- if (!is.null(raw$n_open))   as.integer(raw$n_open)   else sum(bdf$n)
+    med_h    <- if (!is.null(raw$median_hours)) as.numeric(raw$median_hours) else NA_real_
+    med_str  <- if (!is.na(med_h)) {
+      if (med_h < 24) sprintf("%.1f h", med_h) else sprintf("%.1f d", med_h / 24)
+    } else "—"
+
+    ec(list(
+      tooltip = list(
+        trigger = "axis",
+        axisPointer = list(type = "shadow"),
+        formatter  = DT::JS(
+          "function(params) {",
+          "  var d = params[0];",
+          "  return d.name + '<br/>Open reviews: ' + d.value;",
+          "}"
+        )
+      ),
+      grid = list(left = 70, containLabel = FALSE),
+      xAxis = list(
+        type          = "value",
+        name          = "Open reviews",
+        nameLocation  = "middle",
+        nameGap       = 28,
+        axisLabel     = list(color = "#ccc"),
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        type      = "category",
+        data      = I(bdf$label),
+        axisLabel = list(color = "#ccc", fontSize = 12)
+      ),
+      series = list(list(
+        type      = "bar",
+        data      = I(bdf$n),
+        itemStyle = list(color = "#4ea8de"),    # primary blue — accessibility palette
+        label     = list(
+          show      = TRUE,
+          position  = "right",
+          color     = "#ccc",
+          formatter = DT::JS("function(p){ return p.value > 0 ? p.value : ''; }")
+        )
+      ))
+    ), h = "260px",
+    aria_label = paste0(
+      "Horizontal bar chart: open roborev review backlog age distribution. ",
+      n_open, " total open reviews. ",
+      "Median age: ", med_str, ". ",
+      "Buckets from youngest (0-1d) at bottom to oldest (>14d) at top. ",
+      "Source: roborev_backlog_age.json from reviews.db."
+    ))
   })
 }
 
