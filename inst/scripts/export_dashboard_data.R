@@ -1836,6 +1836,26 @@ api_index <- list(
         note              = "string",
         generated_at      = "string (ISO 8601)"
       )
+    ),
+    list(
+      path        = "/roborev_commit_findings.json",
+      description = "Top-10 commits by roborev finding count (#146 Q16). Commit SHA linked to GitHub; confidential repos excluded.",
+      type        = "object",
+      source      = "~/.claude/logs/unified.duckdb (roborev_review_lifecycle grouped by commit_sha)",
+      schema      = list(
+        commits      = "array of {commit_sha_short, commit_sha_full, repo, commit_msg, n_findings, last_reviewed}",
+        generated_at = "string (ISO 8601)"
+      )
+    ),
+    list(
+      path        = "/roborev_session_agent_noise.json",
+      description = "Per-agent review noise rate (#146 Q19): % of reviews with no actionable finding. Reuses AGENT_PALETTE.",
+      type        = "object",
+      source      = "~/.claude/logs/unified.duckdb (roborev_review_lifecycle + roborev_agent_performance)",
+      schema      = list(
+        agents       = "array of {agent, n_reviews, n_addressed, n_passed, n_autoclosed, n_parse_fail, noise_rate, pass_rate}",
+        generated_at = "string (ISO 8601)"
+      )
     )
   )
 )
@@ -4073,6 +4093,275 @@ tryCatch({
     list(agents = list(), cost_instrumented = FALSE,
          generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
     file.path(out_dir, "roborev_cost_per_agent.json"),
+    auto_unbox = TRUE
+  )
+})
+
+# --- 8k. Export roborev_commit_findings.json (#146 Q16) ----------------------
+# Top-10 commits by roborev finding count.
+# Source: roborev_review_lifecycle grouped by commit_sha.
+# Commit SHA short (7-char prefix) + full SHA for GitHub link construction.
+# Privacy: clean_projects() on repo column before writing.
+# Guard: if table/columns missing, write empty-but-valid JSON and warn.
+cat("Exporting roborev_commit_findings.json (#146 Q16)...\n")
+tryCatch({
+  cf_src <- file.path(extdata, "roborev_commit_findings.json")
+  cf_dst <- file.path(out_dir, "roborev_commit_findings.json")
+
+  empty_cf <- list(
+    commits      = list(),
+    generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  if (file.exists(unified_db)) {
+    cf_con <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(cf_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    cf_tbls <- dbListTables(cf_con)
+
+    has_lc_cf <- "roborev_review_lifecycle" %in% cf_tbls
+
+    if (has_lc_cf) {
+      lc_cf <- dbReadTable(cf_con, "roborev_review_lifecycle") |> as_tibble()
+
+      req_cf <- c("commit_sha")
+      # Determine repo column
+      repo_col_cf <- if ("repo" %in% names(lc_cf)) "repo" else if ("project" %in% names(lc_cf)) "project" else NULL
+
+      if (!all(req_cf %in% names(lc_cf)) || is.null(repo_col_cf)) {
+        cat(sprintf("  -> roborev_review_lifecycle missing commit_sha or repo column; writing empty\n"))
+        write_json(empty_cf, cf_src, auto_unbox = TRUE)
+      } else {
+        names(lc_cf)[names(lc_cf) == repo_col_cf] <- "repo"
+
+        # Privacy filter: clean_projects on repo column
+        lc_cf <- clean_projects(as.data.frame(lc_cf), project_col = "repo")
+
+        # Determine created_at column for last_reviewed
+        time_col_cf <- if ("created_at" %in% names(lc_cf)) "created_at" else NULL
+
+        # Group by commit_sha + repo, count findings
+        lc_cf$commit_sha <- as.character(lc_cf$commit_sha)
+        lc_cf$commit_sha_short <- substr(lc_cf$commit_sha, 1L, 7L)
+
+        # Commit message: use if available, else NA
+        has_msg <- "commit_msg" %in% names(lc_cf) || "message" %in% names(lc_cf)
+        msg_col <- if ("commit_msg" %in% names(lc_cf)) "commit_msg" else
+                   if ("message"    %in% names(lc_cf)) "message"    else NULL
+
+        if (!is.null(time_col_cf)) {
+          lc_cf$last_reviewed_dt <- as.character(as.Date(
+            tryCatch(as.POSIXct(lc_cf[[time_col_cf]], tz = "UTC"), error = function(e) NA)
+          ))
+        } else {
+          lc_cf$last_reviewed_dt <- NA_character_
+        }
+
+        # Aggregate by commit_sha + repo
+        agg_cf <- lc_cf |>
+          group_by(commit_sha, commit_sha_short, repo) |>
+          summarise(
+            n_findings    = n(),
+            last_reviewed = max(last_reviewed_dt, na.rm = TRUE),
+            commit_msg    = if (!is.null(msg_col)) first(.data[[msg_col]]) else NA_character_,
+            .groups       = "drop"
+          ) |>
+          arrange(desc(n_findings)) |>
+          head(10L)
+
+        # Remove rows with empty commit_sha
+        agg_cf <- agg_cf[!is.na(agg_cf$commit_sha) & nzchar(agg_cf$commit_sha), ]
+
+        cf_list <- lapply(seq_len(nrow(agg_cf)), function(i) {
+          r <- agg_cf[i, , drop = FALSE]
+          list(
+            commit_sha_short = r$commit_sha_short,
+            commit_sha_full  = r$commit_sha,
+            repo             = r$repo,
+            commit_msg       = if (!is.na(r$commit_msg)) r$commit_msg else "",
+            n_findings       = as.integer(r$n_findings),
+            last_reviewed    = if (!is.na(r$last_reviewed)) r$last_reviewed else ""
+          )
+        })
+
+        cf_out <- list(
+          commits      = cf_list,
+          generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        )
+        write_json(cf_out, cf_src, auto_unbox = TRUE)
+        cat(sprintf("  -> roborev_commit_findings.json: %d commits (top by finding count)\n",
+                    length(cf_list)))
+      }
+    } else {
+      cat("  -> roborev_review_lifecycle not found; writing empty roborev_commit_findings.json\n")
+      write_json(empty_cf, cf_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; skipping roborev_commit_findings.json regeneration\n")
+  }
+
+  # Always: copy committed source to vignettes/data/
+  if (file.exists(cf_src)) {
+    file.copy(cf_src, cf_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_commit_findings.json -> vignettes/data/ (%d bytes)\n",
+                file.info(cf_src)$size))
+  } else {
+    cat("  -> no committed source found; writing empty roborev_commit_findings.json placeholder\n")
+    write_json(empty_cf, cf_dst, auto_unbox = TRUE)
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_commit_findings.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(commits = list(), generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_commit_findings.json"),
+    auto_unbox = TRUE
+  )
+})
+
+# --- 8r. Export roborev_session_agent_noise.json (#146 Q19) ------------------
+# Per-agent noise rate: % of reviews with no actionable finding.
+# Source: roborev_review_lifecycle (n_reviews, n_addressed via close_reason='manual')
+#   joined with roborev_agent_performance (n_passed, pass_rate, n_autoclosed, parse_fail).
+# Privacy: agent names (codex, claude-code, gemini) are not confidential — no clean_projects() needed.
+# Guard: if tables/columns missing, write empty-but-valid JSON and warn.
+cat("Exporting roborev_session_agent_noise.json (#146 Q19)...\n")
+tryCatch({
+  san_src <- file.path(extdata, "roborev_session_agent_noise.json")
+  san_dst <- file.path(out_dir, "roborev_session_agent_noise.json")
+
+  empty_san <- list(
+    agents       = list(),
+    generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  if (file.exists(unified_db)) {
+    san_con <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(san_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    san_tbls <- dbListTables(san_con)
+
+    has_lc_san   <- "roborev_review_lifecycle"   %in% san_tbls
+    has_perf_san <- "roborev_agent_performance"   %in% san_tbls
+
+    if (has_lc_san) {
+      lc_san <- dbReadTable(san_con, "roborev_review_lifecycle") |> as_tibble()
+      req_lc_san <- c("agent", "close_reason")
+
+      if (!all(req_lc_san %in% names(lc_san))) {
+        cat(sprintf("  -> roborev_review_lifecycle missing cols for Q19: %s; writing empty\n",
+                    paste(setdiff(req_lc_san, names(lc_san)), collapse = ", ")))
+        write_json(empty_san, san_src, auto_unbox = TRUE)
+      } else {
+        # Per-agent from lifecycle: n_reviews and n_addressed
+        lc_by_agent <- lc_san |>
+          filter(!is.na(agent)) |>
+          group_by(agent) |>
+          summarise(
+            n_reviews   = n(),
+            n_addressed = sum(close_reason == "manual", na.rm = TRUE),
+            .groups     = "drop"
+          )
+
+        # Per-agent from performance: n_passed, n_autoclosed, parse_fail
+        if (has_perf_san) {
+          perf_san <- dbReadTable(san_con, "roborev_agent_performance") |> as_tibble()
+          req_perf_san <- c("agent", "n_runs", "pass_count", "fail_count")
+          if (all(req_perf_san %in% names(perf_san))) {
+            perf_by_agent <- perf_san |>
+              filter(!is.na(agent)) |>
+              group_by(agent) |>
+              summarise(
+                n_passed     = sum(pass_count,   na.rm = TRUE),
+                n_runs_perf  = sum(n_runs,        na.rm = TRUE),
+                n_autoclosed = if ("error_count" %in% names(perf_san))
+                                 sum(error_count, na.rm = TRUE) else 0L,
+                .groups      = "drop"
+              )
+
+            # Join lifecycle + performance by agent
+            san_agg <- lc_by_agent |>
+              left_join(perf_by_agent, by = "agent") |>
+              mutate(
+                n_passed     = coalesce(n_passed, 0L),
+                n_autoclosed = coalesce(n_autoclosed, 0L),
+                n_parse_fail = 0L,
+                # noise = reviews not addressed AND not passed
+                noise_n   = pmax(0L, n_reviews - n_addressed - n_passed),
+                noise_rate = round(noise_n / pmax(1L, n_reviews), 4),
+                pass_rate  = round(n_passed  / pmax(1L, n_reviews), 4)
+              ) |>
+              arrange(desc(n_reviews))
+          } else {
+            cat(sprintf("  -> roborev_agent_performance missing cols: %s; using lifecycle only\n",
+                        paste(setdiff(req_perf_san, names(perf_san)), collapse = ", ")))
+            san_agg <- lc_by_agent |>
+              mutate(
+                n_passed     = 0L,
+                n_autoclosed = 0L,
+                n_parse_fail = 0L,
+                noise_n      = pmax(0L, n_reviews - n_addressed),
+                noise_rate   = round(noise_n / pmax(1L, n_reviews), 4),
+                pass_rate    = 0
+              ) |>
+              arrange(desc(n_reviews))
+          }
+        } else {
+          cat("  -> roborev_agent_performance not found; using lifecycle-only noise estimate\n")
+          san_agg <- lc_by_agent |>
+            mutate(
+              n_passed     = 0L,
+              n_autoclosed = 0L,
+              n_parse_fail = 0L,
+              noise_n      = pmax(0L, n_reviews - n_addressed),
+              noise_rate   = round(noise_n / pmax(1L, n_reviews), 4),
+              pass_rate    = 0
+            ) |>
+            arrange(desc(n_reviews))
+        }
+
+        san_list <- lapply(seq_len(nrow(san_agg)), function(i) {
+          r <- san_agg[i, , drop = FALSE]
+          list(
+            agent        = r$agent,
+            n_reviews    = as.integer(r$n_reviews),
+            n_addressed  = as.integer(r$n_addressed),
+            n_passed     = as.integer(r$n_passed),
+            n_autoclosed = as.integer(r$n_autoclosed),
+            n_parse_fail = as.integer(r$n_parse_fail),
+            noise_rate   = r$noise_rate,
+            pass_rate    = r$pass_rate
+          )
+        })
+
+        san_out <- list(
+          agents       = san_list,
+          generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        )
+        write_json(san_out, san_src, auto_unbox = TRUE)
+        cat(sprintf("  -> roborev_session_agent_noise.json: %d agents\n", length(san_list)))
+      }
+    } else {
+      cat("  -> roborev_review_lifecycle not found; writing empty roborev_session_agent_noise.json\n")
+      write_json(empty_san, san_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; skipping roborev_session_agent_noise.json regeneration\n")
+  }
+
+  # Always: copy committed source to vignettes/data/
+  if (file.exists(san_src)) {
+    file.copy(san_src, san_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_session_agent_noise.json -> vignettes/data/ (%d bytes)\n",
+                file.info(san_src)$size))
+  } else {
+    cat("  -> no committed source found; writing empty roborev_session_agent_noise.json placeholder\n")
+    write_json(empty_san, san_dst, auto_unbox = TRUE)
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_session_agent_noise.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(agents = list(), generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_session_agent_noise.json"),
     auto_unbox = TRUE
   )
 })
