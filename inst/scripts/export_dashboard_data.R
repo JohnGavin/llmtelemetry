@@ -1766,6 +1766,16 @@ api_index <- list(
         ),
         loops = "array of {tier, cycles, severity, primary_file, summary, first_seen, last_seen, estimated_wasted_usd}"
       )
+    ),
+    list(
+      path        = "/roborev_repo_signal.json",
+      description = "Per-repo roborev signal-to-noise ratio (#146 Q3): signal_ratio = passed/created, noise_ratio = failed/created",
+      type        = "object",
+      source      = "~/.claude/logs/unified.duckdb (roborev_daily_metrics, aggregated per repo)",
+      schema      = list(
+        repos = "array of {repo, n_created, n_passed, n_failed, n_autoclosed, n_parse_fail, signal_ratio, noise_ratio}",
+        generated_at = "string (ISO 8601)"
+      )
     )
   )
 )
@@ -2760,6 +2770,147 @@ tryCatch({
     ),
     file.path(out_dir, "roborev", "latest.json"),
     auto_unbox = TRUE, null = "null"
+  )
+})
+
+# --- 8h. Export roborev_repo_signal.json (#146 Q3 — per-repo signal-to-noise) -
+# Signal ratio = reviews_passed / max(1, reviews_created) per repo.
+# Noise ratio  = reviews_failed / max(1, reviews_created) per repo.
+# Source table: roborev_daily_metrics (date, repo, reviews_created, reviews_passed,
+#   reviews_failed, reviews_autoclosed_severity, reviews_autoclosed_age, parse_fail_count).
+# Privacy: clean_projects() on repo column before writing.
+# Guard: if table/columns missing, write empty-but-valid JSON and warn.
+cat("Exporting roborev_repo_signal.json (#146 Q3)...\n")
+tryCatch({
+  rrs_src <- file.path(extdata, "roborev_repo_signal.json")
+  rrs_dst <- file.path(out_dir, "roborev_repo_signal.json")
+
+  empty_rrs <- list(
+    repos        = list(),
+    generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  if (file.exists(unified_db)) {
+    rrs_con <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(rrs_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    rrs_tbls <- dbListTables(rrs_con)
+
+    if ("roborev_daily_metrics" %in% rrs_tbls) {
+      dm_raw <- dbReadTable(rrs_con, "roborev_daily_metrics") |> as_tibble()
+
+      req_dm <- c("repo", "reviews_created", "reviews_passed", "reviews_failed")
+      miss_dm <- setdiff(req_dm, names(dm_raw))
+      if (length(miss_dm) > 0L) {
+        cat(sprintf("  -> roborev_daily_metrics missing columns: %s; writing empty\n",
+                    paste(miss_dm, collapse = ", ")))
+        write_json(empty_rrs, rrs_src, auto_unbox = TRUE)
+      } else {
+        # Aggregate per repo across all dates
+        has_autoclosed <- all(c("reviews_autoclosed_severity", "reviews_autoclosed_age") %in% names(dm_raw))
+        has_parsefail  <- "parse_fail_count" %in% names(dm_raw)
+
+        by_repo_dm <- dm_raw |>
+          group_by(repo) |>
+          summarise(
+            n_created   = sum(reviews_created,   na.rm = TRUE),
+            n_passed    = sum(reviews_passed,     na.rm = TRUE),
+            n_failed    = sum(reviews_failed,     na.rm = TRUE),
+            n_autoclosed = if (has_autoclosed)
+                             sum(reviews_autoclosed_severity + reviews_autoclosed_age, na.rm = TRUE)
+                           else 0L,
+            n_parse_fail = if (has_parsefail)
+                             sum(parse_fail_count, na.rm = TRUE)
+                           else 0L,
+            .groups     = "drop"
+          ) |>
+          mutate(
+            # Signal ratio: proportion of reviews that produced actionable findings
+            # (passed = fixer ran, findings were real). Exclude autoclosed reviews
+            # (noise suppressed by the pipeline before human review).
+            signal_ratio = round(n_passed  / pmax(1L, n_created), 4),
+            noise_ratio  = round(n_failed  / pmax(1L, n_created), 4)
+          ) |>
+          arrange(desc(signal_ratio))
+
+        # Apply privacy filter: clean_projects on repo column
+        by_repo_dm <- clean_projects(as.data.frame(by_repo_dm), project_col = "repo")
+
+        # Re-aggregate after remap (e.g. llmtelemetry-hook-sync → llmtelemetry)
+        by_repo_dm <- aggregate(
+          cbind(n_created, n_passed, n_failed, n_autoclosed, n_parse_fail) ~ repo,
+          data = by_repo_dm,
+          FUN  = sum
+        )
+        by_repo_dm$signal_ratio <- round(by_repo_dm$n_passed / pmax(1L, by_repo_dm$n_created), 4)
+        by_repo_dm$noise_ratio  <- round(by_repo_dm$n_failed / pmax(1L, by_repo_dm$n_created), 4)
+        by_repo_dm <- by_repo_dm[order(-by_repo_dm$signal_ratio), ]
+
+        # Assert 0 confidential repos in output
+        conf_lower_dm <- tolower(CONFIDENTIAL_PROJECTS)
+        base_repos_dm <- tolower(sub(
+          "-(?:feat|fix|chore|docs|refactor|test|ci|perf|style|build|revert|worktree)-.*$",
+          "", by_repo_dm$repo, ignore.case = TRUE
+        ))
+        n_conf_dm <- sum(base_repos_dm %in% conf_lower_dm)
+        if (n_conf_dm > 0L) {
+          stop(sprintf(
+            "roborev_repo_signal: %d confidential repo row(s) remain after clean_projects — aborting",
+            n_conf_dm
+          ))
+        }
+
+        # Remove noise repos (file* hash repos, bare file-id artefacts)
+        by_repo_dm <- by_repo_dm[!grepl("^file[0-9a-f]{10,}", by_repo_dm$repo), ]
+
+        rrs_out <- list(
+          repos = lapply(seq_len(nrow(by_repo_dm)), function(i) {
+            r <- by_repo_dm[i, , drop = FALSE]
+            list(
+              repo         = r$repo,
+              n_created    = as.integer(r$n_created),
+              n_passed     = as.integer(r$n_passed),
+              n_failed     = as.integer(r$n_failed),
+              n_autoclosed = as.integer(r$n_autoclosed),
+              n_parse_fail = as.integer(r$n_parse_fail),
+              signal_ratio = r$signal_ratio,
+              noise_ratio  = r$noise_ratio
+            )
+          }),
+          generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        )
+        write_json(rrs_out, rrs_src, auto_unbox = TRUE)
+        cat(sprintf(
+          "  -> roborev_repo_signal.json: %d repos (top signal: %s %.1f%%)\n",
+          nrow(by_repo_dm),
+          if (nrow(by_repo_dm) > 0L) by_repo_dm$repo[1L] else "n/a",
+          if (nrow(by_repo_dm) > 0L) by_repo_dm$signal_ratio[1L] * 100 else 0
+        ))
+      }
+      tryCatch(dbDisconnect(rrs_con, shutdown = TRUE), error = function(e) NULL)
+    } else {
+      cat("  -> roborev_daily_metrics not found; writing empty roborev_repo_signal.json\n")
+      write_json(empty_rrs, rrs_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  # Always copy committed source to vignettes/data/
+  if (file.exists(rrs_src)) {
+    file.copy(rrs_src, rrs_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_repo_signal.json -> vignettes/data/ (%d bytes)\n",
+                file.info(rrs_src)$size))
+  } else {
+    write_json(empty_rrs, rrs_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_repo_signal.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(repos = list(), generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_repo_signal.json"),
+    auto_unbox = TRUE
   )
 })
 
