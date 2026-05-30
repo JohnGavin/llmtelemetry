@@ -46,6 +46,8 @@ format:
       - data/roborev_backlog_age.json
       - data/roborev_repo_signal.json
       - data/roborev/latest.json
+      - data/roborev_noise_rate.json
+      - data/roborev_suppression.json
       - data/v1/sessions.parquet
       - data/v1/costs.parquet
       - data/v1/git_commits.parquet
@@ -1684,6 +1686,48 @@ ui <- page_navbar(
               "Source: roborev_daily_metrics table in unified.duckdb, aggregated across all dates. ",
               "Confidential repos (mycare, crypto, swarms) are excluded via clean_projects(). ",
               "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Review Noise Rate (#146 Q2)"),
+            uiOutput("rv_noise_rate_chart"),
+            tags$table(class = "table table-sm table-dark mt-2 mb-0",
+              tags$thead(tags$tr(
+                tags$th("Metric"), tags$th("Count"), tags$th("Share")
+              )),
+              uiOutput("rv_noise_rate_table")
+            ),
+            card_footer(class = "text-muted small",
+              "Stacked bar (daily): review outcome segments — ",
+              tags$b("passed"), " (actionable finding, fixer ran); ",
+              tags$b("actioned-fail"), " (finding surfaced but fixer did not resolve it); ",
+              tags$b("autoclosed-fail"), " (suppressed by age/severity threshold before human review); ",
+              tags$b("parse-fail"), " (review crashed — no usable finding). ",
+              "Noise pct = (actioned-fail + autoclosed-fail + parse-fail) / total. ",
+              "Source: roborev_daily_metrics in unified.duckdb, aggregated across all repos per day. ",
+              "Confidential repos excluded via clean_projects(). ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Medium-Threshold Suppression (#146 Q7)"),
+            uiOutput("rv_suppression_chart"),
+            tags$table(class = "table table-sm table-dark mt-2 mb-0",
+              tags$thead(tags$tr(
+                tags$th("Repo"), tags$th("Suppressed"), tags$th("Created"),
+                tags$th("Suppress %")
+              )),
+              uiOutput("rv_suppression_table")
+            ),
+            card_footer(class = "text-muted small",
+              "Cumulative count of findings suppressed by the medium-severity autoclose threshold ",
+              "(llm#224, active since 2026-05-21). ",
+              "Bar chart: top-5 repos by autoclosed_severity count. ",
+              "Source: roborev_daily_metrics.reviews_autoclosed_severity in unified.duckdb. ",
+              "Data filtered to dates >= 2026-05-21 when the feature went live. ",
+              "Confidential repos excluded via clean_projects().")
           )
         )
       )
@@ -3643,6 +3687,15 @@ server <- function(input, output, session) {
   # Contract: {repos:[{repo,n_created,n_passed,n_failed,n_autoclosed,n_parse_fail,
   #   signal_ratio,noise_ratio},...], generated_at}
   roborev_repo_signal_raw <- load_json("roborev_repo_signal.json")
+  # roborev_noise_rate.json — daily review outcome breakdown (#146 Q2).
+  # Contract: {daily:[{date,passed,actioned_fail,autoclosed_fail,parse_fail,total},...],
+  #   cumulative:{total,passed,actioned_fail,autoclosed_fail,parse_fail,noise_pct},
+  #   generated_at}
+  roborev_noise_rate_raw <- load_json("roborev_noise_rate.json")
+  # roborev_suppression.json — medium-threshold autoclose count (#146 Q7).
+  # Contract: {total_suppressed, period_start, top_repos:[{repo,autoclosed_severity,
+  #   n_created,suppress_pct},...], generated_at}
+  roborev_suppression_raw <- load_json("roborev_suppression.json")
 
   rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
     roborev_summary_raw$pulse
@@ -4219,6 +4272,251 @@ server <- function(input, output, session) {
       "Buckets from youngest (0-1d) at bottom to oldest (>14d) at top. ",
       "Source: roborev_backlog_age.json from reviews.db."
     ))
+  })
+
+  # --- Review Noise Rate panel (#146 Q2) ----------------------------------------
+  # Stacked bar chart: daily review outcomes in 4 segments.
+  # Named PALETTE: consistent colours across chart and table (narrative-colour-persistence rule).
+  NOISE_PALETTE <- c(
+    "passed"          = "#69d4a0",   # green  — actionable finding
+    "actioned_fail"   = "#ffd93d",   # amber  — surfaced but not resolved
+    "autoclosed_fail" = "#8c8c8c",   # grey   — suppressed by threshold
+    "parse_fail"      = "#f08080"    # red    — review crashed
+  )
+
+  output$rv_noise_rate_chart <- renderUI({
+    raw <- roborev_noise_rate_raw
+    if (is.null(raw) || !is.list(raw) || length(raw$daily) == 0L)
+      return(ec_empty("No noise-rate data yet — roborev_noise_rate.json not deployed", h = "320px"))
+
+    daily_raw <- raw$daily
+    # Normalise: fromJSON may return a data.frame or list-of-lists
+    ddf <- if (is.data.frame(daily_raw)) {
+      daily_raw
+    } else {
+      do.call(rbind, lapply(daily_raw, function(r) {
+        data.frame(
+          date            = as.character(r$date),
+          passed          = as.integer(r$passed),
+          actioned_fail   = as.integer(r$actioned_fail),
+          autoclosed_fail = as.integer(r$autoclosed_fail),
+          parse_fail      = as.integer(r$parse_fail),
+          stringsAsFactors = FALSE
+        )
+      }))
+    }
+    if (is.null(ddf) || nrow(ddf) == 0L || !"date" %in% names(ddf))
+      return(ec_empty("Noise rate data malformed", h = "320px"))
+
+    dates <- as.character(ddf$date)
+    # Compute dataZoom start for last 90 days default
+    dz_start <- 0
+    d_dates <- tryCatch(as.Date(dates), error = function(e) NULL)
+    if (!is.null(d_dates) && !all(is.na(d_dates))) {
+      total_days <- as.numeric(max(d_dates, na.rm = TRUE) - min(d_dates, na.rm = TRUE))
+      if (!is.na(total_days) && total_days > 90) {
+        dz_start <- round(100 * (1 - 90 / total_days))
+      }
+    }
+
+    # Build 4 stacked series; each uses named NOISE_PALETTE colour
+    segment_meta <- list(
+      list(col = "passed",          label = "Passed",          color = NOISE_PALETTE[["passed"]]),
+      list(col = "actioned_fail",   label = "Actioned-fail",   color = NOISE_PALETTE[["actioned_fail"]]),
+      list(col = "autoclosed_fail", label = "Autoclosed-fail", color = NOISE_PALETTE[["autoclosed_fail"]]),
+      list(col = "parse_fail",      label = "Parse-fail",      color = NOISE_PALETTE[["parse_fail"]])
+    )
+    series <- lapply(segment_meta, function(m) {
+      vals <- if (m$col %in% names(ddf)) as.integer(ddf[[m$col]]) else rep(0L, nrow(ddf))
+      list(
+        name      = m$label,
+        type      = "bar",
+        stack     = "outcome",
+        data      = I(vals),
+        itemStyle = list(color = m$color)
+      )
+    })
+
+    # Cumulative summary for aria label
+    cum <- raw$cumulative
+    noise_pct_str <- if (!is.null(cum$noise_pct)) sprintf("%.1f%%", cum$noise_pct * 100) else "—"
+    total_str     <- if (!is.null(cum$total)) formatC(as.integer(cum$total), format = "d", big.mark = ",") else "—"
+
+    ec(list(
+      tooltip = list(trigger = "axis", axisPointer = list(type = "shadow")),
+      legend  = list(bottom = 30, textStyle = list(color = "#ccc"),
+                     data = lapply(segment_meta, function(m) m$label)),
+      toolbox = list(feature = list(restore = list(), saveAsImage = list())),
+      dataZoom = list(
+        list(type = "inside", start = dz_start, end = 100),
+        list(type = "slider", start = dz_start, end = 100, bottom = 5)
+      ),
+      grid  = list(containLabel = TRUE, bottom = 80),
+      xAxis = list(type = "category", data = I(dates),
+                   axisLabel = list(rotate = 30, color = "#ccc")),
+      yAxis = list(type = "value", name = "Reviews",
+                   nameTextStyle = list(color = "#ccc"),
+                   axisLabel = list(color = "#ccc")),
+      series = series
+    ), h = "320px",
+    aria_label = paste0(
+      "Stacked bar chart: daily roborev review outcomes. ",
+      total_str, " total reviews. ",
+      "Overall noise rate: ", noise_pct_str, ". ",
+      "Segments: Passed (green), Actioned-fail (amber), Autoclosed-fail (grey), Parse-fail (red). ",
+      "Source: roborev_noise_rate.json from roborev_daily_metrics in unified.duckdb."
+    ))
+  })
+
+  # Compact summary table (two-column: Metric | Count + %)
+  output$rv_noise_rate_table <- renderUI({
+    raw <- roborev_noise_rate_raw
+    cum <- if (!is.null(raw) && is.list(raw)) raw$cumulative else NULL
+    if (is.null(cum)) {
+      return(tags$tbody(tags$tr(tags$td(colspan = "3", "No data yet"))))
+    }
+    coalesce_int <- function(x) as.integer(if (is.null(x)) 0L else x)
+    total <- coalesce_int(cum$total)
+    n_passed      <- coalesce_int(cum$passed)
+    n_actfail     <- coalesce_int(cum$actioned_fail)
+    n_autocl      <- coalesce_int(cum$autoclosed_fail)
+    n_parse       <- coalesce_int(cum$parse_fail)
+    pct <- function(n) if (total > 0L) sprintf("%.1f%%", n / total * 100) else "—"
+    tags$tbody(
+      tags$tr(tags$td("Total reviews"),   tags$td(formatC(total, format = "d", big.mark = ",")), tags$td("100%")),
+      tags$tr(
+        tags$td(tags$span(style = paste0("color:", NOISE_PALETTE[["passed"]], ";"), "Passed")),
+        tags$td(formatC(n_passed, format = "d", big.mark = ",")),
+        tags$td(pct(n_passed))
+      ),
+      tags$tr(
+        tags$td(tags$span(style = paste0("color:", NOISE_PALETTE[["actioned_fail"]], ";"), "Actioned-fail")),
+        tags$td(formatC(n_actfail, format = "d", big.mark = ",")),
+        tags$td(pct(n_actfail))
+      ),
+      tags$tr(
+        tags$td(tags$span(style = paste0("color:", NOISE_PALETTE[["autoclosed_fail"]], ";"), "Autoclosed-fail")),
+        tags$td(formatC(n_autocl, format = "d", big.mark = ",")),
+        tags$td(pct(n_autocl))
+      ),
+      tags$tr(
+        tags$td(tags$span(style = paste0("color:", NOISE_PALETTE[["parse_fail"]], ";"), "Parse-fail")),
+        tags$td(formatC(n_parse, format = "d", big.mark = ",")),
+        tags$td(pct(n_parse))
+      ),
+      tags$tr(
+        tags$td(tags$b("Noise (total)")),
+        tags$td(formatC(n_actfail + n_autocl + n_parse, format = "d", big.mark = ",")),
+        tags$td(tags$b(if (!is.null(cum$noise_pct)) sprintf("%.1f%%", cum$noise_pct * 100) else "—"))
+      )
+    )
+  })
+
+  # --- Medium-Threshold Suppression panel (#146 Q7) -----------------------------
+  # Horizontal Cleveland-style bar: top-5 repos by autoclosed_severity since 2026-05-21.
+  # Uses NOISE_PALETTE[["autoclosed_fail"]] (grey) for consistency.
+  output$rv_suppression_chart <- renderUI({
+    raw <- roborev_suppression_raw
+    if (is.null(raw) || !is.list(raw) || length(raw$top_repos) == 0L)
+      return(ec_empty("No suppression data yet — roborev_suppression.json not deployed", h = "260px"))
+
+    repos_raw <- raw$top_repos
+    # Normalise: fromJSON may return a data.frame or list-of-lists
+    rdf <- if (is.data.frame(repos_raw)) {
+      repos_raw
+    } else {
+      do.call(rbind, lapply(repos_raw, function(r) {
+        data.frame(
+          repo                = as.character(r$repo),
+          autoclosed_severity = as.integer(r$autoclosed_severity),
+          stringsAsFactors    = FALSE
+        )
+      }))
+    }
+    if (is.null(rdf) || nrow(rdf) == 0L)
+      return(ec_empty("Suppression data malformed", h = "260px"))
+
+    # Sort ascending so largest bar appears at top (ECharts reverses y-axis for horizontal)
+    rdf <- rdf[order(rdf$autoclosed_severity), ]
+
+    total_sup <- if (!is.null(raw$total_suppressed)) as.integer(raw$total_suppressed) else sum(rdf$autoclosed_severity)
+    period    <- if (!is.null(raw$period_start)) as.character(raw$period_start) else "2026-05-21"
+
+    ec(list(
+      tooltip = list(
+        trigger    = "axis",
+        axisPointer = list(type = "shadow"),
+        formatter  = DT::JS(
+          "function(params) {",
+          "  var d = params[0];",
+          "  return d.name + '<br/>Suppressed: ' + d.value;",
+          "}"
+        )
+      ),
+      grid = list(left = 120, containLabel = FALSE),
+      xAxis = list(
+        type          = "value",
+        name          = "Suppressed reviews",
+        nameLocation  = "middle",
+        nameGap       = 28,
+        axisLabel     = list(color = "#ccc"),
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        type      = "category",
+        data      = I(rdf$repo),
+        axisLabel = list(color = "#ccc", fontSize = 12)
+      ),
+      series = list(list(
+        type      = "bar",
+        data      = I(rdf$autoclosed_severity),
+        itemStyle = list(color = NOISE_PALETTE[["autoclosed_fail"]]),
+        label     = list(
+          show      = TRUE,
+          position  = "right",
+          color     = "#ccc",
+          formatter = DT::JS("function(p){ return p.value > 0 ? p.value : ''; }")
+        )
+      ))
+    ), h = "260px",
+    aria_label = paste0(
+      "Horizontal bar chart: top-5 repos by medium-severity autoclosed review count. ",
+      "Total suppressed since ", period, ": ", total_sup, ". ",
+      "Source: roborev_suppression.json from roborev_daily_metrics.reviews_autoclosed_severity."
+    ))
+  })
+
+  output$rv_suppression_table <- renderUI({
+    raw <- roborev_suppression_raw
+    top_repos <- if (!is.null(raw) && is.list(raw)) raw$top_repos else NULL
+    if (is.null(top_repos) || length(top_repos) == 0L) {
+      return(tags$tbody(tags$tr(tags$td(colspan = "4", "No data yet"))))
+    }
+    # Normalise to data.frame
+    rdf <- if (is.data.frame(top_repos)) {
+      top_repos
+    } else {
+      do.call(rbind, lapply(top_repos, function(r) {
+        data.frame(
+          repo                = as.character(r$repo),
+          autoclosed_severity = as.integer(r$autoclosed_severity),
+          n_created           = as.integer(r$n_created),
+          suppress_pct        = as.numeric(r$suppress_pct),
+          stringsAsFactors    = FALSE
+        )
+      }))
+    }
+    rdf <- rdf[order(-rdf$autoclosed_severity), ]
+    rows <- lapply(seq_len(nrow(rdf)), function(i) {
+      r <- rdf[i, , drop = FALSE]
+      tags$tr(
+        tags$td(r$repo),
+        tags$td(formatC(as.integer(r$autoclosed_severity), format = "d", big.mark = ",")),
+        tags$td(formatC(as.integer(r$n_created),           format = "d", big.mark = ",")),
+        tags$td(sprintf("%.1f%%", as.numeric(r$suppress_pct) * 100))
+      )
+    })
+    tags$tbody(rows)
   })
 }
 

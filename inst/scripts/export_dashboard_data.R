@@ -3063,6 +3063,265 @@ tryCatch({
   )
 })
 
+# --- 8l. Export roborev_noise_rate.json (#146 Q2) ----------------------------
+# Noise rate: daily review outcomes split into 4 segments.
+#   passed         = reviews_passed
+#   actioned_fail  = reviews_failed - reviews_autoclosed_severity
+#                    - reviews_autoclosed_age - parse_fail_count
+#                    (finding was surfaced but not autoclosed/parse-failed)
+#   autoclosed_fail = reviews_autoclosed_severity + reviews_autoclosed_age
+#                    (suppressed by threshold before human review)
+#   parse_fail     = parse_fail_count  (review crashed — no usable finding)
+# Cumulative summary table of totals and percentages.
+# Source: roborev_daily_metrics (daily rows per repo).
+# Privacy: clean_projects() on repo before aggregation.
+# Guard: if table/columns missing, write empty-but-valid JSON and warn.
+cat("Exporting roborev_noise_rate.json (#146 Q2)...\n")
+tryCatch({
+  rnr_src <- file.path(extdata, "roborev_noise_rate.json")
+  rnr_dst <- file.path(out_dir, "roborev_noise_rate.json")
+
+  empty_rnr <- list(
+    daily       = list(),
+    cumulative  = list(
+      total          = 0L,
+      passed         = 0L,
+      actioned_fail  = 0L,
+      autoclosed_fail = 0L,
+      parse_fail     = 0L,
+      noise_pct      = 0
+    ),
+    generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  if (file.exists(unified_db)) {
+    rnr_con <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(rnr_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    rnr_tbls <- dbListTables(rnr_con)
+
+    if ("roborev_daily_metrics" %in% rnr_tbls) {
+      rnr_raw <- dbReadTable(rnr_con, "roborev_daily_metrics") |> as_tibble()
+
+      req_rnr <- c("date", "repo", "reviews_created", "reviews_passed", "reviews_failed")
+      miss_rnr <- setdiff(req_rnr, names(rnr_raw))
+      if (length(miss_rnr) > 0L) {
+        cat(sprintf("  -> roborev_daily_metrics missing columns for noise rate: %s; writing empty\n",
+                    paste(miss_rnr, collapse = ", ")))
+        write_json(empty_rnr, rnr_src, auto_unbox = TRUE)
+      } else {
+        # Privacy filter: clean_projects on repo column BEFORE aggregating
+        rnr_df <- clean_projects(as.data.frame(rnr_raw), project_col = "repo")
+
+        # Resolve optional columns (may be absent in older schema versions)
+        has_autoclosed_sev <- "reviews_autoclosed_severity" %in% names(rnr_df)
+        has_autoclosed_age <- "reviews_autoclosed_age"      %in% names(rnr_df)
+        has_parsefail      <- "parse_fail_count"             %in% names(rnr_df)
+
+        rnr_df$autoclosed_sev <- if (has_autoclosed_sev) rnr_df$reviews_autoclosed_severity else 0L
+        rnr_df$autoclosed_age <- if (has_autoclosed_age) rnr_df$reviews_autoclosed_age      else 0L
+        rnr_df$parse_fail_n   <- if (has_parsefail)      rnr_df$parse_fail_count             else 0L
+        rnr_df$autoclosed_n   <- rnr_df$autoclosed_sev + rnr_df$autoclosed_age
+
+        # actioned_fail = failed reviews that were NOT autoclosed and did NOT crash
+        rnr_df$actioned_fail_n <- pmax(
+          0L,
+          rnr_df$reviews_failed - rnr_df$autoclosed_n - rnr_df$parse_fail_n
+        )
+
+        # Daily aggregation across all repos (date-level totals)
+        rnr_daily <- rnr_df |>
+          group_by(date) |>
+          summarise(
+            passed          = sum(reviews_passed,   na.rm = TRUE),
+            actioned_fail   = sum(actioned_fail_n,  na.rm = TRUE),
+            autoclosed_fail = sum(autoclosed_n,     na.rm = TRUE),
+            parse_fail      = sum(parse_fail_n,     na.rm = TRUE),
+            total           = sum(reviews_created,  na.rm = TRUE),
+            .groups         = "drop"
+          ) |>
+          mutate(date = as.character(date)) |>
+          arrange(date)
+
+        # Cumulative totals
+        cum_total    <- sum(rnr_daily$total,           na.rm = TRUE)
+        cum_passed   <- sum(rnr_daily$passed,          na.rm = TRUE)
+        cum_actfail  <- sum(rnr_daily$actioned_fail,   na.rm = TRUE)
+        cum_autocl   <- sum(rnr_daily$autoclosed_fail, na.rm = TRUE)
+        cum_parse    <- sum(rnr_daily$parse_fail,      na.rm = TRUE)
+        noise_pct    <- if (cum_total > 0L) round(
+          (cum_actfail + cum_autocl + cum_parse) / cum_total, 4
+        ) else 0
+
+        daily_list <- lapply(seq_len(nrow(rnr_daily)), function(i) {
+          r <- rnr_daily[i, , drop = FALSE]
+          list(
+            date            = r$date,
+            passed          = as.integer(r$passed),
+            actioned_fail   = as.integer(r$actioned_fail),
+            autoclosed_fail = as.integer(r$autoclosed_fail),
+            parse_fail      = as.integer(r$parse_fail),
+            total           = as.integer(r$total)
+          )
+        })
+
+        rnr_out <- list(
+          daily = daily_list,
+          cumulative = list(
+            total           = as.integer(cum_total),
+            passed          = as.integer(cum_passed),
+            actioned_fail   = as.integer(cum_actfail),
+            autoclosed_fail = as.integer(cum_autocl),
+            parse_fail      = as.integer(cum_parse),
+            noise_pct       = noise_pct
+          ),
+          generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        )
+        write_json(rnr_out, rnr_src, auto_unbox = TRUE)
+        cat(sprintf(
+          "  -> roborev_noise_rate.json: %d daily rows, total=%d, noise_pct=%.1f%%\n",
+          length(daily_list), cum_total, noise_pct * 100
+        ))
+      }
+      tryCatch(dbDisconnect(rnr_con, shutdown = TRUE), error = function(e) NULL)
+    } else {
+      cat("  -> roborev_daily_metrics not found; writing empty roborev_noise_rate.json\n")
+      write_json(empty_rnr, rnr_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  # Always copy committed source to vignettes/data/
+  if (file.exists(rnr_src)) {
+    file.copy(rnr_src, rnr_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_noise_rate.json -> vignettes/data/ (%d bytes)\n",
+                file.info(rnr_src)$size))
+  } else {
+    write_json(empty_rnr, rnr_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_noise_rate.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(daily = list(),
+         cumulative = list(total = 0L, passed = 0L, actioned_fail = 0L,
+                           autoclosed_fail = 0L, parse_fail = 0L, noise_pct = 0),
+         generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_noise_rate.json"),
+    auto_unbox = TRUE
+  )
+})
+
+# --- 8m. Export roborev_suppression.json (#146 Q7) ----------------------------
+# How many findings were suppressed by the medium threshold?
+# Counter: sum(reviews_autoclosed_severity) cumulative since llm#224 launch
+#          (2026-05-21 — the autoclose-by-severity feature went live).
+# Per-repo top-5 breakdown (sorted by autoclosed_severity desc).
+# Source: roborev_daily_metrics table in unified.duckdb.
+# Privacy: clean_projects() on repo column before aggregating.
+# Guard: if table/columns missing or feature not yet active, write zero totals.
+cat("Exporting roborev_suppression.json (#146 Q7)...\n")
+tryCatch({
+  rsp_src <- file.path(extdata, "roborev_suppression.json")
+  rsp_dst <- file.path(out_dir, "roborev_suppression.json")
+
+  # llm#224 launch date: feature that populates reviews_autoclosed_severity went live.
+  AUTOCLOSE_LAUNCH_DATE <- as.Date("2026-05-21")
+
+  empty_rsp <- list(
+    total_suppressed  = 0L,
+    period_start      = as.character(AUTOCLOSE_LAUNCH_DATE),
+    top_repos         = list(),
+    generated_at      = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  if (file.exists(unified_db)) {
+    rsp_con <- dbConnect(duckdb(), dbdir = unified_db, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(rsp_con, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    rsp_tbls <- dbListTables(rsp_con)
+
+    if ("roborev_daily_metrics" %in% rsp_tbls) {
+      rsp_raw <- dbReadTable(rsp_con, "roborev_daily_metrics") |> as_tibble()
+
+      if (!"reviews_autoclosed_severity" %in% names(rsp_raw)) {
+        cat("  -> reviews_autoclosed_severity column absent; writing zero totals\n")
+        write_json(empty_rsp, rsp_src, auto_unbox = TRUE)
+      } else {
+        # Privacy filter first
+        rsp_df <- clean_projects(as.data.frame(rsp_raw), project_col = "repo")
+
+        # Restrict to dates >= llm#224 launch (severity autoclose feature active)
+        rsp_df$date_d <- as.Date(as.character(rsp_df$date))
+        rsp_post <- rsp_df[!is.na(rsp_df$date_d) & rsp_df$date_d >= AUTOCLOSE_LAUNCH_DATE, ]
+
+        total_suppressed <- as.integer(sum(rsp_post$reviews_autoclosed_severity, na.rm = TRUE))
+
+        # Per-repo top-5 sorted by descending autoclosed_severity
+        by_repo_rsp <- aggregate(
+          cbind(autoclosed_severity = reviews_autoclosed_severity,
+                n_created           = reviews_created) ~ repo,
+          data = rsp_post,
+          FUN  = sum
+        )
+        by_repo_rsp <- by_repo_rsp[order(-by_repo_rsp$autoclosed_severity), ]
+        top5 <- head(by_repo_rsp, 5L)
+
+        top_list <- lapply(seq_len(nrow(top5)), function(i) {
+          r <- top5[i, , drop = FALSE]
+          list(
+            repo                = r$repo,
+            autoclosed_severity = as.integer(r$autoclosed_severity),
+            n_created           = as.integer(r$n_created),
+            suppress_pct        = round(r$autoclosed_severity / max(1L, r$n_created), 4)
+          )
+        })
+
+        rsp_out <- list(
+          total_suppressed = total_suppressed,
+          period_start     = as.character(AUTOCLOSE_LAUNCH_DATE),
+          top_repos        = top_list,
+          generated_at     = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        )
+        write_json(rsp_out, rsp_src, auto_unbox = TRUE)
+        cat(sprintf(
+          "  -> roborev_suppression.json: total_suppressed=%d since %s, top repo=%s (%d)\n",
+          total_suppressed,
+          as.character(AUTOCLOSE_LAUNCH_DATE),
+          if (nrow(top5) > 0L) top5$repo[1L] else "none",
+          if (nrow(top5) > 0L) as.integer(top5$autoclosed_severity[1L]) else 0L
+        ))
+      }
+      tryCatch(dbDisconnect(rsp_con, shutdown = TRUE), error = function(e) NULL)
+    } else {
+      cat("  -> roborev_daily_metrics not found; writing empty roborev_suppression.json\n")
+      write_json(empty_rsp, rsp_src, auto_unbox = TRUE)
+    }
+  } else {
+    cat("  -> unified.duckdb not found; will copy committed source\n")
+  }
+
+  # Always copy committed source to vignettes/data/
+  if (file.exists(rsp_src)) {
+    file.copy(rsp_src, rsp_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_suppression.json -> vignettes/data/ (%d bytes)\n",
+                file.info(rsp_src)$size))
+  } else {
+    write_json(empty_rsp, rsp_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_suppression.json export error: %s\n", conditionMessage(e)))
+  write_json(
+    list(total_suppressed = 0L, period_start = "2026-05-21",
+         top_repos = list(),
+         generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_suppression.json"),
+    auto_unbox = TRUE
+  )
+})
+
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
 # ccusage_blocks is intentionally excluded from critical_files: the CI fallback
