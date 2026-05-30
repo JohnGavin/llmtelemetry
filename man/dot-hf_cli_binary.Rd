@@ -2,7 +2,7 @@
 % Please edit documentation in R/hf_push.R
 \name{.hf_cli_binary}
 \alias{.hf_cli_binary}
-\title{Resolve the huggingface-cli binary.}
+\title{Resolve the HuggingFace CLI binary.}
 \usage{
 .hf_cli_binary()
 }
@@ -10,8 +10,9 @@
 Character name of the binary to pass to \code{\link[=system2]{system2()}}.
 }
 \description{
-Tries \code{huggingface-cli} first (the canonical name installed by
-\verb{pip install huggingface_hub}), then \code{hf} as a fallback alias.
+Tries \code{hf} first (the current binary name in \code{huggingface_hub} >= 0.24;
+\code{huggingface-cli} is deprecated and a non-functional no-op in that version).
+Falls back to \code{huggingface-cli} only when \code{hf} is absent (older installs).
 Aborts with a clear message if neither is found on PATH.
 }
 \keyword{internal}
