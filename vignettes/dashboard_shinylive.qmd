@@ -1685,6 +1685,73 @@ ui <- page_navbar(
               "Confidential repos (mycare, crypto, swarms) are excluded via clean_projects(). ",
               "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
           )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Cadence Reduction Effect (#146 Q6)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Split at ", tags$strong("2026-05-21"), " (llm#217 cadence reduction date). ",
+                "Before: high-frequency polling. After: reduced cadence with severity-threshold ",
+                "auto-close active. Metrics: daily review volume, pass rate, and autoclosed count."
+              )
+            ),
+            tags$table(class = "table table-sm table-dark mb-2",
+              tags$thead(tags$tr(
+                tags$th("Period"), tags$th("Created"), tags$th("Passed"),
+                tags$th("Pass rate"), tags$th("Autoclosed"), tags$th("Days")
+              )),
+              tags$tbody(
+                tags$tr(
+                  tags$td("Before 2026-05-21"),
+                  tags$td(textOutput("rv_ce_before_created",  inline = TRUE)),
+                  tags$td(textOutput("rv_ce_before_passed",   inline = TRUE)),
+                  tags$td(textOutput("rv_ce_before_rate",     inline = TRUE)),
+                  tags$td(textOutput("rv_ce_before_autoclosed", inline = TRUE)),
+                  tags$td(textOutput("rv_ce_before_days",     inline = TRUE))
+                ),
+                tags$tr(
+                  tags$td("After 2026-05-21"),
+                  tags$td(textOutput("rv_ce_after_created",   inline = TRUE)),
+                  tags$td(textOutput("rv_ce_after_passed",    inline = TRUE)),
+                  tags$td(textOutput("rv_ce_after_rate",      inline = TRUE)),
+                  tags$td(textOutput("rv_ce_after_autoclosed", inline = TRUE)),
+                  tags$td(textOutput("rv_ce_after_days",      inline = TRUE))
+                )
+              )
+            ),
+            uiOutput("rv_cadence_chart"),
+            card_footer(class = "text-muted small",
+              "Two-segment line chart: daily reviews_created (volume) and pass rate ",
+              "before and after the cadence reduction on 2026-05-21 (llm#217). ",
+              "A vertical marker at the split date separates the before/after periods. ",
+              "Green = pass rate (right axis); blue = review volume (left axis). ",
+              "Source: roborev_cadence_efficacy.json from roborev_daily_metrics in unified.duckdb. ",
+              "Confidential repos excluded via clean_projects(). ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Severity Threshold History (#146 Q8)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Step chart of the effective severity threshold level over time, ",
+                "overlaid on the daily count of reviews auto-closed by severity. ",
+                "Each annotated vertical line marks a threshold change event. ",
+                "Threshold levels: ", tags$code("low"), ", ", tags$code("medium"), ", ",
+                tags$code("high"), ", ", tags$code("critical"), "."
+              )
+            ),
+            uiOutput("rv_threshold_chart"),
+            card_footer(class = "text-muted small",
+              "Line chart: reviews_autoclosed_severity per day (all repos summed) with ",
+              "step-change markers for each threshold change event. ",
+              "Threshold level (right axis, step series) sourced from roborev_threshold_changes; ",
+              "autoclosed count (left axis) from roborev_daily_metrics. ",
+              "Source: roborev_threshold_history.json from unified.duckdb. ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
         )
       )
     )
@@ -3978,6 +4045,346 @@ server <- function(input, output, session) {
       )
     })
     tagList(rows)
+  })
+
+  # --- Cadence Reduction Effect panel (#146 Q6) --------------------------------
+  # Before/after split at 2026-05-21 (llm#217 cadence reduction).
+  # KPI table: period | created | passed | pass_rate | autoclosed | days.
+  # Two-segment line chart: daily volume (left axis) + pass rate (right axis).
+  # Source: roborev_cadence_efficacy.json.
+  roborev_cadence_efficacy_raw <- load_json("roborev_cadence_efficacy.json")
+
+  safe_ce_period <- function(period, key, fmt = "%s", default = "—") {
+    raw <- roborev_cadence_efficacy_raw
+    if (is.null(raw) || !is.list(raw)) return(default)
+    p <- raw[[period]]
+    if (is.null(p) || !key %in% names(p)) return(default)
+    v <- p[[key]]
+    if (is.null(v) || (length(v) == 1L && is.na(v))) return(default)
+    tryCatch(sprintf(fmt, v), error = function(e) default)
+  }
+
+  output$rv_ce_before_created   <- renderText(safe_ce_period("before", "reviews_created", "%d"))
+  output$rv_ce_before_passed    <- renderText(safe_ce_period("before", "reviews_passed",  "%d"))
+  output$rv_ce_before_autoclosed <- renderText(safe_ce_period("before", "reviews_autoclosed", "%d"))
+  output$rv_ce_before_days      <- renderText(safe_ce_period("before", "n_days", "%d"))
+  output$rv_ce_before_rate      <- renderText({
+    v <- safe_ce_period("before", "pass_rate")
+    if (v == "—") return("—")
+    r <- suppressWarnings(as.numeric(v))
+    if (is.na(r)) return("—")
+    sprintf("%.1f%%", r * 100)
+  })
+  output$rv_ce_after_created    <- renderText(safe_ce_period("after", "reviews_created", "%d"))
+  output$rv_ce_after_passed     <- renderText(safe_ce_period("after", "reviews_passed",  "%d"))
+  output$rv_ce_after_autoclosed <- renderText(safe_ce_period("after", "reviews_autoclosed", "%d"))
+  output$rv_ce_after_days       <- renderText(safe_ce_period("after", "n_days", "%d"))
+  output$rv_ce_after_rate       <- renderText({
+    v <- safe_ce_period("after", "pass_rate")
+    if (v == "—") return("—")
+    r <- suppressWarnings(as.numeric(v))
+    if (is.na(r)) return("—")
+    sprintf("%.1f%%", r * 100)
+  })
+
+  output$rv_cadence_chart <- renderUI({
+    raw <- roborev_cadence_efficacy_raw
+    if (is.null(raw) || !is.list(raw))
+      return(ec_empty("roborev_cadence_efficacy.json not yet available", h = "340px"))
+    daily_raw <- raw$daily
+    if (is.null(daily_raw) || length(daily_raw) == 0L)
+      return(ec_empty("No daily cadence data available yet", h = "340px"))
+
+    # Normalise: fromJSON(simplifyDataFrame=TRUE) returns data.frame; list-of-lists also accepted.
+    ddf <- if (is.data.frame(daily_raw)) {
+      daily_raw
+    } else {
+      do.call(rbind, lapply(daily_raw, function(r) {
+        data.frame(
+          date               = as.character(r$date),
+          reviews_created    = as.integer(r$reviews_created),
+          reviews_passed     = as.integer(r$reviews_passed),
+          reviews_autoclosed = as.integer(if (!is.null(r$reviews_autoclosed)) r$reviews_autoclosed else 0L),
+          pass_rate          = as.numeric(r$pass_rate),
+          period             = as.character(r$period),
+          stringsAsFactors   = FALSE
+        )
+      }))
+    }
+    if (!all(c("date", "reviews_created", "pass_rate") %in% names(ddf)) || nrow(ddf) == 0L)
+      return(ec_empty("Cadence efficacy data malformed", h = "340px"))
+
+    ddf$date            <- as.character(ddf$date)
+    ddf$reviews_created <- as.integer(ddf$reviews_created)
+    ddf$pass_rate       <- as.numeric(ddf$pass_rate)
+    ddf <- ddf[order(ddf$date), ]
+
+    split_date <- as.character(if (!is.null(raw$cadence_split_date)) raw$cadence_split_date else "2026-05-21")
+
+    # Total weeks span for range slider (default last 3 months)
+    n_days_total <- nrow(ddf)
+    dz_start <- if (n_days_total > 90) round(100 * (1 - 90 / n_days_total)) else 0
+
+    ec(list(
+      tooltip = list(trigger = "axis"),
+      legend  = list(
+        bottom = 30,
+        textStyle = list(color = "#ccc"),
+        data = list("Daily created", "Pass rate %")
+      ),
+      toolbox = list(feature = list(
+        dataZoom = list(yAxisIndex = "none"),
+        restore  = list(),
+        saveAsImage = list()
+      )),
+      dataZoom = list(
+        list(type = "inside", start = dz_start, end = 100, filterMode = "filter"),
+        list(type = "slider", start = dz_start, end = 100, bottom = 5,  filterMode = "filter")
+      ),
+      grid = list(containLabel = TRUE, bottom = 80),
+      xAxis = list(
+        type = "category",
+        data = I(ddf$date),
+        axisLabel = list(rotate = 30, color = "#ccc"),
+        name = "Date",
+        nameLocation = "middle",
+        nameGap = 45,
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        list(
+          type = "value",
+          name = "Reviews created",
+          nameTextStyle = list(color = "#ccc"),
+          axisLabel = list(color = "#ccc")
+        ),
+        list(
+          type = "value",
+          name = "Pass rate %",
+          min  = 0,
+          max  = 1,
+          nameTextStyle = list(color = "#ccc"),
+          axisLabel = list(
+            color = "#ccc",
+            formatter = DT::JS("function(v){ return (v*100).toFixed(0)+'%'; }")
+          )
+        )
+      ),
+      series = list(
+        list(
+          name      = "Daily created",
+          type      = "line",
+          yAxisIndex = 0,
+          data      = I(ddf$reviews_created),
+          smooth    = FALSE,
+          itemStyle = list(color = "#4ea8de"),
+          lineStyle = list(color = "#4ea8de", width = 2),
+          areaStyle = list(color = "rgba(78,168,222,0.12)"),
+          markLine  = list(
+            silent = TRUE,
+            data   = list(list(
+              name      = "Cadence reduction",
+              xAxis     = split_date,
+              lineStyle = list(color = "#ffd93d", width = 2, type = "solid"),
+              label     = list(
+                formatter = "Cadence\nreduction",
+                color     = "#ffd93d",
+                fontSize  = 10
+              )
+            ))
+          )
+        ),
+        list(
+          name      = "Pass rate %",
+          type      = "line",
+          yAxisIndex = 1,
+          data      = I(ddf$pass_rate),
+          smooth    = FALSE,
+          itemStyle = list(color = "#69d4a0"),
+          lineStyle = list(color = "#69d4a0", width = 2, type = "dashed")
+        )
+      )
+    ), h = "340px",
+    aria_label = paste0(
+      "Two-segment line chart: daily roborev review volume (blue) and pass rate (green dashed) ",
+      "before and after the cadence reduction on ", split_date, ". ",
+      "Yellow vertical marker at split date. ",
+      "Range slider defaults to last 3 months."
+    ))
+  })
+
+  # --- Severity Threshold History panel (#146 Q8) ------------------------------
+  # Step chart: threshold level (right axis) + autoclosed_severity per day (left axis).
+  # Annotated step changes with date + new_threshold label.
+  # Source: roborev_threshold_history.json.
+  roborev_threshold_history_raw <- load_json("roborev_threshold_history.json")
+
+  # Map threshold level string -> numeric rank for the step axis
+  threshold_rank <- function(x) {
+    lookup <- c("low" = 1L, "medium" = 2L, "high" = 3L, "critical" = 4L)
+    # Return 0 for NA, empty string, or unknown levels
+    result <- rep(0L, length(x))
+    known  <- !is.na(x) & nzchar(x) & x %in% names(lookup)
+    result[known] <- lookup[x[known]]
+    result
+  }
+
+  output$rv_threshold_chart <- renderUI({
+    raw <- roborev_threshold_history_raw
+    if (is.null(raw) || !is.list(raw))
+      return(ec_empty("roborev_threshold_history.json not yet available", h = "340px"))
+
+    # Daily autoclosed series
+    ac_raw <- raw$daily_autoclosed
+    if (is.null(ac_raw) || length(ac_raw) == 0L)
+      return(ec_empty("No daily autoclosed-severity data available yet", h = "340px"))
+
+    acdf <- if (is.data.frame(ac_raw)) {
+      ac_raw
+    } else {
+      do.call(rbind, lapply(ac_raw, function(r) {
+        data.frame(
+          date                        = as.character(r$date),
+          reviews_autoclosed_severity = as.integer(r$reviews_autoclosed_severity),
+          reviews_created             = as.integer(r$reviews_created),
+          stringsAsFactors            = FALSE
+        )
+      }))
+    }
+    if (!all(c("date", "reviews_autoclosed_severity") %in% names(acdf)) || nrow(acdf) == 0L)
+      return(ec_empty("Threshold history data malformed", h = "340px"))
+    acdf <- acdf[order(acdf$date), ]
+
+    # Threshold step series: convert to same date axis as autoclosed
+    ts_raw <- raw$threshold_steps
+    ts_dates <- if (!is.null(ts_raw) && length(ts_raw) > 0L) {
+      if (is.data.frame(ts_raw)) ts_raw else {
+        do.call(rbind, lapply(ts_raw, function(r) {
+          data.frame(date = as.character(r$date),
+                     new_threshold = as.character(r$new_threshold),
+                     n_repos = as.integer(r$n_repos),
+                     stringsAsFactors = FALSE)
+        }))
+      }
+    } else {
+      data.frame(date = character(0), new_threshold = character(0),
+                 n_repos = integer(0), stringsAsFactors = FALSE)
+    }
+
+    # Build step series aligned to the autoclosed date axis
+    all_dates  <- acdf$date
+    step_level <- character(length(all_dates))
+    step_rank  <- numeric(length(all_dates))
+    current_th <- ""
+    j <- 1L
+    ts_sorted  <- ts_dates[order(ts_dates$date), , drop = FALSE]
+    for (i in seq_along(all_dates)) {
+      while (j <= nrow(ts_sorted) && ts_sorted$date[j] <= all_dates[i]) {
+        current_th <- ts_sorted$new_threshold[j]
+        j <- j + 1L
+      }
+      step_level[i] <- current_th
+      step_rank[i]  <- threshold_rank(current_th)
+    }
+
+    # Mark-line annotations for each step change
+    markline_data <- lapply(seq_len(nrow(ts_sorted)), function(i) {
+      list(
+        name  = paste0(ts_sorted$new_threshold[i]),
+        xAxis = ts_sorted$date[i],
+        lineStyle = list(color = "#ffd93d", width = 1, type = "dashed"),
+        label = list(
+          formatter = paste0(ts_sorted$new_threshold[i]),
+          color = "#ffd93d",
+          fontSize = 10
+        )
+      )
+    })
+
+    n_days_th <- nrow(acdf)
+    dz_start_th <- if (n_days_th > 90) round(100 * (1 - 90 / n_days_th)) else 0
+
+    ec(list(
+      tooltip = list(trigger = "axis"),
+      legend  = list(
+        bottom = 30,
+        textStyle = list(color = "#ccc"),
+        data = list("Autoclosed by severity", "Threshold level")
+      ),
+      toolbox = list(feature = list(
+        dataZoom = list(yAxisIndex = "none"),
+        restore  = list(),
+        saveAsImage = list()
+      )),
+      dataZoom = list(
+        list(type = "inside", start = dz_start_th, end = 100, filterMode = "filter"),
+        list(type = "slider", start = dz_start_th, end = 100, bottom = 5, filterMode = "filter")
+      ),
+      grid = list(containLabel = TRUE, bottom = 80),
+      xAxis = list(
+        type = "category",
+        data = I(acdf$date),
+        axisLabel = list(rotate = 30, color = "#ccc"),
+        name = "Date",
+        nameLocation = "middle",
+        nameGap = 45,
+        nameTextStyle = list(color = "#ccc")
+      ),
+      yAxis = list(
+        list(
+          type = "value",
+          name = "Autoclosed (severity)",
+          nameTextStyle = list(color = "#ccc"),
+          axisLabel = list(color = "#ccc")
+        ),
+        list(
+          type = "value",
+          name = "Threshold level",
+          min  = 0,
+          max  = 4,
+          nameTextStyle = list(color = "#ccc"),
+          axisLabel = list(
+            color = "#ccc",
+            formatter = DT::JS(
+              "function(v){ var m={0:'',1:'low',2:'medium',3:'high',4:'critical'}; return m[v]||''; }"
+            )
+          )
+        )
+      ),
+      series = list(
+        list(
+          name      = "Autoclosed by severity",
+          type      = "bar",
+          yAxisIndex = 0,
+          data      = I(acdf$reviews_autoclosed_severity),
+          itemStyle = list(color = "#f08080"),
+          emphasis  = list(itemStyle = list(color = "#ff5555")),
+          markLine  = if (length(markline_data) > 0L) {
+            list(silent = TRUE, data = markline_data)
+          } else {
+            list(data = list())
+          }
+        ),
+        list(
+          name      = "Threshold level",
+          type      = "line",
+          yAxisIndex = 1,
+          data      = I(step_rank),
+          step      = "start",
+          smooth    = FALSE,
+          itemStyle = list(color = "#ffd93d"),
+          lineStyle = list(color = "#ffd93d", width = 2),
+          symbol    = "none"
+        )
+      )
+    ), h = "340px",
+    aria_label = paste0(
+      "Combined chart: daily count of reviews auto-closed by severity threshold (red bars, left axis) ",
+      "and the effective severity threshold level over time (yellow step line, right axis). ",
+      "Dashed vertical markers annotate each threshold change event. ",
+      "Range slider defaults to last 3 months. ",
+      "Data sourced from roborev_threshold_changes and roborev_daily_metrics in unified.duckdb."
+    ))
   })
 
   # --- Agent Pass Rate panel (#146 Q10) ----------------------------------------
