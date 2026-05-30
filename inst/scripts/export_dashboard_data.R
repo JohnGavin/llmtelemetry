@@ -14,6 +14,19 @@ extdata  <- file.path(pkg_root, "inst", "extdata")
 out_dir  <- file.path(pkg_root, "vignettes", "data")
 if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
+# ---------------------------------------------------------------------------
+# Atomic JSON writer (#266): write to .tmp.<pid> then rename so a mid-script
+# kill (e.g. from the parent timeout 180 in session_stop.sh) never leaves a
+# partial JSON file in the target path.  file.rename() is atomic on POSIX
+# (same-filesystem move).  Orphaned .tmp.<pid> files are cleaned by CI via
+# `find vignettes/data -name "*.tmp.*" -delete`.
+# ---------------------------------------------------------------------------
+write_json_atomic <- function(x, path, ...) {
+  tmp <- paste0(path, ".tmp.", Sys.getpid())
+  jsonlite::write_json(x, tmp, ...)
+  file.rename(tmp, path)
+}
+
 # Load shared sanitize_session_id helper (unifies hash format with rollup_sessions.R)
 # so the same (path, project, started_at) triple always produces the same id.
 local({
@@ -21,19 +34,43 @@ local({
   if (file.exists(helper)) source(helper, local = FALSE)
 })
 
+# ---------------------------------------------------------------------------
+# Privacy exclusion — single source of truth (#265)
+# ---------------------------------------------------------------------------
+# Load excluded_dashboard_projects() from R/privacy_exclusion.R so both
+# this script and run_rollup.R use the same list.  Fall back to an inline
+# definition if the helper is absent (e.g. during isolated testing).
+local({
+  helper <- file.path(pkg_root, "R", "privacy_exclusion.R")
+  if (file.exists(helper)) {
+    source(helper, local = FALSE)
+  } else if (!exists("excluded_dashboard_projects", mode = "function")) {
+    excluded_dashboard_projects <<- function() {
+      c(
+        "mycare", "crypto", "crypto_solwatch", "crypto_swarms",
+        "solwatch", "swarms",
+        "my_t_project", "hello_t", "t_demos"
+      )
+    }
+  }
+})
+
 cmonitor_bin <- "/Users/johngavin/.cargo/bin/cmonitor-rs"
+# Fallback: if the hardcoded cargo path is absent, try the system PATH (#261).
+if (!file.exists(cmonitor_bin) || file.access(cmonitor_bin, mode = 1L) != 0L) {
+  path_bin <- Sys.which("cmonitor-rs")
+  if (nzchar(path_bin)) {
+    cmonitor_bin <- path_bin
+  }
+}
 
 # ---------------------------------------------------------------------------
-# Privacy exclusion / remap constants (#83 Phase B)
+# Privacy exclusion / remap constants (#83 Phase B, #265)
 # ---------------------------------------------------------------------------
 # Projects whose names must NEVER appear in public dashboard output.
-EXCLUDED_DASHBOARD_PROJECTS <- c(
-  "mycare", "crypto", "crypto_solwatch", "crypto_swarms",
-  "solwatch", "swarms",    # short-form aliases of crypto_solwatch / crypto_swarms
-  "my_t_project", "hello_t", "t_demos"
-)
+# Source of truth: R/privacy_exclusion.R -> excluded_dashboard_projects()
+EXCLUDED_DASHBOARD_PROJECTS <- excluded_dashboard_projects()
 # Subset that is privacy-gated (used by the CI gate to match per-project JSON fields).
-# TODO(#83): unify with R/confidential_projects.R to avoid list drift
 CONFIDENTIAL_PROJECTS <- c("mycare", "crypto", "crypto_solwatch", "crypto_swarms",
                             "solwatch", "swarms")
 
@@ -308,8 +345,24 @@ sanitize_for_public <- function(df) {
 
 # --- 1. Daily usage from cmonitor-rs ------------------------------------------
 cat("Exporting ccusage daily (via cmonitor-rs)...\n")
-has_cmonitor <- file.exists(cmonitor_bin)
+has_cmonitor <- file.exists(cmonitor_bin) &&
+                file.access(cmonitor_bin, mode = 1L) == 0L
 if (!has_cmonitor) {
+  # #261: emit a clear diagnostic and write sentinel files so the dashboard can
+  # distinguish "no usage data this period" from "tool missing".  Do NOT stop —
+  # other data sources (Gemini, sessions, predictions) continue normally.
+  cmonitor_msg <- sprintf(
+    "WARN: cmonitor-rs not found or not executable (checked '%s' and PATH) — Claude usage data cannot be exported.",
+    cmonitor_bin
+  )
+  message(cmonitor_msg)
+  writeLines(cmonitor_msg, file.path(out_dir, "cmonitor_status.txt"))
+  write_json_atomic(
+    list(error = "cmonitor-rs missing",
+         checked_at = format(Sys.time(), tz = "UTC", usetz = TRUE)),
+    file.path(out_dir, "ccusage_blocks.json"),
+    auto_unbox = TRUE
+  )
   cat("  -> cmonitor-rs not found, falling back to ccusage JSON files\n")
 }
 
@@ -358,14 +411,14 @@ if (has_cmonitor) {
     mutate(project = "all") |>
     arrange(date)
 
-  write_json(daily_rows, file.path(out_dir, "ccusage_daily.json"), auto_unbox = TRUE)
+  write_json_atomic(daily_rows, file.path(out_dir, "ccusage_daily.json"), auto_unbox = TRUE)
   # Also persist to inst/extdata so CI has a valid committed snapshot
-  write_json(daily_rows, file.path(extdata, "ccusage_daily.json"), auto_unbox = TRUE)
+  write_json_atomic(daily_rows, file.path(extdata, "ccusage_daily.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d daily rows\n", nrow(daily_rows)))
 
   # --- 2. Sessions (not available from cmonitor-rs) ---------------------------
   cat("Exporting ccusage sessions (empty — cmonitor-rs has no session view)...\n")
-  write_json(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
+  write_json_atomic(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
   cat("  -> 0 sessions (placeholder)\n")
 
   # --- 3. Blocks from cmonitor-rs ---------------------------------------------
@@ -389,9 +442,9 @@ if (has_cmonitor) {
     )
   }) |> bind_rows() |> arrange(startTime)
 
-  write_json(blk_rows, file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
+  write_json_atomic(blk_rows, file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
   # Also persist to inst/extdata so CI has a committed snapshot to fall back to
-  write_json(blk_rows, file.path(extdata, "ccusage_blocks.json"), auto_unbox = TRUE)
+  write_json_atomic(blk_rows, file.path(extdata, "ccusage_blocks.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d active blocks\n", nrow(blk_rows)))
 
   # --- 3b. Per-model daily breakdown from model_stats -------------------------
@@ -420,9 +473,9 @@ if (has_cmonitor) {
       summarise(cost = round(sum(cost), 4), tokens = sum(tokens), .groups = "drop") |>
       arrange(date, desc(cost))
   }
-  write_json(model_daily, file.path(out_dir, "model_daily.json"), auto_unbox = TRUE)
+  write_json_atomic(model_daily, file.path(out_dir, "model_daily.json"), auto_unbox = TRUE)
   # Also save to inst/extdata for email script
-  write_json(model_daily, file.path(extdata, "model_daily.json"), auto_unbox = TRUE)
+  write_json_atomic(model_daily, file.path(extdata, "model_daily.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d model-day rows\n", nrow(model_daily)))
 
 } else {
@@ -442,11 +495,11 @@ if (has_cmonitor) {
     file.copy(fallback_daily_src, fallback_daily_dst, overwrite = TRUE)
     cat("  -> copied ccusage_daily.json (CI fallback)\n")
   } else if (!file.exists(fallback_daily_dst)) {
-    write_json(list(), fallback_daily_dst, auto_unbox = TRUE)
+    write_json_atomic(list(), fallback_daily_dst, auto_unbox = TRUE)
     cat("  -> ccusage_daily.json not found, wrote empty (CI fallback)\n")
   }
   # Always write empty sessions (raw sessionIds must not appear in public output).
-  write_json(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
+  write_json_atomic(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
   cat("  -> wrote empty ccusage_sessions.json (CI fallback; cmonitor-rs not available)\n")
   # Blocks: use committed inst/extdata snapshot if present, else write empty array.
   # This keeps the "Time Blocks" dashboard page populated in CI. (#141)
@@ -456,7 +509,7 @@ if (has_cmonitor) {
     file.copy(fallback_blocks_src, fallback_blocks_dst, overwrite = TRUE)
     cat("  -> copied ccusage_blocks.json from inst/extdata (CI fallback)\n")
   } else {
-    write_json(list(), fallback_blocks_dst, auto_unbox = TRUE)
+    write_json_atomic(list(), fallback_blocks_dst, auto_unbox = TRUE)
     cat("  -> wrote empty ccusage_blocks.json (CI fallback; no committed snapshot)\n")
   }
 }
@@ -471,7 +524,7 @@ if (file.exists(gemini_db)) {
   gem_daily <- dbReadTable(con, "daily_usage") |>
     as_tibble() |>
     mutate(date = as.character(date), total_cost = round(total_cost, 4))
-  write_json(gem_daily, file.path(out_dir, "gemini_daily.json"), auto_unbox = TRUE)
+  write_json_atomic(gem_daily, file.path(out_dir, "gemini_daily.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d daily rows\n", nrow(gem_daily)))
 
   gem_sess <- dbReadTable(con, "sessions_summary") |>
@@ -481,12 +534,12 @@ if (file.exists(gemini_db)) {
       last_updated = as.character(last_updated),
       total_cost   = round(total_cost, 4)
     )
-  write_json(gem_sess, file.path(out_dir, "gemini_sessions.json"), auto_unbox = TRUE)
+  write_json_atomic(gem_sess, file.path(out_dir, "gemini_sessions.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d sessions\n", nrow(gem_sess)))
 } else {
   cat("  -> gemini_usage.duckdb not found, skipping\n")
-  write_json(list(), file.path(out_dir, "gemini_daily.json"))
-  write_json(list(), file.path(out_dir, "gemini_sessions.json"))
+  write_json_atomic(list(), file.path(out_dir, "gemini_daily.json"))
+  write_json_atomic(list(), file.path(out_dir, "gemini_sessions.json"))
 }
 
 # --- 4.5. Refresh and export Codex usage data --------------------------------
@@ -523,7 +576,7 @@ if (file.exists(codex_daily_src)) {
   cat(sprintf("  -> copied codex_daily.json (%d bytes)\n",
               file.info(codex_daily_src)$size))
 } else {
-  write_json(list(), file.path(out_dir, "codex_daily.json"), auto_unbox = TRUE)
+  write_json_atomic(list(), file.path(out_dir, "codex_daily.json"), auto_unbox = TRUE)
   cat("  -> codex_daily.json not found, wrote empty placeholder\n")
 }
 
@@ -532,7 +585,7 @@ if (file.exists(codex_sessions_src)) {
   cat(sprintf("  -> copied codex_sessions.json (%d bytes)\n",
               file.info(codex_sessions_src)$size))
 } else {
-  write_json(list(), file.path(out_dir, "codex_sessions.json"), auto_unbox = TRUE)
+  write_json_atomic(list(), file.path(out_dir, "codex_sessions.json"), auto_unbox = TRUE)
   cat("  -> codex_sessions.json not found, wrote empty placeholder\n")
 }
 
@@ -584,7 +637,7 @@ cmon_summary <- list(
   total_cost   = round(total_cost, 4),
   entries      = entries
 )
-write_json(cmon_summary, file.path(out_dir, "cmonitor_summary.json"), auto_unbox = TRUE)
+write_json_atomic(cmon_summary, file.path(out_dir, "cmonitor_summary.json"), auto_unbox = TRUE)
 cat(sprintf("  -> cost=$%.2f, tokens=%s\n",
   cmon_summary$total_cost, format(cmon_summary$total_tokens, big.mark = ",")))
 
@@ -633,11 +686,11 @@ if (length(commit_rows) > 0) {
   commits_df <- bind_rows(lapply(commit_rows, as_tibble)) |>
     mutate(lines_changed = lines_added + lines_deleted) |>
     arrange(date)
-  write_json(commits_df, file.path(out_dir, "git_commits.json"), auto_unbox = TRUE)
+  write_json_atomic(commits_df, file.path(out_dir, "git_commits.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d commits\n", nrow(commits_df)))
 } else {
   cat("  -> no commits found, writing empty array\n")
-  write_json(list(), file.path(out_dir, "git_commits.json"))
+  write_json_atomic(list(), file.path(out_dir, "git_commits.json"))
 }
 
 # --- 6c. Multi-project commits (cross-repo, last 1 year) ----------------------
@@ -700,14 +753,14 @@ if (length(proj_commits_list) > 0) {
   proj_commits_df <- sanitize_for_public(proj_commits_df)
   # Exclude confidential/demo projects from public output (#83 Phase B)
   proj_commits_df <- clean_projects(proj_commits_df)
-  write_json(proj_commits_df, file.path(out_dir, "git_commits_by_project.json"), auto_unbox = TRUE)
-  write_json(proj_commits_df, file.path(extdata, "git_commits_by_project.json"), auto_unbox = TRUE)
+  write_json_atomic(proj_commits_df, file.path(out_dir, "git_commits_by_project.json"), auto_unbox = TRUE)
+  write_json_atomic(proj_commits_df, file.path(extdata, "git_commits_by_project.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d commits across %d projects\n",
               nrow(proj_commits_df), length(unique(proj_commits_df$project))))
 } else {
   cat("  -> no repos found, writing empty array\n")
-  write_json(list(), file.path(out_dir, "git_commits_by_project.json"))
-  write_json(list(), file.path(extdata, "git_commits_by_project.json"))
+  write_json_atomic(list(), file.path(out_dir, "git_commits_by_project.json"))
+  write_json_atomic(list(), file.path(extdata, "git_commits_by_project.json"))
 }
 
 # --- 6d. Weekly commits by project -------------------------------------------
@@ -734,8 +787,8 @@ if (exists("proj_commits_df") && nrow(proj_commits_df) > 0) {
   weekly_commits <- sanitize_for_public(weekly_commits)
   # Exclude confidential/demo projects from public output (#83 Phase B)
   weekly_commits <- clean_projects(weekly_commits)
-  write_json(weekly_commits, file.path(out_dir, "weekly_commits_by_project.json"), auto_unbox = TRUE)
-  write_json(weekly_commits, file.path(extdata, "weekly_commits_by_project.json"), auto_unbox = TRUE)
+  write_json_atomic(weekly_commits, file.path(out_dir, "weekly_commits_by_project.json"), auto_unbox = TRUE)
+  write_json_atomic(weekly_commits, file.path(extdata, "weekly_commits_by_project.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d project-week rows across %d projects\n",
               nrow(weekly_commits), length(unique(weekly_commits$project))))
 } else {
@@ -765,17 +818,17 @@ if (exists("proj_commits_df") && nrow(proj_commits_df) > 0) {
       weekly_commits <- sanitize_for_public(weekly_commits)
       # Exclude confidential/demo projects from public output (#83 Phase B)
       weekly_commits <- clean_projects(weekly_commits)
-      write_json(weekly_commits, file.path(out_dir, "weekly_commits_by_project.json"), auto_unbox = TRUE)
-      write_json(weekly_commits, file.path(extdata, "weekly_commits_by_project.json"), auto_unbox = TRUE)
+      write_json_atomic(weekly_commits, file.path(out_dir, "weekly_commits_by_project.json"), auto_unbox = TRUE)
+      write_json_atomic(weekly_commits, file.path(extdata, "weekly_commits_by_project.json"), auto_unbox = TRUE)
       cat(sprintf("  -> %d project-week rows (CI fallback)\n", nrow(weekly_commits)))
     } else {
-      write_json(list(), file.path(out_dir, "weekly_commits_by_project.json"))
-      write_json(list(), file.path(extdata, "weekly_commits_by_project.json"))
+      write_json_atomic(list(), file.path(out_dir, "weekly_commits_by_project.json"))
+      write_json_atomic(list(), file.path(extdata, "weekly_commits_by_project.json"))
       cat("  -> no commit data found, writing empty\n")
     }
   } else {
-    write_json(list(), file.path(out_dir, "weekly_commits_by_project.json"))
-    write_json(list(), file.path(extdata, "weekly_commits_by_project.json"))
+    write_json_atomic(list(), file.path(out_dir, "weekly_commits_by_project.json"))
+    write_json_atomic(list(), file.path(extdata, "weekly_commits_by_project.json"))
     cat("  -> no commit source found, writing empty\n")
   }
 }
@@ -820,17 +873,17 @@ if (file.exists(cost_src) && file.exists(commits_src)) {
     cost_per_commit <- sanitize_for_public(cost_per_commit)
     # Exclude confidential/demo projects from public output (#83 Phase B)
     cost_per_commit <- clean_projects(cost_per_commit)
-    write_json(cost_per_commit, file.path(out_dir, "cost_per_commit.json"), auto_unbox = TRUE)
-    write_json(cost_per_commit, file.path(extdata, "cost_per_commit.json"), auto_unbox = TRUE)
+    write_json_atomic(cost_per_commit, file.path(out_dir, "cost_per_commit.json"), auto_unbox = TRUE)
+    write_json_atomic(cost_per_commit, file.path(extdata, "cost_per_commit.json"), auto_unbox = TRUE)
     cat(sprintf("  -> %d project-day rows\n", nrow(cost_per_commit)))
   } else {
-    write_json(list(), file.path(out_dir, "cost_per_commit.json"))
-    write_json(list(), file.path(extdata, "cost_per_commit.json"))
+    write_json_atomic(list(), file.path(out_dir, "cost_per_commit.json"))
+    write_json_atomic(list(), file.path(extdata, "cost_per_commit.json"))
     cat("  -> insufficient data (empty cost or commits), writing empty\n")
   }
 } else {
-  write_json(list(), file.path(out_dir, "cost_per_commit.json"))
-  write_json(list(), file.path(extdata, "cost_per_commit.json"))
+  write_json_atomic(list(), file.path(out_dir, "cost_per_commit.json"))
+  write_json_atomic(list(), file.path(extdata, "cost_per_commit.json"))
   cat("  -> source files missing, writing empty\n")
 }
 
@@ -924,13 +977,13 @@ if (length(churn_list) > 0) {
   file_churn_df <- sanitize_for_public(file_churn_df)
   # Exclude confidential/demo projects from public output (#83 Phase B)
   file_churn_df <- clean_projects(file_churn_df)
-  write_json(file_churn_df, file.path(out_dir, "file_churn.json"), auto_unbox = TRUE)
-  write_json(file_churn_df, file.path(extdata, "file_churn.json"), auto_unbox = TRUE)
+  write_json_atomic(file_churn_df, file.path(out_dir, "file_churn.json"), auto_unbox = TRUE)
+  write_json_atomic(file_churn_df, file.path(extdata, "file_churn.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d files across %d projects\n",
               nrow(file_churn_df), length(unique(file_churn_df$project))))
 } else {
-  write_json(list(), file.path(out_dir, "file_churn.json"))
-  write_json(list(), file.path(extdata, "file_churn.json"))
+  write_json_atomic(list(), file.path(out_dir, "file_churn.json"))
+  write_json_atomic(list(), file.path(extdata, "file_churn.json"))
   cat("  -> no repos available, writing empty\n")
 }
 
@@ -1033,13 +1086,13 @@ if (length(coupling_list) > 0) {
   coupling_df <- sanitize_for_public(coupling_df)
   # Exclude confidential/demo projects from public output (#83 Phase B)
   coupling_df <- clean_projects(coupling_df)
-  write_json(coupling_df, file.path(out_dir, "change_coupling.json"), auto_unbox = TRUE)
-  write_json(coupling_df, file.path(extdata, "change_coupling.json"), auto_unbox = TRUE)
+  write_json_atomic(coupling_df, file.path(out_dir, "change_coupling.json"), auto_unbox = TRUE)
+  write_json_atomic(coupling_df, file.path(extdata, "change_coupling.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d file pairs across %d projects\n",
               nrow(coupling_df), length(unique(coupling_df$project))))
 } else {
-  write_json(list(), file.path(out_dir, "change_coupling.json"))
-  write_json(list(), file.path(extdata, "change_coupling.json"))
+  write_json_atomic(list(), file.path(out_dir, "change_coupling.json"))
+  write_json_atomic(list(), file.path(extdata, "change_coupling.json"))
   cat("  -> no repos available, writing empty\n")
 }
 
@@ -1066,7 +1119,7 @@ bus_factor <- list(
   all_time = parse_shortlog(bus_all),
   recent_6mo = parse_shortlog(bus_6mo)
 )
-write_json(bus_factor, file.path(out_dir, "git_bus_factor.json"), auto_unbox = TRUE)
+write_json_atomic(bus_factor, file.path(out_dir, "git_bus_factor.json"), auto_unbox = TRUE)
 cat(sprintf("  -> bus factor: %d contributors (all-time), %d (6mo)\n",
   nrow(bus_factor$all_time), nrow(bus_factor$recent_6mo)))
 
@@ -1079,7 +1132,7 @@ if (length(velocity_raw) > 0) {
 } else {
   vel_tbl <- data.frame(month = character(0), commits = integer(0))
 }
-write_json(vel_tbl, file.path(out_dir, "git_velocity.json"), auto_unbox = TRUE)
+write_json_atomic(vel_tbl, file.path(out_dir, "git_velocity.json"), auto_unbox = TRUE)
 cat(sprintf("  -> velocity: %d months\n", nrow(vel_tbl)))
 
 # Commit timing: hour × weekday
@@ -1101,7 +1154,7 @@ if (length(timing_raw) > 0) {
   timing_agg <- data.frame(weekday = integer(0), hour = integer(0),
     commits = integer(0), day_name = character(0))
 }
-write_json(timing_agg, file.path(out_dir, "git_timing.json"), auto_unbox = TRUE)
+write_json_atomic(timing_agg, file.path(out_dir, "git_timing.json"), auto_unbox = TRUE)
 cat(sprintf("  -> timing: %d cells\n", nrow(timing_agg)))
 
 # Crisis patterns: reverts, hotfixes, emergency commits (last year)
@@ -1114,7 +1167,7 @@ crisis_df <- if (length(crisis_raw) > 0) {
 } else {
   data.frame(commit = character(0))
 }
-write_json(crisis_df, file.path(out_dir, "git_crisis.json"), auto_unbox = TRUE)
+write_json_atomic(crisis_df, file.path(out_dir, "git_crisis.json"), auto_unbox = TRUE)
 cat(sprintf("  -> crisis: %d commits\n", nrow(crisis_df)))
 
 # Churn hotspots: most-modified files (6 months)
@@ -1133,7 +1186,7 @@ if (length(churn_raw) > 0) {
 } else {
   churn_df <- data.frame(changes = integer(0), file = character(0))
 }
-write_json(churn_df, file.path(out_dir, "git_churn.json"), auto_unbox = TRUE)
+write_json_atomic(churn_df, file.path(out_dir, "git_churn.json"), auto_unbox = TRUE)
 cat(sprintf("  -> churn: %d hotspot files\n", nrow(churn_df)))
 
 # Bug hotspots: files frequently touched by fix/bug commits (6 months)
@@ -1152,7 +1205,7 @@ if (length(bug_raw) > 0) {
 } else {
   bug_df <- data.frame(fixes = integer(0), file = character(0))
 }
-write_json(bug_df, file.path(out_dir, "git_bugs.json"), auto_unbox = TRUE)
+write_json_atomic(bug_df, file.path(out_dir, "git_bugs.json"), auto_unbox = TRUE)
 cat(sprintf("  -> bugs: %d hotspot files\n", nrow(bug_df)))
 
 # TODO/FIXME debt
@@ -1170,7 +1223,7 @@ if (length(todo_raw) > 0) {
 } else {
   todo_df <- data.frame(file = character(0), count = integer(0))
 }
-write_json(todo_df, file.path(out_dir, "git_todo.json"), auto_unbox = TRUE)
+write_json_atomic(todo_df, file.path(out_dir, "git_todo.json"), auto_unbox = TRUE)
 cat(sprintf("  -> TODO/FIXME: %d files with debt\n", nrow(todo_df)))
 
 # Tags / releases
@@ -1185,7 +1238,7 @@ if (length(tag_raw) > 0) {
 } else {
   tag_df <- data.frame(tag = character(0), date = character(0))
 }
-write_json(tag_df, file.path(out_dir, "git_tags.json"), auto_unbox = TRUE)
+write_json_atomic(tag_df, file.path(out_dir, "git_tags.json"), auto_unbox = TRUE)
 cat(sprintf("  -> tags: %d releases\n", nrow(tag_df)))
 
 # --- 7. Export GitHub issue events (Layer 4 scope change tracking) -----------
@@ -1198,7 +1251,7 @@ if (file.exists(gh_events_src)) {
   cat(sprintf("  -> %d issue events copied from inst/extdata\n", nrow(gh_data)))
 } else {
   # Write empty placeholder
-  write_json(list(), gh_events_dst)
+  write_json_atomic(list(), gh_events_dst)
   cat("  -> github_issue_events.json: wrote empty (run poll_github_events.R to populate)\n")
 }
 
@@ -1240,16 +1293,17 @@ if (file.exists(unified_db)) {
   cat(sprintf("  -> dropped %d orphan/worktree sessions; %d kept\n",
               nrow(u_sess) - nrow(u_sess_pub), nrow(u_sess_pub)))
   # Write to both locations: inst/extdata (commit) + vignettes/data (preview)
-  write_json(u_sess_pub, file.path(extdata, "unified_sessions.json"), auto_unbox = TRUE)
-  write_json(u_sess_pub, file.path(out_dir, "unified_sessions.json"), auto_unbox = TRUE)
+  write_json_atomic(u_sess_pub, file.path(extdata, "unified_sessions.json"), auto_unbox = TRUE)
+  write_json_atomic(u_sess_pub, file.path(out_dir, "unified_sessions.json"), auto_unbox = TRUE)
+  n_sessions <- nrow(u_sess_pub)  # #264: track for last_updated.txt
   cat(sprintf("  -> %d sessions (written to inst/extdata + vignettes/data)\n", nrow(u_sess_pub)))
 
   u_costs <- dbReadTable(ucon, "costs") |>
     as_tibble() |>
     mutate(date = as.character(date),
            across(where(is.numeric), \(x) round(x, 2)))
-  write_json(u_costs, file.path(extdata, "unified_costs.json"), auto_unbox = TRUE)
-  write_json(u_costs, file.path(out_dir, "unified_costs.json"), auto_unbox = TRUE)
+  write_json_atomic(u_costs, file.path(extdata, "unified_costs.json"), auto_unbox = TRUE)
+  write_json_atomic(u_costs, file.path(out_dir, "unified_costs.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d cost rows (written to inst/extdata + vignettes/data)\n", nrow(u_costs)))
 } else {
   # CI fallback: copy from inst/extdata/ to vignettes/data/
@@ -1260,7 +1314,7 @@ if (file.exists(unified_db)) {
       file.copy(src, dst, overwrite = TRUE)
       cat(sprintf("  -> %s: copied from inst/extdata\n", f))
     } else if (!file.exists(dst)) {
-      write_json(list(), dst)
+      write_json_atomic(list(), dst)
       cat(sprintf("  -> %s: wrote empty (no source anywhere)\n", f))
     } else {
       cat(sprintf("  -> %s: preserved existing\n", f))
@@ -1299,8 +1353,8 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
   out_data <- sanitize_for_public(out_data)
   # Exclude confidential/demo projects from public output (#83 Phase B)
   out_data <- clean_projects(out_data)
-  write_json(out_data, file.path(out_dir, "cost_by_project_estimated.json"), auto_unbox = TRUE)
-  write_json(out_data, file.path(extdata, "cost_by_project_estimated.json"), auto_unbox = TRUE)
+  write_json_atomic(out_data, file.path(out_dir, "cost_by_project_estimated.json"), auto_unbox = TRUE)
+  write_json_atomic(out_data, file.path(extdata, "cost_by_project_estimated.json"), auto_unbox = TRUE)
   cat(sprintf("  -> %d project-day cost estimates (written to inst/extdata + vignettes/data)\n", nrow(out_data)))
 
   # --- Tokens by project (same duration-weight approach as cost estimates) ------
@@ -1331,8 +1385,8 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
     out_tok <- sanitize_for_public(out_tok)
     # Exclude confidential/demo projects from public output (#83 Phase B)
     out_tok <- clean_projects(out_tok)
-    write_json(out_tok, file.path(out_dir, "tokens_by_project.json"), auto_unbox = TRUE)
-    write_json(out_tok, file.path(extdata, "tokens_by_project.json"), auto_unbox = TRUE)
+    write_json_atomic(out_tok, file.path(out_dir, "tokens_by_project.json"), auto_unbox = TRUE)
+    write_json_atomic(out_tok, file.path(extdata, "tokens_by_project.json"), auto_unbox = TRUE)
     cat(sprintf("  -> %d project-day token estimates (written to inst/extdata + vignettes/data)\n",
                 nrow(out_tok)))
   }
@@ -1345,7 +1399,7 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
     file.copy(src, dst, overwrite = TRUE)
     cat(sprintf("  -> %s: copied from inst/extdata\n", f))
   } else if (!file.exists(dst)) {
-    write_json(list(), dst)
+    write_json_atomic(list(), dst)
     cat(sprintf("  -> %s: wrote empty (no source anywhere)\n", f))
   } else {
     cat(sprintf("  -> %s: preserved existing\n", f))
@@ -1353,7 +1407,7 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
   for (f in c("tokens_by_project.json")) {
     src <- file.path(extdata, f); dst <- file.path(out_dir, f)
     if (file.exists(src)) { file.copy(src, dst, overwrite = TRUE)
-    } else { write_json(list(), dst) }
+    } else { write_json_atomic(list(), dst) }
   }
 }
 
@@ -1434,10 +1488,11 @@ if (length(pred_files) > 0) {
       # "-Users-johngavin-docs-gh-proj-data-weather-irish-buoy-network").
       # project_name is already the clean canonical identifier (#936).
       if ("project_slug" %in% names(preds_out)) preds_out$project_slug <- NULL
-      write_json(preds_out, file.path(extdata, "predictions.json"), auto_unbox = TRUE)
-      write_json(preds_out, file.path(out_dir, "predictions.json"), auto_unbox = TRUE)
-      write_json(cal_buckets, file.path(extdata, "calibration_buckets.json"), auto_unbox = TRUE)
-      write_json(cal_buckets, file.path(out_dir, "calibration_buckets.json"), auto_unbox = TRUE)
+      write_json_atomic(preds_out, file.path(extdata, "predictions.json"), auto_unbox = TRUE)
+      write_json_atomic(preds_out, file.path(out_dir, "predictions.json"), auto_unbox = TRUE)
+      write_json_atomic(cal_buckets, file.path(extdata, "calibration_buckets.json"), auto_unbox = TRUE)
+      write_json_atomic(cal_buckets, file.path(out_dir, "calibration_buckets.json"), auto_unbox = TRUE)
+      n_predictions <- nrow(resolved)  # #264: track for last_updated.txt
 
       cat(sprintf("  -> %d resolved, %d pending, %d buckets (written to inst/extdata + vignettes/data)\n",
         nrow(resolved), nrow(pending), nrow(cal_buckets)))
@@ -1459,7 +1514,7 @@ for (f in c("predictions.json", "calibration_buckets.json")) {
       file.copy(src, dst, overwrite = TRUE)
       cat(sprintf("  -> %s: copied from inst/extdata\n", f))
     } else {
-      write_json(list(), dst)
+      write_json_atomic(list(), dst)
       cat(sprintf("  -> %s: wrote empty (no source anywhere)\n", f))
     }
   }
@@ -1859,7 +1914,7 @@ api_index <- list(
     )
   )
 )
-write_json(api_index, file.path(out_dir, "index.json"), auto_unbox = TRUE, pretty = TRUE)
+write_json_atomic(api_index, file.path(out_dir, "index.json"), auto_unbox = TRUE, pretty = TRUE)
 cat("  -> index.json written\n")
 
 # --- 8b. Export git file growth from git pulse parquet -----------------------
@@ -1914,15 +1969,15 @@ if (length(parquet_files) > 0 && requireNamespace("arrow", quietly = TRUE)) {
       # Sort by date
       file_growth <- file_growth[order(file_growth$date), ]
 
-      write_json(file_growth, file.path(out_dir, "git_file_growth.json"), auto_unbox = TRUE)
+      write_json_atomic(file_growth, file.path(out_dir, "git_file_growth.json"), auto_unbox = TRUE)
       cat(sprintf("  -> %d date-project rows\n", nrow(file_growth)))
     } else {
       cat("  -> no file growth metrics found in parquet files\n")
-      write_json(list(), file.path(out_dir, "git_file_growth.json"))
+      write_json_atomic(list(), file.path(out_dir, "git_file_growth.json"))
     }
   } else {
     cat("  -> could not read parquet files\n")
-    write_json(list(), file.path(out_dir, "git_file_growth.json"))
+    write_json_atomic(list(), file.path(out_dir, "git_file_growth.json"))
   }
 } else {
   if (length(parquet_files) > 0) {
@@ -1938,10 +1993,10 @@ if (length(parquet_files) > 0 && requireNamespace("arrow", quietly = TRUE)) {
       file.copy(extdata_fallback, file.path(out_dir, "git_file_growth.json"), overwrite = TRUE)
       cat(sprintf("  -> CI fallback: copied %d rows from inst/extdata/\n", nrow(fg_data)))
     } else {
-      write_json(list(), file.path(out_dir, "git_file_growth.json"))
+      write_json_atomic(list(), file.path(out_dir, "git_file_growth.json"))
     }
   } else {
-    write_json(list(), file.path(out_dir, "git_file_growth.json"))
+    write_json_atomic(list(), file.path(out_dir, "git_file_growth.json"))
   }
 }
 
@@ -2061,15 +2116,15 @@ if (!is.null(pm_all) && nrow(pm_all) > 0L) {
   # Exclude confidential/demo projects from public master list (#83 Phase B)
   projects_master <- clean_projects(projects_master, project_col = "canonical_project")
 
-  write_json(projects_master, file.path(out_dir, "projects_master.json"),
+  write_json_atomic(projects_master, file.path(out_dir, "projects_master.json"),
              auto_unbox = TRUE)
-  write_json(projects_master, file.path(extdata, "projects_master.json"),
+  write_json_atomic(projects_master, file.path(extdata, "projects_master.json"),
              auto_unbox = TRUE)
   cat(sprintf("  -> %d canonical projects in projects_master.json\n",
               nrow(projects_master)))
 } else {
-  write_json(list(), file.path(out_dir, "projects_master.json"))
-  write_json(list(), file.path(extdata, "projects_master.json"))
+  write_json_atomic(list(), file.path(out_dir, "projects_master.json"))
+  write_json_atomic(list(), file.path(extdata, "projects_master.json"))
   cat("  -> no project data available, writing empty projects_master.json\n")
 }
 
@@ -2166,7 +2221,7 @@ tryCatch({
     )
 
     # Write committed source (local regeneration)
-    write_json(roborev_summary, roborev_src, auto_unbox = TRUE)
+    write_json_atomic(roborev_summary, roborev_src, auto_unbox = TRUE)
     cat(sprintf("  -> inst/extdata/roborev_summary.json written: pulse={n_open=%d, n_high=%d, n_resolved=%d, n_loops=%d}\n",
                 n_open, n_high, n_resolved, n_loops))
   } else {
@@ -2181,12 +2236,12 @@ tryCatch({
   } else {
     # Neither DB nor committed source: write graceful empty (does not overwrite a present source)
     cat("  -> no committed source found; writing empty roborev_summary.json placeholder\n")
-    write_json(empty_roborev, roborev_json_path, auto_unbox = TRUE)
+    write_json_atomic(empty_roborev, roborev_json_path, auto_unbox = TRUE)
   }
 }, error = function(e) {
   cat(sprintf("  -> roborev_summary.json export error: %s\n", conditionMessage(e)))
   cat("  -> writing empty roborev_summary.json as fallback\n")
-  write_json(
+  write_json_atomic(
     list(
       pulse = list(n_open = 0L, n_critical = 0L, n_high = 0L,
                    n_resolved = 0L, n_loops = 0L, n_escalate = 0L,
@@ -2256,7 +2311,7 @@ tryCatch({
         by_repo <- by_repo[order(-by_repo$n_total), ]
         row.names(by_repo) <- NULL
 
-        write_json(by_repo, roborev_by_repo_src, auto_unbox = TRUE)
+        write_json_atomic(by_repo, roborev_by_repo_src, auto_unbox = TRUE)
         cat(sprintf("  -> inst/extdata/roborev_by_repo.json: %d repos\n", nrow(by_repo)))
       } else {
         cat("  -> roborev_review_lifecycle has no repo/project column; skipping\n")
@@ -2275,12 +2330,12 @@ tryCatch({
     cat(sprintf("  -> copied roborev_by_repo.json -> vignettes/data/ (%d bytes)\n",
                 file.info(roborev_by_repo_src)$size))
   } else {
-    write_json(list(), roborev_by_repo_dst, auto_unbox = TRUE)
+    write_json_atomic(list(), roborev_by_repo_dst, auto_unbox = TRUE)
     cat("  -> wrote empty roborev_by_repo.json (no source available)\n")
   }
 }, error = function(e) {
   cat(sprintf("  -> roborev_by_repo.json export error: %s\n", conditionMessage(e)))
-  write_json(list(), file.path(out_dir, "roborev_by_repo.json"), auto_unbox = TRUE)
+  write_json_atomic(list(), file.path(out_dir, "roborev_by_repo.json"), auto_unbox = TRUE)
 })
 
 # --- 8e. Export roborev_resolution.json (#146 Q5) ----------------------------
@@ -2378,19 +2433,19 @@ tryCatch({
           })
         )
 
-        write_json(roborev_res, roborev_res_src, auto_unbox = TRUE)
+        write_json_atomic(roborev_res, roborev_res_src, auto_unbox = TRUE)
         cat(sprintf(
           "  -> roborev_resolution.json: total=%d, resolved=%d, rate=%.1f%%, weeks=%d\n",
           n_total, n_resolved, res_rate * 100, nrow(weekly_agg)
         ))
       } else {
         cat("  -> roborev_review_lifecycle has no repo/project column; writing empty\n")
-        write_json(empty_res, roborev_res_src, auto_unbox = TRUE)
+        write_json_atomic(empty_res, roborev_res_src, auto_unbox = TRUE)
       }
       tryCatch(dbDisconnect(rcon3, shutdown = TRUE), error = function(e) NULL)
     } else {
       cat("  -> roborev_review_lifecycle not found; writing empty roborev_resolution.json\n")
-      write_json(empty_res, roborev_res_src, auto_unbox = TRUE)
+      write_json_atomic(empty_res, roborev_res_src, auto_unbox = TRUE)
     }
   } else {
     cat("  -> unified.duckdb not found; will copy committed source\n")
@@ -2402,12 +2457,12 @@ tryCatch({
     cat(sprintf("  -> copied roborev_resolution.json -> vignettes/data/ (%d bytes)\n",
                 file.info(roborev_res_src)$size))
   } else {
-    write_json(empty_res, roborev_res_dst, auto_unbox = TRUE)
+    write_json_atomic(empty_res, roborev_res_dst, auto_unbox = TRUE)
     cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
   }
 }, error = function(e) {
   cat(sprintf("  -> roborev_resolution.json export error: %s\n", conditionMessage(e)))
-  write_json(
+  write_json_atomic(
     list(
       overall = list(total = 0L, resolved = 0L, open = 0L, resolution_rate = 0),
       weekly  = list()
@@ -2446,7 +2501,7 @@ tryCatch({
       if (length(missing_cols) > 0L) {
         cat(sprintf("  -> roborev_agent_performance missing columns: %s; writing empty\n",
                     paste(missing_cols, collapse = ", ")))
-        write_json(empty_ap, ap_src, auto_unbox = TRUE)
+        write_json_atomic(empty_ap, ap_src, auto_unbox = TRUE)
       } else {
         # Aggregate by agent (sum across dates)
         has_cost <- "total_cost_usd" %in% names(ap_raw)
@@ -2499,7 +2554,7 @@ tryCatch({
           agents       = agent_list,
           generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
         )
-        write_json(ap_out, ap_src, auto_unbox = TRUE)
+        write_json_atomic(ap_out, ap_src, auto_unbox = TRUE)
         cat(sprintf(
           "  -> roborev_agent_perf.json: %d agents, runs=%d, top pass-rate=%.1f%% (%s)\n",
           nrow(ap_agg),
@@ -2512,7 +2567,7 @@ tryCatch({
       tryCatch(dbDisconnect(apcon, shutdown = TRUE), error = function(e) NULL)
     } else {
       cat("  -> roborev_agent_performance not found; writing empty roborev_agent_perf.json\n")
-      write_json(empty_ap, ap_src, auto_unbox = TRUE)
+      write_json_atomic(empty_ap, ap_src, auto_unbox = TRUE)
     }
   } else {
     cat("  -> unified.duckdb not found; will copy committed source\n")
@@ -2524,12 +2579,12 @@ tryCatch({
     cat(sprintf("  -> copied roborev_agent_perf.json -> vignettes/data/ (%d bytes)\n",
                 file.info(ap_src)$size))
   } else {
-    write_json(empty_ap, ap_dst, auto_unbox = TRUE)
+    write_json_atomic(empty_ap, ap_dst, auto_unbox = TRUE)
     cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
   }
 }, error = function(e) {
   cat(sprintf("  -> roborev_agent_perf.json export error: %s\n", conditionMessage(e)))
-  write_json(
+  write_json_atomic(
     list(agents = list(), generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
     file.path(out_dir, "roborev_agent_perf.json"),
     auto_unbox = TRUE
@@ -2946,7 +3001,7 @@ tryCatch({
         time_series    = ts_list
       )
 
-      write_json(roborev_latest, roborev_latest_src, auto_unbox = TRUE, null = "null")
+      write_json_atomic(roborev_latest, roborev_latest_src, auto_unbox = TRUE, null = "null")
       cat(sprintf("  -> inst/extdata/roborev_latest.json written (7d: total=%d, closed=%d)\n",
                   windows_out[["7d"]]$total_reviews,
                   windows_out[["7d"]]$total_closed))
@@ -2968,7 +3023,7 @@ tryCatch({
         file.copy(fixture_path_l, roborev_latest_src, overwrite = TRUE)
         cat("  -> copied fixture to inst/extdata/roborev_latest.json\n")
       } else {
-        write_json(empty_latest, roborev_latest_src, auto_unbox = TRUE)
+        write_json_atomic(empty_latest, roborev_latest_src, auto_unbox = TRUE)
         cat("  -> wrote empty placeholder to inst/extdata/roborev_latest.json\n")
       }
     }
@@ -2982,14 +3037,14 @@ tryCatch({
     cat(sprintf("  -> copied inst/extdata/roborev_latest.json -> vignettes/data/roborev/latest.json (%d bytes)\n",
                 file.info(roborev_latest_src)$size))
   } else {
-    write_json(empty_latest, roborev_latest_dst, auto_unbox = TRUE)
+    write_json_atomic(empty_latest, roborev_latest_dst, auto_unbox = TRUE)
     cat("  -> no committed source; wrote empty placeholder to vignettes/data/roborev/latest.json\n")
   }
 }, error = function(e) {
   cat(sprintf("  -> roborev/latest.json export error: %s\n", conditionMessage(e)))
   roborev_latest_dir <- file.path(out_dir, "roborev")
   if (!dir.exists(roborev_latest_dir)) dir.create(roborev_latest_dir, recursive = TRUE)
-  write_json(
+  write_json_atomic(
     list(
       generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
       schema_version = "1.0",
@@ -4773,5 +4828,27 @@ for (f in optional_schema_files) {
   n_opt <- length(parsed)
   cat(sprintf("  QA OK (optional): %s.json (%d rows — empty array is valid)\n", f, n_opt))
 }
+
+# --- last_updated.txt (#264) --------------------------------------------------
+# Written LAST so it reflects a complete (or best-effort) export run.
+# n_predictions and n_sessions are set during the export; fall back to -1 if
+# the relevant section was skipped (CI fallback path, missing data, etc.).
+if (!exists("n_predictions")) n_predictions <- -1L
+if (!exists("n_sessions"))    n_sessions    <- -1L
+writeLines(
+  c(
+    format(Sys.time(), tz = "UTC", usetz = TRUE),
+    sprintf("source_host=%s", Sys.info()[["nodename"]]),
+    sprintf("ccusage_present=%s", as.character(
+      file.exists(file.path(out_dir, "ccusage_blocks.json")) &&
+      file.info(file.path(out_dir, "ccusage_blocks.json"))$size > 50
+    )),
+    sprintf("predictions_n=%d", as.integer(n_predictions)),
+    sprintf("sessions_n=%d",    as.integer(n_sessions))
+  ),
+  file.path(out_dir, "last_updated.txt")
+)
+cat(sprintf("  -> last_updated.txt written (predictions=%d, sessions=%d)\n",
+            n_predictions, n_sessions))
 
 cat("Done. Output in", out_dir, "\n")
