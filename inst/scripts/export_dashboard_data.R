@@ -4750,6 +4750,268 @@ tryCatch({
   )
 })
 
+# --- 8u. Export roborev_fix_timing.json (#273 Q4 — time-to-fix histogram) ------
+# Q4: how long does it take from fix commit to human review closure?
+# Schema: {rows:[{fix_method,hours_fix_to_close}], n_fix_linked, n_manual, n_commit_ref, generated_at}
+# Source: roborev_review_lifecycle WHERE fix_method IN ('manual','commit_reference')
+# AND fix_commit_at IS NOT NULL AND closed_at IS NOT NULL.
+cat("Exporting roborev_fix_timing.json (#273 Q4)...\n")
+tryCatch({
+  rft_src <- file.path(extdata, "roborev_fix_timing.json")
+  rft_dst <- file.path(out_dir, "roborev_fix_timing.json")
+  empty_rft <- list(
+    rows           = list(),
+    n_fix_linked   = 0L,
+    n_manual       = 0L,
+    n_commit_ref   = 0L,
+    generated_at   = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  udb_rft <- path.expand("~/.claude/logs/unified.duckdb")
+  if (file.exists(udb_rft)) {
+    con_rft <- DBI::dbConnect(duckdb::duckdb(), dbdir = udb_rft, read_only = TRUE)
+    on.exit(DBI::dbDisconnect(con_rft, shutdown = TRUE), add = TRUE)
+    rft_tbls <- DBI::dbListTables(con_rft)
+
+    if ("roborev_review_lifecycle" %in% rft_tbls) {
+      rl_rft <- DBI::dbReadTable(con_rft, "roborev_review_lifecycle") |> as_tibble()
+      # Filter to rows with real fix links and both timestamps present
+      rl_rft_f <- rl_rft |>
+        dplyr::filter(
+          fix_method %in% c("manual", "commit_reference"),
+          !is.na(fix_commit_at),
+          !is.na(closed_at)
+        ) |>
+        dplyr::mutate(
+          fix_commit_at_p   = as.POSIXct(fix_commit_at,   tz = "UTC"),
+          closed_at_p       = as.POSIXct(closed_at,       tz = "UTC"),
+          hours_fix_to_close = as.numeric(
+            difftime(closed_at_p, fix_commit_at_p, units = "hours")
+          )
+        ) |>
+        dplyr::select(fix_method, hours_fix_to_close)
+
+      n_fix_linked <- nrow(rl_rft_f)
+      n_manual     <- sum(rl_rft_f$fix_method == "manual",           na.rm = TRUE)
+      n_commit_ref <- sum(rl_rft_f$fix_method == "commit_reference", na.rm = TRUE)
+
+      rows_out <- lapply(seq_len(nrow(rl_rft_f)), function(i) {
+        list(
+          fix_method         = rl_rft_f$fix_method[i],
+          hours_fix_to_close = round(rl_rft_f$hours_fix_to_close[i], 2)
+        )
+      })
+
+      write_json_atomic(
+        list(
+          rows           = rows_out,
+          n_fix_linked   = as.integer(n_fix_linked),
+          n_manual       = as.integer(n_manual),
+          n_commit_ref   = as.integer(n_commit_ref),
+          generated_at   = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        ),
+        rft_src, auto_unbox = TRUE
+      )
+      cat(sprintf("  -> roborev_fix_timing.json written (%d fix-linked rows)\n", n_fix_linked))
+    } else {
+      write_json_atomic(empty_rft, rft_src, auto_unbox = TRUE)
+      cat("  -> roborev_review_lifecycle not found; wrote empty roborev_fix_timing.json\n")
+    }
+  } else {
+    write_json_atomic(empty_rft, rft_src, auto_unbox = TRUE)
+    cat("  -> unified.duckdb not found; wrote empty roborev_fix_timing.json\n")
+  }
+
+  if (file.exists(rft_src)) {
+    file.copy(rft_src, rft_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_fix_timing.json -> vignettes/data/ (%d bytes)\n",
+                file.info(rft_src)$size))
+  } else {
+    write_json_atomic(empty_rft, rft_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_fix_timing.json export error: %s\n", conditionMessage(e)))
+  write_json_atomic(
+    list(rows = list(), n_fix_linked = 0L, n_manual = 0L, n_commit_ref = 0L,
+         generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_fix_timing.json"), auto_unbox = TRUE
+  )
+})
+
+# --- 8v. Export roborev_closure_breakdown.json (#273 Q9 — close-reason split) --
+# Q9: stacked bar by close_reason bucket (fix_linked / autoclose / unknown).
+# Schema: {buckets:[{bucket,n}], n_closed, n_fix_linked, n_autoclose, n_unknown,
+#   fix_linked_pct, autoclose_pct, unknown_pct, generated_at}
+# Source: roborev_review_lifecycle WHERE closed_at IS NOT NULL.
+cat("Exporting roborev_closure_breakdown.json (#273 Q9)...\n")
+tryCatch({
+  rcb_src <- file.path(extdata, "roborev_closure_breakdown.json")
+  rcb_dst <- file.path(out_dir, "roborev_closure_breakdown.json")
+  empty_rcb <- list(
+    buckets        = list(),
+    n_closed       = 0L,
+    n_fix_linked   = 0L,
+    n_autoclose    = 0L,
+    n_unknown      = 0L,
+    fix_linked_pct = 0,
+    autoclose_pct  = 0,
+    unknown_pct    = 0,
+    generated_at   = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  udb_rcb <- path.expand("~/.claude/logs/unified.duckdb")
+  if (file.exists(udb_rcb)) {
+    con_rcb <- DBI::dbConnect(duckdb::duckdb(), dbdir = udb_rcb, read_only = TRUE)
+    on.exit(DBI::dbDisconnect(con_rcb, shutdown = TRUE), add = TRUE)
+    rcb_tbls <- DBI::dbListTables(con_rcb)
+
+    if ("roborev_review_lifecycle" %in% rcb_tbls) {
+      rl_rcb <- DBI::dbReadTable(con_rcb, "roborev_review_lifecycle") |> as_tibble()
+      closed_rcb <- rl_rcb |> dplyr::filter(!is.na(closed_at))
+
+      n_closed     <- nrow(closed_rcb)
+      n_fix_linked <- sum(closed_rcb$fix_method %in% c("manual", "commit_reference"), na.rm = TRUE)
+      n_autoclose  <- sum(closed_rcb$fix_method == "autoclose_severity", na.rm = TRUE)
+      n_unknown    <- sum(closed_rcb$fix_method == "unknown" | is.na(closed_rcb$fix_method), na.rm = FALSE)
+
+      # If fix_method is NA for closed rows, count them as unknown too
+      n_unknown_na  <- sum(is.na(closed_rcb$fix_method))
+      n_unknown_str <- sum(!is.na(closed_rcb$fix_method) & closed_rcb$fix_method == "unknown")
+      n_unknown     <- n_unknown_na + n_unknown_str
+
+      safe_pct <- function(n, d) if (d == 0L) 0 else round(100 * n / d, 1)
+
+      buckets_out <- list(
+        list(bucket = "fix_linked", n = as.integer(n_fix_linked),
+             label = "Closed with fix link (manual + commit_reference)"),
+        list(bucket = "autoclose",  n = as.integer(n_autoclose),
+             label = "Autoclosed (low-severity threshold dismissal)"),
+        list(bucket = "unknown",    n = as.integer(n_unknown),
+             label = "Unknown closure (heuristic fall-through)")
+      )
+
+      write_json_atomic(
+        list(
+          buckets        = buckets_out,
+          n_closed       = as.integer(n_closed),
+          n_fix_linked   = as.integer(n_fix_linked),
+          n_autoclose    = as.integer(n_autoclose),
+          n_unknown      = as.integer(n_unknown),
+          fix_linked_pct = safe_pct(n_fix_linked, n_closed),
+          autoclose_pct  = safe_pct(n_autoclose,  n_closed),
+          unknown_pct    = safe_pct(n_unknown,     n_closed),
+          generated_at   = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        ),
+        rcb_src, auto_unbox = TRUE
+      )
+      cat(sprintf(
+        "  -> roborev_closure_breakdown.json: %d closed (fix=%d, auto=%d, unknown=%d)\n",
+        n_closed, n_fix_linked, n_autoclose, n_unknown
+      ))
+    } else {
+      write_json_atomic(empty_rcb, rcb_src, auto_unbox = TRUE)
+      cat("  -> roborev_review_lifecycle not found; wrote empty roborev_closure_breakdown.json\n")
+    }
+  } else {
+    write_json_atomic(empty_rcb, rcb_src, auto_unbox = TRUE)
+    cat("  -> unified.duckdb not found; wrote empty roborev_closure_breakdown.json\n")
+  }
+
+  if (file.exists(rcb_src)) {
+    file.copy(rcb_src, rcb_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_closure_breakdown.json -> vignettes/data/ (%d bytes)\n",
+                file.info(rcb_src)$size))
+  } else {
+    write_json_atomic(empty_rcb, rcb_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_closure_breakdown.json export error: %s\n", conditionMessage(e)))
+  write_json_atomic(
+    list(buckets = list(), n_closed = 0L, n_fix_linked = 0L, n_autoclose = 0L,
+         n_unknown = 0L, fix_linked_pct = 0, autoclose_pct = 0, unknown_pct = 0,
+         generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_closure_breakdown.json"), auto_unbox = TRUE
+  )
+})
+
+# --- 8w. Export roborev_loop_funnel.json (#273 Q14 — closing-the-loop funnel) --
+# Q14: 4-step funnel: total created → closed → closed with fix → commit_reference only.
+# Schema: {steps:[{step,label,n}], generated_at}
+# Source: roborev_review_lifecycle counts by fixed criteria.
+cat("Exporting roborev_loop_funnel.json (#273 Q14)...\n")
+tryCatch({
+  rlf2_src <- file.path(extdata, "roborev_loop_funnel.json")
+  rlf2_dst <- file.path(out_dir, "roborev_loop_funnel.json")
+  empty_rlf2 <- list(
+    steps        = list(),
+    generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  )
+
+  udb_rlf2 <- path.expand("~/.claude/logs/unified.duckdb")
+  if (file.exists(udb_rlf2)) {
+    con_rlf2 <- DBI::dbConnect(duckdb::duckdb(), dbdir = udb_rlf2, read_only = TRUE)
+    on.exit(DBI::dbDisconnect(con_rlf2, shutdown = TRUE), add = TRUE)
+    rlf2_tbls <- DBI::dbListTables(con_rlf2)
+
+    if ("roborev_review_lifecycle" %in% rlf2_tbls) {
+      rl_rlf2 <- DBI::dbReadTable(con_rlf2, "roborev_review_lifecycle") |> as_tibble()
+
+      n_total      <- nrow(rl_rlf2)
+      n_closed2    <- sum(!is.na(rl_rlf2$closed_at))
+      n_fix_any    <- sum(rl_rlf2$fix_method %in% c("manual", "commit_reference"), na.rm = TRUE)
+      n_commit_ref <- sum(!is.na(rl_rlf2$fix_method) & rl_rlf2$fix_method == "commit_reference")
+
+      steps_out <- list(
+        list(step = 1L, label = "Reviews created (all time)", n = as.integer(n_total)),
+        list(step = 2L, label = "Closed",                     n = as.integer(n_closed2)),
+        list(step = 3L, label = "Closed with explicit fix link (manual + commit_reference)",
+             n = as.integer(n_fix_any)),
+        list(step = 4L, label = "Closed via commit-reference (roborev #N message convention)",
+             n = as.integer(n_commit_ref))
+      )
+
+      write_json_atomic(
+        list(
+          steps        = steps_out,
+          n_total      = as.integer(n_total),
+          n_closed     = as.integer(n_closed2),
+          n_fix_any    = as.integer(n_fix_any),
+          n_commit_ref = as.integer(n_commit_ref),
+          generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        ),
+        rlf2_src, auto_unbox = TRUE
+      )
+      cat(sprintf(
+        "  -> roborev_loop_funnel.json: total=%d closed=%d fix_any=%d commit_ref=%d\n",
+        n_total, n_closed2, n_fix_any, n_commit_ref
+      ))
+    } else {
+      write_json_atomic(empty_rlf2, rlf2_src, auto_unbox = TRUE)
+      cat("  -> roborev_review_lifecycle not found; wrote empty roborev_loop_funnel.json\n")
+    }
+  } else {
+    write_json_atomic(empty_rlf2, rlf2_src, auto_unbox = TRUE)
+    cat("  -> unified.duckdb not found; wrote empty roborev_loop_funnel.json\n")
+  }
+
+  if (file.exists(rlf2_src)) {
+    file.copy(rlf2_src, rlf2_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied roborev_loop_funnel.json -> vignettes/data/ (%d bytes)\n",
+                file.info(rlf2_src)$size))
+  } else {
+    write_json_atomic(empty_rlf2, rlf2_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty placeholder to vignettes/data/\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> roborev_loop_funnel.json export error: %s\n", conditionMessage(e)))
+  write_json_atomic(
+    list(steps = list(), generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")),
+    file.path(out_dir, "roborev_loop_funnel.json"), auto_unbox = TRUE
+  )
+})
+
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
 # ccusage_blocks is intentionally excluded from critical_files: the CI fallback
