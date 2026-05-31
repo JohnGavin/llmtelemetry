@@ -186,13 +186,22 @@ if (!is.null(daily_data) && nrow(daily_data) > 0 && "project" %in% names(daily_d
         )
       )
       agg <- aggregate(agg_formula, data = daily_data, FUN = sum)
-      # Re-attach modelsUsed (concatenate unique models per project-date)
+      # Re-attach modelsUsed (concatenate unique models per project-date).
+      # modelsUsed is a list-column (one character vector per row, set on
+      # line 159 via map(.x, normalize_to_char_vec)). aggregate.formula()
+      # routes through model.frame() which rejects list-columns, so use
+      # dplyr group_by/summarise to preserve the list shape.
       if ("modelsUsed" %in% names(daily_data)) {
-        mu_agg <- aggregate(modelsUsed ~ project + date, data = daily_data,
-                            FUN = function(x) {
-                              all_models <- unlist(x)
-                              unique(all_models[nzchar(all_models)])
-                            })
+        mu_agg <- daily_data |>
+          dplyr::group_by(project, date) |>
+          dplyr::summarise(
+            modelsUsed = list({
+              v <- unlist(modelsUsed)
+              unique(v[nzchar(v)])
+            }),
+            .groups = "drop"
+          ) |>
+          as.data.frame()
         agg <- merge(agg, mu_agg, by = c("project", "date"), all.x = TRUE)
       }
       daily_data <- as_tibble(agg)
