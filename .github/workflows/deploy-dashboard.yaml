@@ -56,6 +56,7 @@ jobs:
             any::rmarkdown
             any::DT
             any::lubridate
+            any::blastula
 
       - uses: quarto-dev/quarto-actions/setup@v2
 
@@ -513,3 +514,49 @@ jobs:
               --body "$BODY" \
               --label "ci-failure"
           fi
+
+      - name: Email on failure — out-of-band notification
+        if: failure()
+        env:
+          GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          REPORT_RECIPIENT: ${{ secrets.REPORT_RECIPIENT }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Best-effort email. The GH-issue alert above is the durable record;
+          # this is the out-of-band push so a human notices in real time.
+          # Failures here MUST NOT fail the job (the deploy is already failed).
+          Rscript -e '
+          tryCatch({
+            library(blastula)
+            issues_url <- paste0("https://github.com/", Sys.getenv("REPO"),
+                                 "/issues?q=is%3Aissue+label%3Aci-failure+state%3Aopen")
+            body <- paste0(
+              "## llmtelemetry — Dashboard deploy failed\n\n",
+              "Run: [", Sys.getenv("RUN_ID"), "](", Sys.getenv("RUN_URL"), ")  \n",
+              "Commit: `", Sys.getenv("COMMIT_SHA"), "`  \n",
+              "Ref: `", Sys.getenv("REF"), "`  \n\n",
+              "Tracking: [open ci-failure issues](", issues_url, ") — see also #263 design issue.\n\n",
+              "See the run log for the failing step."
+            )
+            email <- compose_email(body = md(body))
+            smtp_send(
+              email = email,
+              from = Sys.getenv("GMAIL_USERNAME"),
+              to   = Sys.getenv("REPORT_RECIPIENT"),
+              subject = paste0("[llmtelemetry CI] Dashboard deploy failed run ", Sys.getenv("RUN_ID")),
+              credentials = creds_envvar(
+                user = Sys.getenv("GMAIL_USERNAME"),
+                pass_envvar = "GMAIL_APP_PASSWORD",
+                provider = "gmail"
+              )
+            )
+            cat("Failure email sent to ", Sys.getenv("REPORT_RECIPIENT"), "\n", sep = "")
+          }, error = function(e) {
+            cat("WARN: email step failed: ", conditionMessage(e), "\n", sep = "")
+          })
+          '
