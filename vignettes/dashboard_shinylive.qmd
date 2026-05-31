@@ -1994,6 +1994,82 @@ ui <- page_navbar(
               "Absolute and sensitive filesystem paths stripped before aggregation. ",
               "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
           )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Time-to-Fix After a Real Finding (#146 Q4)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Distribution of time from fix commit to review closure, for reviews with an ",
+                "explicit fix link (", tags$code("fix_method IN ('manual', 'commit_reference')"), "). ",
+                "The fix commit lands first; the reviewer then closes the review — this chart ",
+                "shows how quickly that loop closes. n=", textOutput("rv_q4_n_fix", inline = TRUE),
+                " fix-linked reviews (sparse — will grow as the ",
+                tags$code("roborev #N"), " commit-message convention is adopted, llm#359)."
+              )
+            ),
+            uiOutput("rv_q4_chart"),
+            card_footer(class = "text-muted small",
+              "Horizontal bar chart: count of fix-linked reviews per time-to-close bucket ",
+              "(0–2 h / 2–4 h / 4–8 h / 8–16 h / 16+ h). ",
+              "fix_method='manual': human explicitly closed after reviewing the fix. ",
+              "fix_method='commit_reference': roborev #N notation in commit message. ",
+              "n is sparse (21 as of first ETL run 2026-05-31); will grow as llm#359 lands. ",
+              "Source: roborev_fix_timing.json from roborev_review_lifecycle in unified.duckdb. ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Closure Breakdown — False-Positive Rate (#146 Q9)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Breakdown of all ", textOutput("rv_q9_n_closed", inline = TRUE),
+                " closed reviews by closure reason. ",
+                "Only ", textOutput("rv_q9_fix_linked_pct", inline = TRUE),
+                "% of closures have an explicit fix link — but this is NOT the false-positive rate. ",
+                "The dominant bucket is autoclosed-severity (",
+                textOutput("rv_q9_autoclose_pct", inline = TRUE),
+                "%) — reviews auto-dismissed before human review under the severity threshold ",
+                "(llm#224). The genuinely unclassified bucket is 'unknown' (",
+                textOutput("rv_q9_n_unknown", inline = TRUE),
+                " reviews, ", textOutput("rv_q9_unknown_pct", inline = TRUE),
+                "%) — these represent the real investigation backlog."
+              )
+            ),
+            uiOutput("rv_q9_chart"),
+            card_footer(class = "text-muted small",
+              "Horizontal stacked bar: closed reviews split into fix_linked / autoclose / unknown buckets. ",
+              "fix_linked = close_reason='manual' OR fix_method='commit_reference'. ",
+              "autoclose = fix_method='autoclose_severity' (llm#224 threshold dismissal — not classical false-positives). ",
+              "unknown = fix_method='unknown' or NULL after closure (heuristic fall-through — needs investigation). ",
+              "Source: roborev_closure_breakdown.json from roborev_review_lifecycle in unified.duckdb. ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
+        ),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Closing-the-Loop Funnel (#146 Q14)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "Four-step funnel: how many reviews complete the full loop from creation to an ",
+                "explicit fix commit? Only ", textOutput("rv_q14_commit_ref", inline = TRUE),
+                " reviews have a commit-reference link (the automatic path via ",
+                tags$code("roborev #N"), " in commit messages). The manual path accounts for ",
+                textOutput("rv_q14_fix_any", inline = TRUE),
+                " total fix-linked closures. Funnel narrows sharply at step 3 — growing this ",
+                "number is the goal of llm#359."
+              )
+            ),
+            uiOutput("rv_q14_chart"),
+            card_footer(class = "text-muted small",
+              "Bar chart showing 4 funnel steps: (1) all reviews created, (2) closed, ",
+              "(3) closed with any explicit fix link (manual + commit_reference), ",
+              "(4) closed via commit-reference specifically (roborev #N commit message convention). ",
+              "Steps (3)+(4) are sparse today; will grow as llm#359 lands. ",
+              "Source: roborev_loop_funnel.json from roborev_review_lifecycle in unified.duckdb. ",
+              "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
+          )
         )
       )
     )
@@ -3991,6 +4067,18 @@ server <- function(input, output, session) {
   # Contract: {files:[{file_path,occurrences,distinct_repos,last_seen,n_high,n_medium,n_low}],
   #   n_reviews:int, generated_at}
   roborev_rlf_raw <- load_json("roborev_location_findings.json")
+  # roborev_fix_timing.json — time from fix commit to review closure (#273 Q4).
+  # Contract: {rows:[{fix_method,hours_fix_to_close}], n_fix_linked, n_manual,
+  #   n_commit_ref, generated_at}
+  roborev_rft_raw <- load_json("roborev_fix_timing.json")
+  # roborev_closure_breakdown.json — closure reason split (#273 Q9).
+  # Contract: {buckets:[{bucket,label,n}], n_closed, n_fix_linked, n_autoclose,
+  #   n_unknown, fix_linked_pct, autoclose_pct, unknown_pct, generated_at}
+  roborev_rcb_raw <- load_json("roborev_closure_breakdown.json")
+  # roborev_loop_funnel.json — closing-the-loop funnel (#273 Q14).
+  # Contract: {steps:[{step,label,n}], n_total, n_closed, n_fix_any,
+  #   n_commit_ref, generated_at}
+  roborev_rlf2_raw <- load_json("roborev_loop_funnel.json")
 
   rv_pulse <- if (!is.null(roborev_summary_raw) && is.list(roborev_summary_raw)) {
     roborev_summary_raw$pulse
@@ -5843,6 +5931,300 @@ server <- function(input, output, session) {
       )
     })
     tags$tbody(rows)
+  })
+
+  # --- Q4: Time-to-Fix After a Real Finding (#273) --------------------------------
+  # KPI text: n_fix_linked (for UI prose)
+  output$rv_q4_n_fix <- renderText({
+    raw <- roborev_rft_raw
+    if (is.null(raw) || !is.list(raw)) return("0")
+    v <- raw$n_fix_linked
+    if (is.null(v) || is.na(v)) return("0")
+    as.character(as.integer(v))
+  })
+
+  # Bar chart: count per time-to-close bucket (0–2h, 2–4h, 4–8h, 8–16h, 16+h)
+  output$rv_q4_chart <- renderUI({
+    raw <- roborev_rft_raw
+    if (is.null(raw) || !is.list(raw) || is.null(raw$rows) || length(raw$rows) == 0L)
+      return(ec_empty("No fix-timing data yet — run export_dashboard_data.R to populate roborev_fix_timing.json", h = "260px"))
+
+    # Parse rows
+    rows_df <- if (is.data.frame(raw$rows)) {
+      raw$rows
+    } else {
+      tryCatch(
+        do.call(rbind, lapply(raw$rows, function(r) {
+          data.frame(
+            fix_method         = as.character(r$fix_method),
+            hours_fix_to_close = as.numeric(r$hours_fix_to_close),
+            stringsAsFactors   = FALSE
+          )
+        })),
+        error = function(e) NULL
+      )
+    }
+    if (is.null(rows_df) || nrow(rows_df) == 0L)
+      return(ec_empty("No fix-timing rows available", h = "260px"))
+
+    # Build time buckets
+    bucket_labels <- c("0–2 h", "2–4 h", "4–8 h", "8–16 h", "16+ h")
+    bucket_breaks <- c(-Inf, 2, 4, 8, 16, Inf)
+    rows_df$bucket <- cut(
+      rows_df$hours_fix_to_close,
+      breaks = bucket_breaks,
+      labels = bucket_labels,
+      right  = FALSE
+    )
+    bdf <- as.data.frame(table(bucket = rows_df$bucket))
+    names(bdf) <- c("label", "n")
+    bdf$n <- as.integer(bdf$n)
+
+    n_total <- as.integer(if (!is.null(raw$n_fix_linked)) raw$n_fix_linked else sum(bdf$n))
+    n_manual <- as.integer(if (!is.null(raw$n_manual)) raw$n_manual else 0L)
+    n_cr     <- as.integer(if (!is.null(raw$n_commit_ref)) raw$n_commit_ref else 0L)
+
+    cap_txt <- paste0(
+      "Time from fix commit to review closure. n=", n_total,
+      " reviews with explicit fix link (manual=", n_manual,
+      " + commit_reference=", n_cr,
+      "). Will grow as the roborev #N commit-message convention is adopted (llm#359).",
+      " Source: unified.duckdb roborev_review_lifecycle."
+    )
+
+    ec(list(
+      title   = list(text = cap_txt,
+                     top = "bottom", left = "center",
+                     textStyle = list(color = "#aaa", fontSize = 10, fontWeight = "normal",
+                                      overflow = "breakAll", width = 600)),
+      tooltip = list(trigger = "axis", axisPointer = list(type = "shadow")),
+      grid    = list(left = 70, right = 20, bottom = 90, containLabel = FALSE),
+      xAxis   = list(type = "value", name = "Reviews",
+                     nameLocation = "middle", nameGap = 28,
+                     axisLabel     = list(color = "#ccc"),
+                     nameTextStyle = list(color = "#ccc")),
+      yAxis   = list(type = "category", data = I(bucket_labels),
+                     axisLabel = list(color = "#ccc", fontSize = 12)),
+      series  = list(list(
+        type      = "bar",
+        data      = I(bdf$n),
+        itemStyle = list(color = "#4ea8de"),
+        label     = list(show = TRUE, position = "right",
+                         color = "#ccc", fontSize = 11)
+      ))
+    ), h = "320px",
+    aria_label = paste0(
+      "Horizontal bar chart: count of fix-linked reviews per time-to-close bucket. ",
+      "n=", n_total, " total. Most closures are within 4 hours for manual reviews."
+    ))
+  })
+
+  # --- Q9: Closure Breakdown — False-Positive Rate (#273) -------------------------
+  # KPI text outputs for UI prose
+  output$rv_q9_n_closed <- renderText({
+    raw <- roborev_rcb_raw
+    if (is.null(raw) || !is.list(raw)) return("0")
+    v <- raw$n_closed
+    if (is.null(v) || is.na(v)) return("0")
+    formatC(as.integer(v), format = "d", big.mark = ",")
+  })
+  output$rv_q9_fix_linked_pct <- renderText({
+    raw <- roborev_rcb_raw
+    if (is.null(raw) || !is.list(raw)) return("0")
+    v <- raw$fix_linked_pct
+    if (is.null(v) || is.na(v)) return("0")
+    as.character(round(as.numeric(v), 1))
+  })
+  output$rv_q9_autoclose_pct <- renderText({
+    raw <- roborev_rcb_raw
+    if (is.null(raw) || !is.list(raw)) return("0")
+    v <- raw$autoclose_pct
+    if (is.null(v) || is.na(v)) return("0")
+    as.character(round(as.numeric(v), 1))
+  })
+  output$rv_q9_n_unknown <- renderText({
+    raw <- roborev_rcb_raw
+    if (is.null(raw) || !is.list(raw)) return("0")
+    v <- raw$n_unknown
+    if (is.null(v) || is.na(v)) return("0")
+    formatC(as.integer(v), format = "d", big.mark = ",")
+  })
+  output$rv_q9_unknown_pct <- renderText({
+    raw <- roborev_rcb_raw
+    if (is.null(raw) || !is.list(raw)) return("0")
+    v <- raw$unknown_pct
+    if (is.null(v) || is.na(v)) return("0")
+    as.character(round(as.numeric(v), 1))
+  })
+
+  output$rv_q9_chart <- renderUI({
+    raw <- roborev_rcb_raw
+    if (is.null(raw) || !is.list(raw) || is.null(raw$buckets) || length(raw$buckets) == 0L)
+      return(ec_empty("No closure breakdown data yet — run export_dashboard_data.R to populate roborev_closure_breakdown.json", h = "200px"))
+
+    # Parse buckets
+    bkts <- if (is.data.frame(raw$buckets)) {
+      raw$buckets
+    } else {
+      tryCatch(
+        do.call(rbind, lapply(raw$buckets, function(b) {
+          data.frame(
+            bucket = as.character(b$bucket),
+            label  = as.character(b$label),
+            n      = as.integer(b$n),
+            stringsAsFactors = FALSE
+          )
+        })),
+        error = function(e) NULL
+      )
+    }
+    if (is.null(bkts) || nrow(bkts) == 0L)
+      return(ec_empty("Closure breakdown data malformed", h = "200px"))
+
+    n_closed    <- as.integer(if (!is.null(raw$n_closed))   raw$n_closed   else sum(bkts$n))
+    n_fix       <- as.integer(if (!is.null(raw$n_fix_linked)) raw$n_fix_linked else 0L)
+    n_auto      <- as.integer(if (!is.null(raw$n_autoclose)) raw$n_autoclose else 0L)
+    n_unk       <- as.integer(if (!is.null(raw$n_unknown))   raw$n_unknown  else 0L)
+
+    fix_pct  <- if (n_closed > 0L) round(100 * n_fix  / n_closed, 1) else 0
+    auto_pct <- if (n_closed > 0L) round(100 * n_auto / n_closed, 1) else 0
+    unk_pct  <- if (n_closed > 0L) round(100 * n_unk  / n_closed, 1) else 0
+
+    # Single stacked horizontal bar: one bar at y = "Closed reviews"
+    ec(list(
+      tooltip = list(trigger = "axis", axisPointer = list(type = "shadow")),
+      legend  = list(
+        data   = I(c("Fix-linked", "Autoclosed", "Unknown")),
+        bottom = 0,
+        textStyle = list(color = "#ccc")
+      ),
+      grid = list(left = 140, right = 20, bottom = 60, containLabel = FALSE),
+      xAxis = list(type = "value", name = paste0("Reviews (total closed: ", formatC(n_closed, format = "d", big.mark = ","), ")"),
+                   nameLocation = "middle", nameGap = 32,
+                   axisLabel     = list(color = "#ccc"),
+                   nameTextStyle = list(color = "#ccc")),
+      yAxis = list(type = "category", data = I(c("Closed reviews")),
+                   axisLabel = list(color = "#ccc", fontSize = 12)),
+      series = list(
+        list(name = "Fix-linked",
+             type = "bar", stack = "total",
+             data = I(list(n_fix)),
+             itemStyle = list(color = "#69d4a0"),
+             label = list(show = TRUE, formatter = paste0(fix_pct, "%"),
+                          color = "#000", fontSize = 11)),
+        list(name = "Autoclosed",
+             type = "bar", stack = "total",
+             data = I(list(n_auto)),
+             itemStyle = list(color = "#ffd93d"),
+             label = list(show = TRUE, formatter = paste0(auto_pct, "%"),
+                          color = "#000", fontSize = 11)),
+        list(name = "Unknown",
+             type = "bar", stack = "total",
+             data = I(list(n_unk)),
+             itemStyle = list(color = "#f08080"),
+             label = list(show = TRUE, formatter = paste0(unk_pct, "%"),
+                          color = "#000", fontSize = 11))
+      )
+    ), h = "200px",
+    aria_label = paste0(
+      "Stacked horizontal bar: ", formatC(n_closed, format="d", big.mark=","),
+      " closed reviews split into fix-linked (", fix_pct, "%, n=", n_fix,
+      "), autoclosed (", auto_pct, "%, n=", n_auto,
+      "), and unknown (", unk_pct, "%, n=", n_unk, ")."
+    ))
+  })
+
+  # --- Q14: Closing-the-Loop Funnel (#273) -----------------------------------------
+  # KPI text for UI prose
+  output$rv_q14_fix_any <- renderText({
+    raw <- roborev_rlf2_raw
+    if (is.null(raw) || !is.list(raw)) return("0")
+    v <- raw$n_fix_any
+    if (is.null(v) || is.na(v)) return("0")
+    as.character(as.integer(v))
+  })
+  output$rv_q14_commit_ref <- renderText({
+    raw <- roborev_rlf2_raw
+    if (is.null(raw) || !is.list(raw)) return("0")
+    v <- raw$n_commit_ref
+    if (is.null(v) || is.na(v)) return("0")
+    as.character(as.integer(v))
+  })
+
+  output$rv_q14_chart <- renderUI({
+    raw <- roborev_rlf2_raw
+    if (is.null(raw) || !is.list(raw) || is.null(raw$steps) || length(raw$steps) == 0L)
+      return(ec_empty("No funnel data yet — run export_dashboard_data.R to populate roborev_loop_funnel.json", h = "280px"))
+
+    # Parse steps
+    sdf <- if (is.data.frame(raw$steps)) {
+      raw$steps
+    } else {
+      tryCatch(
+        do.call(rbind, lapply(raw$steps, function(s) {
+          data.frame(
+            step  = as.integer(s$step),
+            label = as.character(s$label),
+            n     = as.integer(s$n),
+            stringsAsFactors = FALSE
+          )
+        })),
+        error = function(e) NULL
+      )
+    }
+    if (is.null(sdf) || nrow(sdf) == 0L)
+      return(ec_empty("Funnel data malformed", h = "280px"))
+
+    sdf <- sdf[order(sdf$step), ]
+    n_total <- as.integer(if (!is.null(raw$n_total)) raw$n_total else sdf$n[1])
+    n_fix   <- as.integer(if (!is.null(raw$n_fix_any))    raw$n_fix_any    else 0L)
+    n_cr    <- as.integer(if (!is.null(raw$n_commit_ref)) raw$n_commit_ref else 0L)
+
+    # Colour: step 1+2 = neutral blue; step 3+4 = green (goal states)
+    bar_colours <- c("#4ea8de", "#5edaff", "#69d4a0", "#98d8c8")
+
+    series_data <- lapply(seq_len(nrow(sdf)), function(i) {
+      list(
+        value     = sdf$n[i],
+        itemStyle = list(color = bar_colours[min(i, length(bar_colours))])
+      )
+    })
+
+    ec(list(
+      tooltip = list(
+        trigger = "axis",
+        axisPointer = list(type = "shadow"),
+        formatter = DT::JS(
+          "function(params) {",
+          "  var d = params[0];",
+          "  return d.name + '<br/>' + d.value.toLocaleString() + ' reviews';",
+          "}"
+        )
+      ),
+      grid = list(left = 20, right = 20, bottom = 20, top = 20, containLabel = TRUE),
+      xAxis = list(type = "value", show = FALSE),
+      yAxis = list(
+        type      = "category",
+        data      = I(rev(sdf$label)),
+        axisLabel = list(color = "#ccc", fontSize = 11,
+                         overflow = "breakAll", width = 400)
+      ),
+      series = list(list(
+        type      = "bar",
+        data      = I(rev(series_data)),
+        label     = list(show = TRUE, position = "right",
+                         color = "#ccc", fontSize = 11,
+                         formatter = DT::JS("function(p){return p.value.toLocaleString();}")),
+        barMaxWidth = 40
+      ))
+    ), h = "300px",
+    aria_label = paste0(
+      "Horizontal bar chart showing 4 funnel steps: ",
+      formatC(n_total, format="d", big.mark=","), " reviews created; ",
+      formatC(as.integer(if (!is.null(raw$n_closed)) raw$n_closed else 0L), format="d", big.mark=","), " closed; ",
+      n_fix, " closed with explicit fix link; ",
+      n_cr, " closed via commit-reference convention."
+    ))
   })
 }
 
