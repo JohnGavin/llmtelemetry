@@ -1036,6 +1036,15 @@ if (!has_data) {
     <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d &nbsp; <span style="font-size:9px; color:%s;">[issues filed: %d]</span></td>
   </tr>
 </table>
+<p style="font-size: 9px; color: %s; margin-top: 4px; line-height: 1.5;">
+  <strong>New findings:</strong> roborev review rows inserted in the last 24&nbsp;h (review_started_at &ge; now &minus; 24h).<br>
+  <strong>Resolved:</strong> reviews closed via fix-commit link (<code>fix_commit_sha IS NOT NULL</code>) in the last 24&nbsp;h.<br>
+  <strong>Open total (since inception):</strong> cumulative open reviews (state &ne; closed and not resolved).<br>
+  <strong>Active loops (Tier&nbsp;2+) / Stuck loops (Tier&nbsp;3, no ack):</strong>
+  <!-- TODO(llmtelemetry#277): link to loop-monitor tier definitions once rule doc path confirmed.
+       Placeholder: Tier definitions — see ~/.claude/rules/<loop-monitor-rule> -->
+  loop-monitor tiers — Tier&nbsp;2 = repeated finding without fix; Tier&nbsp;3 = escalated with no acknowledgement.
+</p>
 <!-- QA:roborev_section=1 -->',
           accent_orange, accent_orange, dark_border, dark_border,
           dark_card,    dark_border, dark_text, dark_border, dark_text, n_new_24h,
@@ -1044,7 +1053,8 @@ if (!has_data) {
           dark_row_alt, dark_border, dark_text, dark_border, dark_text, n_loops,
           dark_card,    dark_border, dark_text, dark_border,
           if (n_esc > 0) "#ff5555" else dark_text,
-          n_esc, dark_muted, n_esc_fil
+          n_esc, dark_muted, n_esc_fil,
+          dark_muted  # caption <p> color
         )
       }
     }
@@ -1085,9 +1095,9 @@ if (!has_data) {
       limits_html <- ""
       if (!is.null(usage_tbl) && nrow(usage_tbl) > 0) {
         limits_html <- sprintf(
-          '\n<h4 style="color: %s; margin-top: 0; margin-bottom: 6px;">Live rate-limit windows</h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Provider</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Window</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Used %%</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Window (min)</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Resets at</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Credits left</th>\n  </tr>',
+          '\n<h4 style="color: %s; margin-top: 0; margin-bottom: 6px;">Live rate-limit windows</h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Provider</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Window (length)</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Used %%</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Window (min)</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Resets at</th>\n  </tr>\n  <!-- Credits-left column dropped 2026-05-31 — provider does not expose. See llmtelemetry#277 -->',
           accent_purple, accent_purple,
-          dark_border, dark_border, dark_border, dark_border, dark_border, dark_border)
+          dark_border, dark_border, dark_border, dark_border, dark_border)
 
         for (ri in seq_len(nrow(usage_tbl))) {
           bg_r <- if (ri %% 2 == 0) dark_row_alt else dark_card
@@ -1096,9 +1106,16 @@ if (!has_data) {
           } else if (!is.na(usage_tbl$used_pct[ri]) && usage_tbl$used_pct[ri] >= 50) {
             accent_orange
           } else accent_green
-          cred_str <- if (!is.na(usage_tbl$credits_remaining[ri])) {
-            dollar(usage_tbl$credits_remaining[ri])
-          } else "-"
+          # Derive human-readable window-length label from window_minutes
+          # (300 -> "5h", 1440 -> "24h", 10080 -> "7d", other -> "${N}m")
+          win_label <- {
+            wm <- usage_tbl$window_minutes[ri]
+            if (is.na(wm)) "-"
+            else if (wm == 300L)   "5h"
+            else if (wm == 1440L)  "24h"
+            else if (wm == 10080L) "7d"
+            else                   paste0(wm, "m")
+          }
           used_str <- if (!is.na(usage_tbl$used_pct[ri])) {
             sprintf("%.1f%%", usage_tbl$used_pct[ri])
           } else "-"
@@ -1111,16 +1128,25 @@ if (!has_data) {
           }, error = function(e) as.character(usage_tbl$resets_at[ri]))
 
           limits_html <- paste0(limits_html, sprintf(
-            '\n  <tr style="background-color: %s;">\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n  </tr>',
+            '\n  <tr style="background-color: %s;">\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n  </tr>',
             bg_r,
             dark_border, dark_text,    as.character(usage_tbl$provider[ri]),
-            dark_border, dark_muted,   as.character(usage_tbl$limit_window[ri]),
+            dark_border, dark_muted,   win_label,
             dark_border, used_col,     used_str,
             dark_border, dark_text,    win_str,
-            dark_border, dark_muted,   reset_str,
-            dark_border, accent_green, cred_str))
+            dark_border, dark_muted,   reset_str))
         }
-        limits_html <- paste0(limits_html, "\n</table>")
+        limits_html <- paste0(limits_html, sprintf(
+          "\n</table>\n<p style=\"font-size: 9px; color: %s; margin-top: 4px; line-height: 1.5;\">",
+          dark_muted),
+          "Window length is the rolling-window size the provider rate-limits against. ",
+          "<code>Used %%</code> is consumption within that window. ",
+          "<code>Resets at</code> is when the window slides forward (UTC). ",
+          "If <code>Used %% &gt; 80</code>, expect throttling within ",
+          "<code>Window (min) &times; (1 &minus; Used %%)</code> minutes.",
+          "</p>",
+          "<!-- QA:gemini_primary_100pct_seen_2026-05-30 — see llmtelemetry#277 §2 for triage -->"
+        )
       }
 
       # --- Staleness check (#281 Phase 1c) ---
