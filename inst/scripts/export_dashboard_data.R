@@ -4814,12 +4814,10 @@ tryCatch({
       )
       cat(sprintf("  -> roborev_fix_timing.json written (%d fix-linked rows)\n", n_fix_linked))
     } else {
-      write_json_atomic(empty_rft, rft_src, auto_unbox = TRUE)
-      cat("  -> roborev_review_lifecycle not found; wrote empty roborev_fix_timing.json\n")
+      cat("  -> roborev_review_lifecycle not found; will copy committed source\n")
     }
   } else {
-    write_json_atomic(empty_rft, rft_src, auto_unbox = TRUE)
-    cat("  -> unified.duckdb not found; wrote empty roborev_fix_timing.json\n")
+    cat("  -> unified.duckdb not found; will copy committed source\n")
   }
 
   if (file.exists(rft_src)) {
@@ -4910,12 +4908,10 @@ tryCatch({
         n_closed, n_fix_linked, n_autoclose, n_unknown
       ))
     } else {
-      write_json_atomic(empty_rcb, rcb_src, auto_unbox = TRUE)
-      cat("  -> roborev_review_lifecycle not found; wrote empty roborev_closure_breakdown.json\n")
+      cat("  -> roborev_review_lifecycle not found; will copy committed source\n")
     }
   } else {
-    write_json_atomic(empty_rcb, rcb_src, auto_unbox = TRUE)
-    cat("  -> unified.duckdb not found; wrote empty roborev_closure_breakdown.json\n")
+    cat("  -> unified.duckdb not found; will copy committed source\n")
   }
 
   if (file.exists(rcb_src)) {
@@ -4988,12 +4984,10 @@ tryCatch({
         n_total, n_closed2, n_fix_any, n_commit_ref
       ))
     } else {
-      write_json_atomic(empty_rlf2, rlf2_src, auto_unbox = TRUE)
-      cat("  -> roborev_review_lifecycle not found; wrote empty roborev_loop_funnel.json\n")
+      cat("  -> roborev_review_lifecycle not found; will copy committed source\n")
     }
   } else {
-    write_json_atomic(empty_rlf2, rlf2_src, auto_unbox = TRUE)
-    cat("  -> unified.duckdb not found; wrote empty roborev_loop_funnel.json\n")
+    cat("  -> unified.duckdb not found; will copy committed source\n")
   }
 
   if (file.exists(rlf2_src)) {
