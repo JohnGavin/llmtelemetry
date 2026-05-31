@@ -158,7 +158,7 @@ jobs:
             fi
             cp "$PARQUET_SRC" "$PARQUET_DST"
             echo "Staged $PARQUET_SRC -> $PARQUET_DST (${SIZE} bytes)"
-          done"
+          done
 
       - name: Prepare pages artifact
         run: |
@@ -387,7 +387,7 @@ jobs:
               exit 1
             fi
             echo "OK: ${PARQUET_URL} — HTTP 200, ${DEPLOYED_SIZE} bytes"
-          done"
+          done
 
       - name: Verify deployment
         run: |
