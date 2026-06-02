@@ -785,6 +785,94 @@ test_that("unified_costs.json parses as a flat array (data.frame)", {
   )
 })
 
+test_that("unified_costs.json has Phase 2c columns (primary, cross_check, deficit_pct)", {
+  # (#281 Phase 2c): unified_costs.json is enriched with CodexBar primary total,
+  # ccusage cross-check total, and deficit_pct. These columns may be NA when
+  # CodexBar data is absent (CI), but they MUST be present in the schema.
+  path <- extdata_path("unified_costs.json")
+  skip_if(!nzchar(path), "unified_costs.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  if (!is.data.frame(result) || nrow(result) == 0L)
+    skip("unified_costs.json is empty — Phase 2c columns cannot be validated")
+  required_cols <- c("primary", "cross_check", "deficit_pct")
+  expect_true(
+    all(required_cols %in% names(result)),
+    info = paste(
+      "Phase 2c columns missing from unified_costs.json.",
+      "Run export_dashboard_data.R locally to regenerate.",
+      "Missing:", paste(setdiff(required_cols, names(result)), collapse = ", ")
+    )
+  )
+})
+
+test_that("unified_costs.json deficit_pct column is numeric or all-NA", {
+  # When all values are null in JSON (no CodexBar data for committed date range),
+  # fromJSON returns a logical NA vector. Both numeric and all-NA logical are valid.
+  path <- extdata_path("unified_costs.json")
+  skip_if(!nzchar(path), "unified_costs.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  if (!is.data.frame(result) || nrow(result) == 0L ||
+      !"deficit_pct" %in% names(result))
+    skip("unified_costs.json empty or missing deficit_pct — checked in sibling test")
+  col <- result$deficit_pct
+  all_na <- all(is.na(col))
+  expect_true(
+    is.numeric(col) || all_na,
+    info = paste("deficit_pct must be numeric or all-NA.",
+                 "Got class:", class(col),
+                 "All-NA:", all_na)
+  )
+  if (is.numeric(col)) {
+    non_na <- col[!is.na(col)]
+    if (length(non_na) > 0L)
+      expect_true(all(non_na > -200 & non_na < 500),
+                  info = "deficit_pct out of reasonable range (-200 to 500%)")
+  }
+})
+
+test_that("unified_costs.json primary column is numeric or all-NA", {
+  # Same null→logical coercion caveat as deficit_pct test above.
+  path <- extdata_path("unified_costs.json")
+  skip_if(!nzchar(path), "unified_costs.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  if (!is.data.frame(result) || nrow(result) == 0L ||
+      !"primary" %in% names(result))
+    skip("unified_costs.json empty or missing primary — checked in sibling test")
+  col <- result$primary
+  all_na <- all(is.na(col))
+  expect_true(
+    is.numeric(col) || all_na,
+    info = paste("primary must be numeric (CodexBar daily total) or all-NA (no CodexBar data).",
+                 "Got class:", class(col))
+  )
+  if (is.numeric(col)) {
+    non_na <- col[!is.na(col)]
+    if (length(non_na) > 0L)
+      expect_true(all(non_na >= 0), info = "primary (CodexBar cost) must be >= 0")
+  }
+})
+
+test_that("unified_costs.json export script adds Phase 2c enrichment block", {
+  # Verify that export_dashboard_data.R contains the Phase 2c deficit_pct join.
+  # This is a script-level smoke test: if someone removes the enrichment block
+  # the schema test above will fail, but this test catches it at the source.
+  script_path <- system.file("scripts", "export_dashboard_data.R",
+                             package = "llmtelemetry")
+  skip_if(!nzchar(script_path), "export_dashboard_data.R not installed")
+  lines <- readLines(script_path)
+  non_comment <- grep("^\\s*#", lines, invert = TRUE, value = TRUE)
+  expect_true(
+    any(grepl("deficit_pct", non_comment)),
+    info = paste("export_dashboard_data.R does not compute deficit_pct.",
+                 "Phase 2c enrichment block missing from section 8.")
+  )
+  expect_true(
+    any(grepl("cross_check", non_comment)),
+    info = paste("export_dashboard_data.R does not add cross_check column.",
+                 "Phase 2c enrichment block missing from section 8.")
+  )
+})
+
 # ── 13. export_dashboard_data.R script references legacy_ccusage filenames (2b) ──
 
 test_that("export_dashboard_data.R writes legacy_ccusage_daily.json not ccusage_daily.json to vignettes/data", {

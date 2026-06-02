@@ -1404,13 +1404,73 @@ if (file.exists(unified_db)) {
   n_sessions <- nrow(u_sess_pub)  # #264: track for last_updated.txt
   cat(sprintf("  -> %d sessions (written to inst/extdata + vignettes/data)\n", nrow(u_sess_pub)))
 
-  u_costs <- dbReadTable(ucon, "costs") |>
+  u_costs_raw <- dbReadTable(ucon, "costs") |>
     as_tibble() |>
     mutate(date = as.character(date),
-           across(where(is.numeric), \(x) round(x, 2)))
+           across(where(is.numeric), \(x) round(x, 4)))
+
+  # --- Phase 2c: enrich unified_costs with CodexBar primary + deficit_pct -----
+  # cross_check = ccusage total_cost (from unified.duckdb costs table)
+  # primary     = CodexBar daily total (sum over models from codexbar_cost_per_day.json)
+  # deficit_pct = (primary - cross_check) / cross_check * 100
+  #               positive = CodexBar reports more spend than ccusage (expected gap)
+  #               negative = ccusage reports more (anomaly worth investigating)
+  u_costs <- tryCatch({
+    cb_daily_path <- file.path(extdata, "codexbar_cost_per_day.json")
+    if (file.exists(cb_daily_path) && nrow(u_costs_raw) > 0L) {
+      cb_day_df <- jsonlite::fromJSON(cb_daily_path, simplifyDataFrame = TRUE)
+      if (is.data.frame(cb_day_df) && nrow(cb_day_df) > 0L &&
+          "cost_usd" %in% names(cb_day_df) && "date" %in% names(cb_day_df)) {
+        # Aggregate CodexBar to one row per date (sum over models)
+        cb_totals <- aggregate(cost_usd ~ date, data = cb_day_df, FUN = sum, na.rm = TRUE)
+        names(cb_totals)[2] <- "primary"
+        # Join with ccusage costs; non-matching dates get NA primary
+        merged <- merge(u_costs_raw, cb_totals, by = "date", all.x = TRUE)
+        # cross_check = total_cost from unified.duckdb (ccusage-sourced)
+        if ("total_cost" %in% names(merged)) {
+          merged$cross_check <- merged$total_cost
+          merged$deficit_pct <- ifelse(
+            !is.na(merged$cross_check) & merged$cross_check != 0 &
+              !is.na(merged$primary),
+            round((merged$primary - merged$cross_check) / merged$cross_check * 100, 1),
+            NA_real_
+          )
+        } else {
+          merged$cross_check <- NA_real_
+          merged$deficit_pct <- NA_real_
+        }
+        # Round all numeric to 4dp except deficit_pct (1dp above)
+        merged <- merged |>
+          mutate(across(c(primary, cross_check), \(x) round(x, 4)))
+        merged
+      } else {
+        # CodexBar file empty or wrong schema: add NA columns
+        u_costs_raw$primary     <- NA_real_
+        u_costs_raw$cross_check <- if ("total_cost" %in% names(u_costs_raw))
+          u_costs_raw$total_cost else NA_real_
+        u_costs_raw$deficit_pct <- NA_real_
+        u_costs_raw
+      }
+    } else {
+      u_costs_raw$primary     <- NA_real_
+      u_costs_raw$cross_check <- if ("total_cost" %in% names(u_costs_raw))
+        u_costs_raw$total_cost else NA_real_
+      u_costs_raw$deficit_pct <- NA_real_
+      u_costs_raw
+    }
+  }, error = function(e) {
+    message(sprintf("  WARN: Phase 2c deficit_pct join failed: %s", conditionMessage(e)))
+    u_costs_raw$primary     <- NA_real_
+    u_costs_raw$cross_check <- if ("total_cost" %in% names(u_costs_raw))
+      u_costs_raw$total_cost else NA_real_
+    u_costs_raw$deficit_pct <- NA_real_
+    u_costs_raw
+  })
+
   write_json_atomic(u_costs, file.path(extdata, "unified_costs.json"), auto_unbox = TRUE)
   write_json_atomic(u_costs, file.path(out_dir, "unified_costs.json"), auto_unbox = TRUE)
-  cat(sprintf("  -> %d cost rows (written to inst/extdata + vignettes/data)\n", nrow(u_costs)))
+  cat(sprintf("  -> %d cost rows with primary/cross_check/deficit_pct (written to inst/extdata + vignettes/data)\n",
+              nrow(u_costs)))
 } else {
   # CI fallback: copy from inst/extdata/ to vignettes/data/
   for (f in c("unified_sessions.json", "unified_costs.json")) {
