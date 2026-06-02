@@ -14,6 +14,39 @@ utils::globalVariables(c(
 ))
 
 # ---------------------------------------------------------------------------
+# codexbar_updated_at_is_stale
+# ---------------------------------------------------------------------------
+
+#' Test whether a CodexBar \code{updated_at} timestamp is stale
+#'
+#' Returns \code{TRUE} when the timestamp is more than \code{threshold_hours}
+#' hours before \code{now}.  Returns \code{FALSE} for \code{NA}, \code{NULL},
+#' or an unparseable string — callers should treat \emph{unknown} freshness as
+#' fresh rather than silently suppressing data.
+#'
+#' @param updated_at Character(1) or \code{NULL}.  ISO-8601 timestamp from a
+#'   CodexBar \code{updated_at} field.
+#' @param now A \code{POSIXct} value representing the current time.  Defaults
+#'   to \code{Sys.time()}.  Pass an explicit value in tests for
+#'   deterministic results.
+#' @param threshold_hours Numeric(1).  Staleness threshold in hours.  Default
+#'   is 6.
+#' @return \code{TRUE} if the gap between \code{updated_at} and \code{now}
+#'   exceeds \code{threshold_hours}; \code{FALSE} otherwise.
+#' @export
+codexbar_updated_at_is_stale <- function(
+    updated_at,
+    now              = Sys.time(),
+    threshold_hours  = 6
+) {
+  if (is.null(updated_at) || length(updated_at) == 0L) return(FALSE)
+  if (is.na(updated_at))                                return(FALSE)
+  ts <- .parse_iso8601_posix(updated_at)
+  if (is.na(ts)) return(FALSE)
+  as.numeric(difftime(now, ts, units = "hours")) > threshold_hours
+}
+
+# ---------------------------------------------------------------------------
 # parse_codexbar_usage
 # ---------------------------------------------------------------------------
 
@@ -109,12 +142,21 @@ parse_codexbar_usage <- function(
     purrr::map_dfr(window_names, function(wname) {
       win <- usage[[wname]]
       if (is.null(win)) return(NULL)
+      resets_at_str <- as.character(win[["resetsAt"]] %||% NA_character_)
+      # Sentinel filter (#277 sub-task C): drop windows where resetsAt is before
+      # 2000-01-01.  The epoch (1970-01-01) and similar placeholder values
+      # indicate CodexBar has no valid window data for this slot.
+      .sentinel_cutoff <- as.POSIXct("2000-01-01", tz = "UTC")
+      if (!is.na(resets_at_str)) {
+        resets_ts <- .parse_iso8601_posix(resets_at_str)
+        if (!is.na(resets_ts) && resets_ts < .sentinel_cutoff) return(NULL)
+      }
       tibble::tibble(
         provider          = as.character(pname),
         limit_window      = wname,
         used_pct          = as.numeric(win[["usedPercent"]]    %||% NA_real_),
         window_minutes    = as.integer(win[["windowMinutes"]]  %||% NA_integer_),
-        resets_at         = as.character(win[["resetsAt"]]     %||% NA_character_),
+        resets_at         = resets_at_str,
         credits_remaining = credits_rem,
         source            = as.character(psrc),
         updated_at        = upd_at
@@ -255,8 +297,25 @@ parse_codexbar_cost <- function(
 }
 
 # ---------------------------------------------------------------------------
-# Internal helper — NULL-coalescing operator (not imported from rlang to keep
-# the dependency surface small).
+# Internal helpers
 # ---------------------------------------------------------------------------
 
+# NULL-coalescing operator (not imported from rlang to keep the dependency
+# surface small).
 `%||%` <- function(x, y) if (!is.null(x) && length(x) > 0L && !is.na(x[1L])) x else y
+
+# Parse an ISO-8601 string (e.g. "2026-05-25T09:00:00Z") to POSIXct.
+# Returns NA_real_ (as POSIXct) when the string cannot be parsed.
+# Uses strptime with an explicit format to avoid lubridate dependency.
+.parse_iso8601_posix <- function(s) {
+  if (is.null(s) || length(s) == 0L || is.na(s)) return(as.POSIXct(NA))
+  # Try the most common forms: with Z suffix, with +00:00 offset, or without tz.
+  for (fmt in c("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S")) {
+    ts <- tryCatch(
+      as.POSIXct(strptime(s, fmt, tz = "UTC")),
+      error = function(e) as.POSIXct(NA)
+    )
+    if (!is.na(ts)) return(ts)
+  }
+  as.POSIXct(NA)
+}

@@ -241,3 +241,98 @@ test_that("cost fixture passes verify_no_pii_leak (cost has no PII)", {
     message = "Cost fixture must pass verify_no_pii_leak without error"
   )
 })
+
+# ---------------------------------------------------------------------------
+# 5. Sentinel filter — resetsAt < 2000-01-01 treated as missing (#277 sub-task C)
+# ---------------------------------------------------------------------------
+
+test_that("parse_codexbar_usage filters out windows with epoch-sentinel resetsAt", {
+  # Fixture: claude has primary (resetsAt = 1970-01-01, sentinel) + secondary (valid).
+  # Sentinel window must be dropped; secondary must survive.
+  result <- parse_codexbar_usage(fixture_path("codexbar_usage_sentinel_fixture.json"))
+
+  expect_s3_class(result, "tbl_df")
+
+  # Primary window has sentinel resetsAt — must be absent from output
+  sentinel_row <- result[result$provider == "claude" &
+                           result$limit_window == "primary", ]
+  expect_equal(nrow(sentinel_row), 0L,
+               label = "Sentinel window (resetsAt 1970) must be filtered out")
+
+  # Secondary window has a valid resetsAt — must be present
+  secondary_row <- result[result$provider == "claude" &
+                            result$limit_window == "secondary", ]
+  expect_equal(nrow(secondary_row), 1L,
+               label = "Valid secondary window must survive the sentinel filter")
+})
+
+test_that("parse_codexbar_usage returns empty tibble when all windows are sentinels", {
+  # Build a minimal in-memory JSON where the single window is a sentinel.
+  tmp <- tempfile(fileext = ".json")
+  on.exit(unlink(tmp))
+  writeLines('[
+    {
+      "provider": "claude",
+      "source": "api",
+      "usage": {
+        "primary": {
+          "usedPercent": 99,
+          "windowMinutes": 60,
+          "resetsAt": "1999-12-31T23:59:59Z"
+        },
+        "updatedAt": "2026-01-01T00:00:00Z"
+      },
+      "credits": { "remaining": 0 }
+    }
+  ]', tmp)
+
+  result <- parse_codexbar_usage(tmp)
+  expect_equal(nrow(result), 0L,
+               label = "All-sentinel input must return zero-row tibble")
+})
+
+# ---------------------------------------------------------------------------
+# 6. Staleness check — codexbar_updated_at_is_stale() helper (#281 Phase 1c)
+# ---------------------------------------------------------------------------
+
+test_that("codexbar_updated_at_is_stale returns TRUE when updated_at is 7h old", {
+  # Use a fake "now" exactly 7 hours after the given timestamp.
+  # as.POSIXct() with space separator is reliably parsed by base R.
+  updated_at_str <- "2026-05-25T02:00:00Z"
+  fake_now <- as.POSIXct("2026-05-25 09:00:00", tz = "UTC")
+
+  expect_true(
+    codexbar_updated_at_is_stale(updated_at_str, now = fake_now),
+    label = "7h gap must be flagged as stale (threshold 6h)"
+  )
+})
+
+test_that("codexbar_updated_at_is_stale returns FALSE when updated_at is 5h old", {
+  updated_at_str <- "2026-05-25T04:00:00Z"
+  fake_now <- as.POSIXct("2026-05-25 09:00:00", tz = "UTC")
+
+  expect_false(
+    codexbar_updated_at_is_stale(updated_at_str, now = fake_now),
+    label = "5h gap must NOT be flagged as stale (threshold 6h)"
+  )
+})
+
+test_that("codexbar_updated_at_is_stale returns FALSE for NA/missing updated_at", {
+  # NA updated_at: cannot determine staleness — conservatively return FALSE
+  # so callers don't suppress valid data.
+  expect_false(
+    codexbar_updated_at_is_stale(NA_character_),
+    label = "NA updated_at must not be flagged stale"
+  )
+  expect_false(
+    codexbar_updated_at_is_stale(NULL),
+    label = "NULL updated_at must not be flagged stale"
+  )
+})
+
+test_that("codexbar_updated_at_is_stale returns FALSE for unparseable string", {
+  expect_false(
+    codexbar_updated_at_is_stale("not-a-date"),
+    label = "Unparseable updated_at must not be flagged stale"
+  )
+})
