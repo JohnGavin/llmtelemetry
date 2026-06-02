@@ -5006,6 +5006,107 @@ tryCatch({
   )
 })
 
+# --- 8z. Export self_review_findings.json (#207) ------------------------------
+# Source: self_review_findings_stage1 table in ~/.claude/logs/unified.duckdb
+# Contract: [{finding_id, finding_type, severity, date, evidence_summary}]
+#   - finding_id:      opaque identifier (no session path leak)
+#   - finding_type:    e.g. "stuck_loop", "high_tool_error_rate"
+#   - severity:        "critical" | "major" | "minor"
+#   - date:            YYYY-MM-DD from detected_at (no sub-second timestamp)
+#   - evidence_summary: sanitised subset of evidence JSON (no project names,
+#                       no raw session_id, no filesystem paths)
+#
+# Privacy: session_id is dropped; evidence fields that could carry project names
+# (agent_type, status, call_count, first_call, last_last) are kept because they
+# are generic operational fields without project identifiers.  The "day" field
+# in high_tool_error_rate rows is kept (YYYY-MM-DD, no project info).
+# The "tool_name" field is kept as operational metadata.
+# Codex pattern: regenerate from unified.duckdb when available, else copy
+# committed inst/extdata/self_review_findings.json.
+cat("Exporting self_review_findings.json (#207)...\n")
+tryCatch({
+  sr_src <- file.path(extdata, "self_review_findings.json")
+  sr_dst <- file.path(out_dir, "self_review_findings.json")
+  unified_db_path_sr <- file.path(Sys.getenv("HOME"), ".claude/logs/unified.duckdb")
+
+  empty_sr <- list()
+
+  if (file.exists(unified_db_path_sr)) {
+    srcon <- dbConnect(duckdb(), dbdir = unified_db_path_sr, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(srcon, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+
+    sr_tables <- dbListTables(srcon)
+
+    if ("self_review_findings_stage1" %in% sr_tables) {
+      sr_raw <- dbGetQuery(srcon,
+        "SELECT finding_id, finding_type, severity, evidence, detected_at
+           FROM self_review_findings_stage1
+          ORDER BY detected_at")
+
+      # Parse evidence JSON into a named list, then keep only safe keys
+      safe_evidence_keys <- c(
+        "agent_type", "status", "call_count",
+        "first_call", "last_call",
+        "day", "tool_name", "error_count", "total_calls", "error_rate",
+        "threshold"
+      )
+
+      evidence_summaries <- unname(vapply(sr_raw$evidence, function(ev_json) {
+        if (is.na(ev_json) || !nzchar(ev_json)) return("{}")
+        ev <- tryCatch(
+          jsonlite::fromJSON(ev_json, simplifyVector = TRUE),
+          error = function(e) list()
+        )
+        # Keep only safe keys (no project names, no session paths)
+        ev_safe <- ev[intersect(names(ev), safe_evidence_keys)]
+        if (length(ev_safe) == 0L) return("{}")
+        tryCatch(
+          jsonlite::toJSON(ev_safe, auto_unbox = TRUE),
+          error = function(e) "{}"
+        )
+      }, character(1L)))
+
+      sr_export <- data.frame(
+        finding_id       = sr_raw$finding_id,
+        finding_type     = sr_raw$finding_type,
+        severity         = sr_raw$severity,
+        date             = as.character(as.Date(sr_raw$detected_at)),
+        evidence_summary = evidence_summaries,
+        stringsAsFactors = FALSE
+      )
+
+      write_json_atomic(sr_export, sr_src, auto_unbox = TRUE)
+      cat(sprintf("  -> inst/extdata/self_review_findings.json written: %d rows\n",
+                  nrow(sr_export)))
+    } else {
+      cat("  -> self_review_findings_stage1 not found in unified.duckdb\n")
+      if (!file.exists(sr_src)) {
+        write_json_atomic(empty_sr, sr_src, auto_unbox = TRUE)
+      }
+    }
+  } else {
+    cat("  -> unified.duckdb not found; skipping self_review_findings regeneration\n")
+  }
+
+  # Always: copy committed source to vignettes/data/ (works in CI without DB)
+  if (file.exists(sr_src)) {
+    file.copy(sr_src, sr_dst, overwrite = TRUE)
+    cat(sprintf("  -> copied inst/extdata/self_review_findings.json -> vignettes/data/ (%d bytes)\n",
+                file.info(sr_src)$size))
+  } else {
+    write_json_atomic(empty_sr, sr_dst, auto_unbox = TRUE)
+    cat("  -> no committed source; wrote empty self_review_findings.json placeholder\n")
+  }
+}, error = function(e) {
+  cat(sprintf("  -> self_review_findings.json export error: %s\n", conditionMessage(e)))
+  write_json_atomic(
+    list(),
+    file.path(out_dir, "self_review_findings.json"),
+    auto_unbox = TRUE
+  )
+})
+
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
 # ccusage_blocks is intentionally excluded from critical_files: the CI fallback
@@ -5056,7 +5157,7 @@ cat("QA passed: all critical data files have rows\n\n")
 
 # Schema-only validation for optional files: valid JSON array, length 0 allowed.
 # ccusage_blocks.json is written as [] by the CI fallback (no cmonitor-rs).
-optional_schema_files <- c("ccusage_blocks")
+optional_schema_files <- c("ccusage_blocks", "self_review_findings")
 for (f in optional_schema_files) {
   path <- file.path(out_dir, paste0(f, ".json"))
   if (!file.exists(path)) {

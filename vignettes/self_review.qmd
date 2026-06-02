@@ -1,0 +1,256 @@
+---
+title: "Self-Review Findings"
+date: "`r Sys.Date()`"
+format:
+  html:
+    page-layout: full
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+    theme: darkly
+    css: |
+      body { background-color: #1a1a1a !important; color: #e0e0e0 !important; }
+      .card { background-color: #222 !important; border-color: #444 !important; }
+      table.dataTable th, table.dataTable td { background-color: #222 !important; color: #e0e0e0 !important; }
+      table.dataTable thead th { background-color: #2a2a2a !important; }
+      .dataTables_wrapper .dataTables_filter input { background-color: #333; color: #e0e0e0; }
+      .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #ccc !important; }
+      h2, h3 { color: #4ea8de !important; }
+      .metric-table td, .metric-table th { padding: 4px 10px; }
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+#| label: setup
+
+library(jsonlite)
+library(dplyr, warn.conflicts = FALSE)
+library(plotly)
+library(DT)
+
+# Palette — single source of truth for this page (narrative-colour-persistence)
+PALETTE <- c(
+  "stuck_loop"           = "#f08080",
+  "high_tool_error_rate" = "#ffd93d",
+  "critical"             = "#f08080",
+  "major"                = "#ffd93d",
+  "minor"                = "#69d4a0"
+)
+
+# Load the committed JSON snapshot (works in CI without the live DB)
+sr_path <- {
+  # Try installed package path
+  p <- system.file("extdata", "self_review_findings.json", package = "llmtelemetry")
+  if (!nzchar(p) || !file.exists(p)) {
+    p <- file.path(here::here(), "inst", "extdata", "self_review_findings.json")
+  }
+  p
+}
+
+sr_df <- if (file.exists(sr_path)) {
+  tryCatch(
+    jsonlite::fromJSON(sr_path, simplifyDataFrame = TRUE),
+    error = function(e) data.frame()
+  )
+} else {
+  data.frame()
+}
+
+# Ensure correct types
+if (is.data.frame(sr_df) && nrow(sr_df) > 0) {
+  sr_df$date <- as.Date(sr_df$date)
+} else {
+  sr_df <- data.frame(
+    finding_id       = character(0),
+    finding_type     = character(0),
+    severity         = character(0),
+    date             = as.Date(character(0)),
+    evidence_summary = character(0),
+    stringsAsFactors = FALSE
+  )
+}
+
+# Convenience scalars for dynamic prose (dynamic-prose-values rule)
+n_total    <- nrow(sr_df)
+n_by_type  <- if (n_total > 0) table(sr_df$finding_type) else table(character(0))
+n_loops    <- as.integer(n_by_type["stuck_loop"] %||% 0L)
+n_errors   <- as.integer(n_by_type["high_tool_error_rate"] %||% 0L)
+date_min   <- if (n_total > 0) format(min(sr_df$date, na.rm = TRUE), "%Y-%m-%d") else "—"
+date_max   <- if (n_total > 0) format(max(sr_df$date, na.rm = TRUE), "%Y-%m-%d") else "—"
+```
+
+The self-review dashboard tracks operational health findings produced by the automated session monitoring in `~/.claude/logs/unified.duckdb`. There are currently **`r n_total`** total findings from `r date_min` to `r date_max`: **`r n_loops`** stuck-loop findings and **`r n_errors`** high tool-error-rate findings.
+
+## 1. Pulse
+
+Summary counts across finding types and severity levels, derived from the live snapshot.
+
+```{r pulse-table}
+#| label: pulse-table
+
+if (n_total > 0) {
+  pulse <- sr_df |>
+    count(finding_type, severity) |>
+    arrange(desc(n))
+  knitr::kable(
+    pulse,
+    col.names = c("Finding Type", "Severity", "Count"),
+    format = "html",
+    table.attr = 'class="table table-sm table-dark metric-table"'
+  )
+} else {
+  cat("No findings recorded yet.")
+}
+```
+
+## 2. Trend Over Time
+
+Daily count of new findings by type. Widening bars indicate the monitor is surfacing more issues; the goal is a flat or declining pattern once systemic problems are resolved. The range slider defaults to the full available window.
+
+```{r trend-plot}
+#| label: trend-plot
+#| fig-alt: "Daily count of self-review findings by finding type, plotted as a stacked bar chart. Stuck-loop findings (red) and high-tool-error-rate findings (yellow) are shown from 2026-05-25 onwards. The chart includes a range slider."
+
+if (n_total > 0) {
+  daily_counts <- sr_df |>
+    count(date, finding_type) |>
+    arrange(date)
+
+  plot_ly(
+    daily_counts,
+    x      = ~date,
+    y      = ~n,
+    color  = ~finding_type,
+    colors = PALETTE[unique(daily_counts$finding_type)],
+    type   = "bar",
+    text   = ~paste0(finding_type, ": ", n),
+    hoverinfo = "x+text"
+  ) |>
+    layout(
+      barmode  = "stack",
+      title    = list(text = "Daily Self-Review Findings by Type", font = list(color = "#e0e0e0")),
+      xaxis    = list(
+        title       = "Date",
+        color       = "#e0e0e0",
+        gridcolor   = "#333",
+        rangeslider = list(visible = TRUE)
+      ),
+      yaxis    = list(title = "Count", color = "#e0e0e0", gridcolor = "#333"),
+      paper_bgcolor = "#1a1a1a",
+      plot_bgcolor  = "#1a1a1a",
+      legend        = list(font = list(color = "#e0e0e0")),
+      font          = list(color = "#e0e0e0")
+    )
+} else {
+  cat("No findings to plot.")
+}
+```
+
+## 3. Findings by Type
+
+Breakdown of finding counts by type. Stuck loops are sessions where an agent repeated
+the same pattern more than a configured threshold number of times; high tool-error-rate
+findings flag sessions where a specific tool failed repeatedly.
+
+```{r type-plot}
+#| label: type-plot
+#| fig-alt: "Cleveland dot plot showing total finding count by finding type. Stuck-loop findings appear in red and high-tool-error-rate findings in yellow."
+
+if (n_total > 0) {
+  type_counts <- sr_df |>
+    count(finding_type) |>
+    arrange(n) |>
+    mutate(finding_type = factor(finding_type, levels = finding_type))
+
+  plot_ly(
+    type_counts,
+    x      = ~n,
+    y      = ~finding_type,
+    type   = "scatter",
+    mode   = "markers",
+    marker = list(
+      size  = 14,
+      color = PALETTE[as.character(type_counts$finding_type)]
+    ),
+    text      = ~paste0(finding_type, ": ", n),
+    hoverinfo = "text"
+  ) |>
+    layout(
+      title  = list(text = "Total Findings by Type", font = list(color = "#e0e0e0")),
+      xaxis  = list(title = "Count", color = "#e0e0e0", gridcolor = "#333", zeroline = FALSE),
+      yaxis  = list(title = "", color = "#e0e0e0", gridcolor = "#333"),
+      paper_bgcolor = "#1a1a1a",
+      plot_bgcolor  = "#1a1a1a",
+      font          = list(color = "#e0e0e0")
+    )
+} else {
+  cat("No findings to plot.")
+}
+```
+
+## 4. All Findings Table
+
+All `r n_total` findings with their evidence summaries. Use the search box to filter by date, type, or any evidence field.
+
+```{r findings-table}
+#| label: findings-table
+
+if (n_total > 0) {
+  tbl_data <- sr_df |>
+    select(date, finding_type, severity, evidence_summary) |>
+    arrange(desc(date))
+
+  DT::datatable(
+    tbl_data,
+    caption  = paste0(
+      "Self-review findings from ", date_min, " to ", date_max,
+      ". Source: self_review_findings_stage1 in ~/.claude/logs/unified.duckdb."
+    ),
+    colnames = c("Date", "Finding Type", "Severity", "Evidence"),
+    rownames = FALSE,
+    filter   = "top",
+    options  = list(
+      pageLength = 15,
+      dom        = "ftip",
+      scrollX    = TRUE
+    ),
+    class = "table table-dark table-sm"
+  )
+} else {
+  cat("No findings recorded yet.")
+}
+```
+
+## Methodology
+
+### What this vignette computes
+
+This vignette displays the current state of the self-review monitoring pipeline.
+It reads the sanitised findings snapshot from `inst/extdata/self_review_findings.json`,
+produced from the `self_review_findings_stage1` table in `~/.claude/logs/unified.duckdb`
+by `inst/scripts/export_dashboard_data.R` (section 8z). The snapshot contains
+`r n_total` rows spanning `r date_min` to `r date_max`, with one row per finding.
+Four visualisations are shown: pulse summary table, daily trend bar chart,
+type breakdown dot plot, and full findings table.
+
+### Data sources
+
+- `inst/extdata/self_review_findings.json`: sanitised export of
+  `self_review_findings_stage1` from `~/.claude/logs/unified.duckdb`.
+  Columns: `finding_id` (opaque hash), `finding_type`, `severity`, `date`
+  (YYYY-MM-DD, from `detected_at`), `evidence_summary` (JSON string with safe
+  operational fields only — no session IDs or filesystem paths).
+  Written locally by `export_dashboard_data.R` section 8z; copied to
+  `vignettes/data/` for CI serving.
+- Linked issue: [llmtelemetry#207](https://github.com/JohnGavin/llmtelemetry/issues/207)
+  and [llm#235](https://github.com/JohnGavin/llm/issues/235) (schema origin).
+
+### AI disclosure
+
+This vignette was developed with assistance from Anthropic's Claude (model: Opus 4.7
+and Sonnet 4.6). AI helped with code structure, prose drafting, and visualization
+choices. All analytical decisions and data interpretations are the author's
+responsibility.
