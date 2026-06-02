@@ -8,9 +8,12 @@ format:
     resources:
       - shinylive-sw.js
       - data/index.json
-      - data/ccusage_daily.json
+      - data/codexbar_cost_per_day.json
+      - data/codexbar_cost_per_project.json
+      - data/codexbar_cost_per_session.json
+      - data/legacy_ccusage_daily.json
       - data/ccusage_sessions.json
-      - data/ccusage_blocks.json
+      - data/legacy_ccusage_blocks.json
       - data/gemini_daily.json
       - data/gemini_sessions.json
       - data/codex_daily.json
@@ -342,9 +345,11 @@ load_json <- function(filename) {
   })
 }
 
-cc_daily    <- load_json("ccusage_daily.json")
+# (#281 Phase 2): CodexBar is now primary; ccusage renamed to legacy_*
+cb_per_day  <- load_json("codexbar_cost_per_day.json")
+cc_daily    <- load_json("legacy_ccusage_daily.json")
 cc_sessions <- load_json("ccusage_sessions.json")
-cc_blocks   <- load_json("ccusage_blocks.json")
+cc_blocks   <- load_json("legacy_ccusage_blocks.json")
 gem_daily   <- load_json("gemini_daily.json")
 gem_sess    <- load_json("gemini_sessions.json")
 codex_d_raw <- load_json("codex_daily.json")
@@ -1355,7 +1360,7 @@ ui <- page_navbar(
               "and Gemini (billing API). Each tool uses the project's canonical cost column — ",
               "totalCost for Claude, est_cost_usd for Codex, and total_cost for Gemini. ",
               "Time horizon slider applies. Absent or zero data for a tool renders gracefully without error. ",
-              "Source: ccusage_daily.json, codex_daily.json, gemini_daily.json."))
+              "Source: codexbar_cost_per_day.json (primary), legacy_ccusage_daily.json, codex_daily.json, gemini_daily.json."))
         ),
         layout_columns(col_widths = c(12),
           card(
@@ -2559,7 +2564,7 @@ server <- function(input, output, session) {
   # cc_d_proj: when specific projects are selected, weight tokens from tok_proj
   # (tokens_by_project.json). When "All projects" is selected, resolve_sel()
   # returns NULL so is.null(sel) is TRUE, and we fall back to the authoritative
-  # cc_d() (ccusage_daily.json) — no dates or live projects dropped.
+  # cc_d() (legacy_ccusage_daily.json) — no dates or live projects dropped.
   # When "None" is selected, resolve_sel() returns character(0) and
   # d[d$project %in% sel, ] returns 0 rows (correct empty result).
   cc_d_proj <- reactive({

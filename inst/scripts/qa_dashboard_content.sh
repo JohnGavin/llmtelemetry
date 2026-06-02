@@ -45,8 +45,8 @@ done
 # --- Check data JSON files directly ---
 DATA_URL="${URL%/}/data"
 declare -a CRITICAL_DATA=(
-  "ccusage_daily.json"
-  "ccusage_blocks.json"
+  "legacy_ccusage_daily.json"
+  "legacy_ccusage_blocks.json"
   "unified_sessions.json"
   "git_commits.json"
   "git_velocity.json"
@@ -149,14 +149,14 @@ fi
 # --- Stale cost data check ---
 echo ""
 echo "=== Checking cost data freshness ==="
-DAILY_URL="$DATA_URL/ccusage_daily.json"
+DAILY_URL="$DATA_URL/legacy_ccusage_daily.json"
 DAILY_CONTENT=$(curl -sL --fail "$DAILY_URL" 2>/dev/null || echo "[]")
 
 if [ "$DAILY_CONTENT" = "[]" ]; then
   echo "WARN: No cost data to check freshness"
   WARNINGS=$((WARNINGS + 1))
 else
-  # Extract most recent date from ccusage_daily.json
+  # Extract most recent date from legacy_ccusage_daily.json
   LATEST_COST_DATE=$(echo "$DAILY_CONTENT" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)

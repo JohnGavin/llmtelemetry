@@ -14,6 +14,7 @@
 # - vignettes/dashboard_shinylive.qmd: Remove showcase = icon() from value boxes
 #
 # Verification:
-# 1. After CI deploy: curl https://johngavin.github.io/llmtelemetry/data/ccusage_daily.json
+# 1. After CI deploy: curl https://johngavin.github.io/llmtelemetry/data/legacy_ccusage_daily.json
+#    (renamed from ccusage_daily.json in #281 Phase 2)
 # 2. Open dashboard in browser, check F12 console for errors
 # 3. Confirm Overview tab shows non-zero cost/tokens/days/sessions

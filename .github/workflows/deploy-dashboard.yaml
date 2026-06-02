@@ -401,8 +401,8 @@ jobs:
           WEBR_CHECK="/dashboard_shinylive_files/libs/quarto-contrib/${WEBR_PATH:-shinylive-0.10.8/shinylive/webr}/R.bin.data"
           for path in "/" "/shinylive-sw.js" \
                       "$WEBR_CHECK" \
-                      "/data/index.json" "/data/ccusage_daily.json" "/data/gemini_daily.json" \
-                      "/data/ccusage_sessions.json" "/data/ccusage_blocks.json" \
+                      "/data/index.json" "/data/legacy_ccusage_daily.json" "/data/gemini_daily.json" \
+                      "/data/ccusage_sessions.json" "/data/legacy_ccusage_blocks.json" \
                       "/data/gemini_sessions.json" "/data/cmonitor_summary.json" \
                       "/data/git_commits.json" \
                       "/data/unified_sessions.json" "/data/unified_costs.json"; do
@@ -414,29 +414,29 @@ jobs:
               echo "OK: ${path}"
             fi
           done
-          for f in ccusage_daily gemini_daily; do
+          for f in legacy_ccusage_daily gemini_daily; do
             curl -sf "${BASE}/data/${f}.json" | python3 -m json.tool > /dev/null 2>&1 || {
               echo "FAIL: ${f}.json is not valid JSON"
               FAIL=1
             }
           done
-          # Content QA: ccusage_daily must have rows (cmonitor-rs data, always present
-          # via committed extdata snapshot). ccusage_blocks is cmonitor-rs-only and
+          # Content QA: legacy_ccusage_daily must have rows (cmonitor-rs data, always present
+          # via committed extdata snapshot). legacy_ccusage_blocks is cmonitor-rs-only and
           # legitimately empty in CI — validate schema (must be a JSON array) instead
-          # of row count. Fixes #141.
-          ROWS=$(curl -sf "${BASE}/data/ccusage_daily.json" | python3 -c \
+          # of row count. Fixes #141. (#281 Phase 2: renamed from ccusage_daily/blocks)
+          ROWS=$(curl -sf "${BASE}/data/legacy_ccusage_daily.json" | python3 -c \
             "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
           if [ "$ROWS" = "0" ]; then
-            echo "::warning::ccusage_daily.json has 0 rows"
+            echo "::warning::legacy_ccusage_daily.json has 0 rows"
             FAIL=1
           else
-            echo "OK: ccusage_daily.json ($ROWS rows)"
+            echo "OK: legacy_ccusage_daily.json ($ROWS rows)"
           fi
-          # ccusage_blocks: validate it is a JSON array (may be empty when cmonitor-rs unavailable)
-          curl -sf "${BASE}/data/ccusage_blocks.json" | python3 -c \
+          # legacy_ccusage_blocks: validate it is a JSON array (may be empty when cmonitor-rs unavailable)
+          curl -sf "${BASE}/data/legacy_ccusage_blocks.json" | python3 -c \
             "import sys,json; d=json.load(sys.stdin); assert isinstance(d,list), 'not an array'" 2>/dev/null \
-            && echo "OK: ccusage_blocks.json (valid JSON array)" \
-            || { echo "::warning::ccusage_blocks.json is not a valid JSON array"; FAIL=1; }
+            && echo "OK: legacy_ccusage_blocks.json (valid JSON array)" \
+            || { echo "::warning::legacy_ccusage_blocks.json is not a valid JSON array"; FAIL=1; }
           # Check for "no data available" in critical JSON files
           echo "=== Checking for empty data files ==="
           for f in unified_sessions unified_costs git_commits git_velocity; do
