@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-06-02",
+  "phase": "2d",
+  "decision": "Option B — ccusage remains authoritative for per-project cost surface",
+  "rationale": "CodexBar cost data (codexbar_cost_per_day.json) is date×model granularity only. No session→project metadata join is available from the sanitized CodexBar export (codexbar_cost_daily.json). Per-project attribution therefore cannot use CodexBar as primary. ccusage (via cost_by_project_estimated.json, which uses session-weighted allocation from unified.duckdb) remains the authoritative per-project source until Phase 4 adds the session→project join.",
+  "codexbar_daily_totals_available": true,
+  "codexbar_per_project_available": false,
+  "per_project_primary_source": "cost_by_project_estimated.json (session-weighted ccusage)",
+  "per_project_codexbar_placeholder": "codexbar_cost_per_project.json = [] until Phase 4",
+  "gap_summary": {
+    "note": "Per-project CodexBar vs ccusage comparison deferred to Phase 4. Daily-level deficit_pct is available in unified_costs.json (Phase 2c) as a global validation metric.",
+    "daily_deficit_pct_source": "unified_costs.json[*].deficit_pct"
+  },
+  "issues": ["#281 Phase 2d", "#277 sub-task E"]
+}

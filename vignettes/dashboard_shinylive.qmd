@@ -487,6 +487,7 @@ codex_sess   <- as_df(codex_s_raw)
 git_commits <- as_df(git_commits)
 u_sessions  <- as_df(u_sessions)
 u_costs     <- as_df(u_costs)
+cb_per_day  <- as_df(cb_per_day)
 preds_raw   <- as_df(preds_raw)
 cal_buckets <- as_df(cal_buckets)
 git_vel     <- as_df(git_vel)
@@ -543,6 +544,9 @@ if (has_rows(u_sessions)) {
   u_sessions$started_at <- as.POSIXct(u_sessions$started_at, tz = "UTC")
 }
 if (has_rows(u_costs)) u_costs$date <- as.Date(u_costs$date)
+if (has_rows(cb_per_day) && "date" %in% names(cb_per_day)) {
+  cb_per_day$date <- as.Date(cb_per_day$date)
+}
 # cost_per_commit_data date coercion removed (#83 Phase 5) — migrated to DuckDB-WASM
 if (has_rows(file_churn_data) && "last_changed_date" %in% names(file_churn_data)) {
   file_churn_data$last_changed_date <- as.Date(file_churn_data$last_changed_date)
@@ -1337,15 +1341,27 @@ ui <- page_navbar(
       nav_panel("Cost Trends", value = "Cost Trends",
         layout_columns(col_widths = c(6, 6),
           card(card_header("Daily Cost by Project (Estimated)"), uiOutput("cost_by_project"),
-            card_footer(class = "text-muted small", "Estimated daily cost by project using session duration as allocation key")),
+            card_footer(class = "text-muted small",
+              "Estimated daily cost by project using session duration as allocation key. ",
+              "Source: cost_by_project_estimated.json (session-weighted from unified.duckdb); ",
+              "per-project CodexBar attribution deferred to Phase 4 (no session→project join available).")),
           card(card_header("Cumulative Cost"), uiOutput("cost_cumulative"),
-            card_footer(class = "text-muted small", "Running total of cost over time by source"))
+            card_footer(class = "text-muted small",
+              "Running total of cost over time. ",
+              "Primary source: codexbar_cost_per_day.json (#281 Phase 3a). ",
+              "Falls back to session-weighted estimate when CodexBar data absent."))
         ),
         layout_columns(col_widths = c(6, 6),
           card(card_header("Weekly Cost by Source"), uiOutput("cost_weekly"),
-            card_footer(class = "text-muted small", "Weekly cost grouped by Claude, Gemini, and Codex")),
+            card_footer(class = "text-muted small",
+              "Weekly cost grouped by tool. ",
+              "Claude: primary source codexbar_cost_per_day.json, fallback legacy_ccusage_daily.json. ",
+              "Gemini: gemini_daily.json. Codex: codex_daily.json.")),
           card(card_header("Weekly Cost by Model"), uiOutput("cost_by_model"),
-            card_footer(class = "text-muted small", "Weekly cost by Claude model variant"))
+            card_footer(class = "text-muted small",
+              "Weekly cost by model variant. ",
+              "Primary source: codexbar_cost_per_day.json (one row per date×model). ",
+              "Falls back to ccusage modelsUsed field when CodexBar absent."))
         ),
         layout_columns(col_widths = c(12),
           card(card_header("Cost per Commit Trend"),
@@ -1356,11 +1372,10 @@ ui <- page_navbar(
           card(card_header("Cross-Tool Daily Cost (Claude vs Codex vs Gemini)"),
             uiOutput("cross_tool_daily_cost"),
             card_footer(class = "text-muted small",
-              "Daily API spend (USD) across all three tools: Claude (ccusage), Codex (OpenAI estimated), ",
-              "and Gemini (billing API). Each tool uses the project's canonical cost column — ",
-              "totalCost for Claude, est_cost_usd for Codex, and total_cost for Gemini. ",
-              "Time horizon slider applies. Absent or zero data for a tool renders gracefully without error. ",
-              "Source: codexbar_cost_per_day.json (primary), legacy_ccusage_daily.json, codex_daily.json, gemini_daily.json."))
+              "Daily API spend (USD) across all three tools. ",
+              "Claude: codexbar_cost_per_day.json (primary, #281 Phase 3a); falls back to legacy_ccusage_daily.json. ",
+              "Codex: codex_daily.json (est_cost_usd). Gemini: gemini_daily.json (total_cost). ",
+              "Time horizon slider applies. Absent or zero data for a tool renders gracefully without error."))
         ),
         layout_columns(col_widths = c(12),
           card(
@@ -1392,6 +1407,53 @@ ui <- page_navbar(
               "Healthy target: review overhead <10-20% of session cost. ",
               "Source: roborev_vs_session_cost.json from unified.duckdb.")
           )
+        ),
+        # --- Validation Health card (2e): CodexBar vs ccusage deficit % ---------
+        layout_columns(col_widths = c(12),
+          card(
+            card_header("Validation Health: CodexBar vs ccusage"),
+            uiOutput("validation_health_card"),
+            card_footer(class = "text-muted small",
+              "deficit_pct = (CodexBar primary − ccusage cross-check) / ccusage × 100. ",
+              "Positive = CodexBar reports more spend (expected: CodexBar captures more providers). ",
+              "Negative = ccusage reports more (investigate). ",
+              "Source: unified_costs.json (primary + cross_check + deficit_pct columns, #281 Phase 2c).")
+          )
+        ),
+        # --- Cross-check (ccusage) accordion (3b) --------------------------------
+        # Legacy ccusage charts moved here per #281 Phase 3b.
+        # These are cross-check / validation views; CodexBar is now the primary source.
+        # Planned for deprecation once CodexBar telemetry stabilises.
+        layout_columns(col_widths = c(12),
+          accordion(
+            open = FALSE,
+            accordion_panel(
+              "Cross-check (ccusage) — planned deprecation",
+              tags$p(class = "text-muted small mb-2",
+                tags$strong("Note: "),
+                "These charts use legacy ccusage data (legacy_ccusage_daily.json / legacy_ccusage_blocks.json) ",
+                "as a cross-check against the CodexBar primary source above. ",
+                "They are provided for validation only and will be removed once CodexBar telemetry ",
+                "has been stable for 30 days. Source: legacy_ccusage_daily.json."
+              ),
+              layout_columns(col_widths = c(6, 6),
+                card(
+                  card_header("ccusage Daily Cost (cross-check)"),
+                  uiOutput("cc_daily_cost_xcheck"),
+                  card_footer(class = "text-muted small",
+                    "Cross-check view: ccusage totalCost from legacy_ccusage_daily.json. ",
+                    "Compare against CodexBar Cumulative Cost above to validate alignment.")
+                ),
+                card(
+                  card_header("ccusage Weekly Cost by Model (cross-check)"),
+                  uiOutput("cc_weekly_model_xcheck"),
+                  card_footer(class = "text-muted small",
+                    "Cross-check view: ccusage cost split by Claude model from legacy_ccusage_daily.json. ",
+                    "Validates CodexBar per-model breakdown above.")
+                )
+              )
+            )
+          )
         )
       ),
       nav_panel("Token Analysis", value = "Token Analysis",
@@ -1409,7 +1471,10 @@ ui <- page_navbar(
       nav_panel("Time Blocks", value = "Time Blocks",
         layout_columns(col_widths = c(12),
           card(card_header("Block Activity"), DTOutput("block_table"),
-            card_footer(class = "text-muted small", "Claude coding blocks with cost and efficiency metrics"))
+            card_footer(class = "text-muted small",
+              "Claude coding blocks with cost and efficiency metrics. ",
+              "Source: legacy_ccusage_blocks.json. ",
+              "Provider-error blocks (error_kind == 'provider') are excluded (#277 sub-task E)."))
         ),
         layout_columns(col_widths = c(6, 6),
           card(card_header("Block Timeline"), uiOutput("block_timeline"),
@@ -2544,6 +2609,13 @@ server <- function(input, output, session) {
     if (!has_rows(cc_daily)) return(data.frame())
     cc_daily[cc_daily$date >= cutoff(), ]
   })
+  # cb_d: CodexBar primary cost source (#281 Phase 3a).
+  # cb_per_day schema: {date, model, cost_usd, total_tokens}
+  # One row per (date, model); callers aggregate over models as needed.
+  cb_d <- reactive({
+    if (!has_rows(cb_per_day)) return(data.frame())
+    cb_per_day[cb_per_day$date >= cutoff(), ]
+  })
   gem_d <- reactive({
     if (!has_rows(gem_daily)) return(data.frame())
     gem_daily[gem_daily$date >= cutoff(), ]
@@ -2815,38 +2887,66 @@ server <- function(input, output, session) {
   })
 
   output$cost_cumulative <- renderUI({
-    d <- cost_proj
-    if (!is.data.frame(d) || nrow(d) == 0)
-      return(ec_empty("No project cost estimates available"))
-    if (!is.null(cutoff())) d <- d[d$date >= cutoff(), ]
-    sel <- resolve_sel(input$selected_projects)
-    if (!is.null(sel)) d <- d[d$project %in% sel, ]
-    if (nrow(d) == 0) return(ec_empty("No data for selected projects / period"))
-
-    daily <- aggregate(est_cost ~ date, data = d, FUN = sum, na.rm = TRUE)
-    daily <- daily[order(daily$date), ]
-    series <- list(list(
-      name = "Total (filtered)", type = "line",
-      data = I(round(cumsum(daily$est_cost), 2)),
-      itemStyle = list(color = pal$claude),
-      areaStyle = list(opacity = 0.1)
-    ))
-    ec_line(daily$date, series, y_name = "Cumulative Cost ($)",
-            aria_label = "Cumulative cost for selected projects")
+    # Primary: CodexBar daily total (cb_per_day.json) (#281 Phase 3a)
+    # Falls back to cost_proj session-weighted estimate when CodexBar absent
+    cb <- cb_d()
+    use_cb <- has_rows(cb) && "cost_usd" %in% names(cb)
+    if (use_cb) {
+      daily <- aggregate(cost_usd ~ date, data = cb, FUN = sum, na.rm = TRUE)
+      names(daily)[2] <- "cost"
+      daily <- daily[order(daily$date), ]
+      series <- list(list(
+        name = "Total (CodexBar)", type = "line",
+        data = I(round(cumsum(daily$cost), 2)),
+        itemStyle = list(color = pal$claude),
+        areaStyle = list(opacity = 0.1)
+      ))
+      ec_line(daily$date, series, y_name = "Cumulative Cost ($)",
+              aria_label = "Cumulative cost — primary source: CodexBar codexbar_cost_per_day.json")
+    } else {
+      # Fallback: session-weighted project estimate
+      d <- cost_proj
+      if (!is.data.frame(d) || nrow(d) == 0)
+        return(ec_empty("No cumulative cost data available"))
+      if (!is.null(cutoff())) d <- d[d$date >= cutoff(), ]
+      sel <- resolve_sel(input$selected_projects)
+      if (!is.null(sel)) d <- d[d$project %in% sel, ]
+      if (nrow(d) == 0) return(ec_empty("No data for selected projects / period"))
+      daily <- aggregate(est_cost ~ date, data = d, FUN = sum, na.rm = TRUE)
+      daily <- daily[order(daily$date), ]
+      series <- list(list(
+        name = "Total (est.)", type = "line",
+        data = I(round(cumsum(daily$est_cost), 2)),
+        itemStyle = list(color = pal$claude),
+        areaStyle = list(opacity = 0.1)
+      ))
+      ec_line(daily$date, series, y_name = "Cumulative Cost ($)",
+              aria_label = "Cumulative cost for selected projects (session-weighted estimate)")
+    }
   })
 
   output$cost_weekly <- renderUI({
-    # W5 from #72: Weekly Cost by Source — Claude, Gemini, Codex
-    # SOURCE_PALETTE is used for all three series (narrative-colour-persistence rule)
+    # W5 from #72: Weekly Cost by Source — Claude (CodexBar primary), Gemini, Codex
+    # (#281 Phase 3a): Claude series now uses cb_d() (CodexBar primary).
+    # Falls back to cc_d() (legacy ccusage) when CodexBar data absent.
+    # SOURCE_PALETTE is used for all three series (narrative-colour-persistence rule).
     rows <- list()
-    if (nrow(cc_d()) > 0) {
+    # Claude: CodexBar primary (cb_per_day.json), fallback to ccusage
+    if (has_rows(cb_d()) && "cost_usd" %in% names(cb_d())) {
+      d <- cb_d()
+      d$week <- floor_date(d$date, "week")
+      a <- aggregate(cost_usd ~ week, data = d, FUN = sum, na.rm = TRUE)
+      names(a)[2] <- "totalCost"
+      a$source <- "Claude"
+      rows[[1]] <- a
+    } else if (nrow(cc_d()) > 0 && "totalCost" %in% names(cc_d())) {
       d <- cc_d()
       d$week <- floor_date(d$date, "week")
       a <- aggregate(totalCost ~ week, data = d, FUN = sum, na.rm = TRUE)
       a$source <- "Claude"
       rows[[1]] <- a
     }
-    if (nrow(gem_d()) > 0) {
+    if (nrow(gem_d()) > 0 && "total_cost" %in% names(gem_d())) {
       d <- gem_d()
       d$week <- floor_date(d$date, "week")
       a <- aggregate(total_cost ~ week, data = d, FUN = sum, na.rm = TRUE)
@@ -2881,25 +2981,48 @@ server <- function(input, output, session) {
   })
 
   output$cost_by_model <- renderUI({
-    d <- cc_d()
-    if (nrow(d) == 0 || is.null(d$modelsUsed)) return(ec_empty())
-    # Expand rows by model
-    models_split <- strsplit(as.character(d$modelsUsed), ",\\s*")
-    n_each <- lengths(models_split)
-    d_exp <- d[rep(seq_len(nrow(d)), n_each), ]
-    d_exp$model <- clean_model(unlist(models_split))
-    d_exp <- d_exp[d_exp$model != "", ]
-    d_exp$week <- floor_date(d_exp$date, "week")
-    agg <- aggregate(totalCost ~ week + model, data = d_exp, FUN = sum, na.rm = TRUE)
-    all_weeks <- sort(unique(agg$week))
-    models <- unique(agg$model)
-    series <- lapply(models, function(m) {
-      md <- agg[agg$model == m, ]
-      vals <- rep(0, length(all_weeks))
-      vals[match(md$week, all_weeks)] <- md$totalCost
-      list(name = m, type = "line", data = I(round(vals, 2)))
-    })
-    ec_line(all_weeks, series)
+    # (#281 Phase 3a): primary source is CodexBar cb_per_day which already has
+    # per-model rows; fall back to ccusage modelsUsed expansion when absent.
+    cb <- cb_d()
+    if (has_rows(cb) && "cost_usd" %in% names(cb) && "model" %in% names(cb)) {
+      # CodexBar: each row is already one (date, model) pair
+      cb$week <- floor_date(cb$date, "week")
+      agg <- aggregate(cost_usd ~ week + model, data = cb, FUN = sum, na.rm = TRUE)
+      names(agg)[3] <- "totalCost"
+      all_weeks <- sort(unique(agg$week))
+      models <- unique(agg$model)
+      # Use PALETTE if model matches a known key, otherwise hash to a colour
+      pal_ext <- c(pal$claude, pal$gemini, pal$codex, pal$purple, pal$orange, pal$accent)
+      series <- lapply(seq_along(models), function(i) {
+        m <- models[[i]]
+        md <- agg[agg$model == m, ]
+        vals <- rep(0, length(all_weeks))
+        vals[match(md$week, all_weeks)] <- md$totalCost
+        list(name = clean_model(m), type = "line", data = I(round(vals, 2)),
+             itemStyle = list(color = pal_ext[((i - 1) %% length(pal_ext)) + 1]))
+      })
+      ec_line(all_weeks, series)
+    } else {
+      # Fallback: ccusage modelsUsed expansion
+      d <- cc_d()
+      if (nrow(d) == 0 || is.null(d$modelsUsed)) return(ec_empty())
+      models_split <- strsplit(as.character(d$modelsUsed), ",\\s*")
+      n_each <- lengths(models_split)
+      d_exp <- d[rep(seq_len(nrow(d)), n_each), ]
+      d_exp$model <- clean_model(unlist(models_split))
+      d_exp <- d_exp[d_exp$model != "", ]
+      d_exp$week <- floor_date(d_exp$date, "week")
+      agg <- aggregate(totalCost ~ week + model, data = d_exp, FUN = sum, na.rm = TRUE)
+      all_weeks <- sort(unique(agg$week))
+      models <- unique(agg$model)
+      series <- lapply(models, function(m) {
+        md <- agg[agg$model == m, ]
+        vals <- rep(0, length(all_weeks))
+        vals[match(md$week, all_weeks)] <- md$totalCost
+        list(name = m, type = "line", data = I(round(vals, 2)))
+      })
+      ec_line(all_weeks, series)
+    }
   })
 
   # --- Token Analysis ---------------------------------------------------------
@@ -3372,7 +3495,16 @@ server <- function(input, output, session) {
   # --- Time Blocks ------------------------------------------------------------
   blk <- reactive({
     if (!has_rows(cc_blocks)) return(data.frame())
-    cc_blocks[cc_blocks$date >= (date_max - input$block_days), ]
+    d <- cc_blocks[cc_blocks$date >= (date_max - input$block_days), ]
+    # (#277 sub-task E): filter provider-error rows so they don't inflate
+    # cost/token aggregates. These are ccusage blocks where the API returned a
+    # provider-side error (e.g. rate limit, server error) and recorded 0 usage.
+    # The field may be named error_kind or errorKind depending on ccusage version.
+    if ("error_kind" %in% names(d))
+      d <- d[is.na(d$error_kind) | d$error_kind != "provider", , drop = FALSE]
+    if ("errorKind" %in% names(d))
+      d <- d[is.na(d$errorKind) | d$errorKind != "provider", , drop = FALSE]
+    d
   })
 
   output$block_table <- renderDT({
@@ -3963,14 +4095,22 @@ server <- function(input, output, session) {
   # Reads from the already-loaded cc_daily, codex_daily, gem_daily data frames.
   # Degrades gracefully: any absent source is simply omitted from the chart.
   output$cross_tool_daily_cost <- renderUI({
-    has_cc  <- has_rows(cc_d()) && "totalCost" %in% names(cc_d())
+    # (#281 Phase 3a): Claude series uses CodexBar cb_d() as primary.
+    # Falls back to cc_d() when CodexBar absent.
+    has_cb  <- has_rows(cb_d()) && "cost_usd" %in% names(cb_d())
+    has_cc  <- !has_cb && has_rows(cc_d()) && "totalCost" %in% names(cc_d())
     has_cx  <- has_rows(codex_d()) && "est_cost_usd" %in% names(codex_d())
     has_gem <- has_rows(gem_d()) && "total_cost" %in% names(gem_d())
-    if (!has_cc && !has_cx && !has_gem)
+    if (!has_cb && !has_cc && !has_cx && !has_gem)
       return(ec_empty("No cross-tool cost data available", h = "300px"))
 
     rows <- list()
-    if (has_cc) {
+    if (has_cb) {
+      a <- aggregate(cost_usd ~ date, data = cb_d(), FUN = sum, na.rm = TRUE)
+      names(a)[2] <- "cost"
+      a$source <- "Claude"
+      rows[[length(rows) + 1]] <- a
+    } else if (has_cc) {
       a <- aggregate(totalCost ~ date, data = cc_d(), FUN = sum, na.rm = TRUE)
       names(a)[2] <- "cost"
       a$source <- "Claude"
@@ -4007,7 +4147,92 @@ server <- function(input, output, session) {
            lineStyle  = list(color = unname(src_color[s])))
     })
     ec_line(all_dates, series, h = "300px", y_name = "Cost (USD)",
-            aria_label = "Grouped line chart: daily API cost by tool (Claude, Codex, Gemini)")
+            aria_label = "Grouped line chart: daily API cost by tool (Claude via CodexBar, Codex, Gemini)")
+  })
+
+  # --- Validation Health card (2e): deficit_pct from unified_costs.json -------
+  output$validation_health_card <- renderUI({
+    uc <- u_costs
+    if (!has_rows(uc) || !"deficit_pct" %in% names(uc))
+      return(tags$div(class = "p-3 text-muted small",
+        "deficit_pct not available — run export_dashboard_data.R with Phase 2c to populate."))
+    # Filter to time horizon
+    if (!is.null(cutoff()) && "date" %in% names(uc))
+      uc <- uc[uc$date >= cutoff(), ]
+    # Recent 30 rows for sparkline
+    uc <- uc[order(uc$date), ]
+    valid <- uc[!is.na(uc$deficit_pct), ]
+    if (nrow(valid) == 0)
+      return(tags$div(class = "p-3 text-muted small",
+        "No deficit_pct data in the selected period."))
+    # Summary stats
+    med_pct  <- round(median(valid$deficit_pct, na.rm = TRUE), 1)
+    mean_pct <- round(mean(valid$deficit_pct, na.rm = TRUE), 1)
+    n_neg    <- sum(valid$deficit_pct < 0, na.rm = TRUE)
+    last_val <- tail(valid$deficit_pct, 1)
+    status_colour <- if (n_neg > 0) "#f08080" else if (abs(med_pct) > 20) "#ffd93d" else "#69d4a0"
+    summary_ui <- tags$table(class = "table table-sm table-dark mt-2 mb-2",
+      tags$thead(tags$tr(tags$th("Metric"), tags$th("Value"))),
+      tags$tbody(
+        tags$tr(tags$td("Median deficit_pct"), tags$td(sprintf("%.1f%%", med_pct))),
+        tags$tr(tags$td("Mean deficit_pct"),   tags$td(sprintf("%.1f%%", mean_pct))),
+        tags$tr(tags$td("Last observation"),   tags$td(sprintf("%.1f%%", last_val))),
+        tags$tr(tags$td("Days deficit < 0 (anomaly)"),
+                tags$td(style = paste0("color:", status_colour),
+                        as.character(n_neg)))
+      )
+    )
+    # Sparkline of deficit_pct over time
+    dates_val <- valid$date
+    vals_val  <- round(valid$deficit_pct, 1)
+    spark <- ec_line(dates_val,
+      list(list(name = "deficit_pct", type = "line",
+                data = I(vals_val),
+                itemStyle = list(color = "#4ea8de"),
+                markLine = list(data = list(list(yAxis = 0,
+                  lineStyle = list(color = "#f08080", type = "dashed")))))),
+      h = "200px", y_name = "deficit %",
+      aria_label = "Line chart: CodexBar vs ccusage deficit % over time")
+    tagList(summary_ui, spark)
+  })
+
+  # --- Cross-check (ccusage) accordion renders (3b) ---------------------------
+  # These are legacy validation charts; primary charts now use CodexBar (cb_d).
+  output$cc_daily_cost_xcheck <- renderUI({
+    d <- cc_d()
+    if (!has_rows(d) || !"totalCost" %in% names(d))
+      return(ec_empty("No ccusage daily cost data available"))
+    agg <- aggregate(totalCost ~ date, data = d, FUN = sum, na.rm = TRUE)
+    agg <- agg[order(agg$date), ]
+    ec_line(agg$date,
+      list(list(name = "ccusage (cross-check)", type = "line",
+                data = I(round(agg$totalCost, 4)),
+                itemStyle = list(color = SOURCE_PALETTE[["claude"]]),
+                lineStyle  = list(type = "dashed"))),
+      h = "250px", y_name = "Cost (USD)",
+      aria_label = "Cross-check: ccusage daily Claude cost from legacy_ccusage_daily.json")
+  })
+
+  output$cc_weekly_model_xcheck <- renderUI({
+    d <- cc_d()
+    if (!has_rows(d) || is.null(d$modelsUsed)) return(ec_empty())
+    models_split <- strsplit(as.character(d$modelsUsed), ",\\s*")
+    n_each <- lengths(models_split)
+    d_exp <- d[rep(seq_len(nrow(d)), n_each), ]
+    d_exp$model <- clean_model(unlist(models_split))
+    d_exp <- d_exp[d_exp$model != "", ]
+    d_exp$week <- floor_date(d_exp$date, "week")
+    agg <- aggregate(totalCost ~ week + model, data = d_exp, FUN = sum, na.rm = TRUE)
+    all_weeks <- sort(unique(agg$week))
+    models <- unique(agg$model)
+    series <- lapply(models, function(m) {
+      md <- agg[agg$model == m, ]
+      vals <- rep(0, length(all_weeks))
+      vals[match(md$week, all_weeks)] <- md$totalCost
+      list(name = m, type = "line", data = I(round(vals, 2)))
+    })
+    ec_line(all_weeks, series, h = "250px",
+            aria_label = "Cross-check: ccusage weekly cost by model from legacy_ccusage_daily.json")
   })
 
   # --- Reviews tab: roborev pipeline health -----------------------------------
