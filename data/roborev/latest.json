@@ -1,0 +1,3751 @@
+{
+  "report_date": "2026-06-02",
+  "generated_at": "2026-06-02T18:07:58Z",
+  "lineage_source": "roborev_finding_lineage_summary",
+  "global_windows": {
+    "d1": {
+      "window_days": 1,
+      "repo": "__all__",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "d3": {
+      "window_days": 3,
+      "repo": "__all__",
+      "n_reviews": 25,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 5
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 20
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 20,
+        "n_closed": 0,
+        "n_open": 20
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": -100,
+          "abs_delta": -0.3118
+        }
+      }
+    },
+    "d7": {
+      "window_days": 7,
+      "repo": "__all__",
+      "n_reviews": 545,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "closed",
+          "n": 14
+        },
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 330
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "closed",
+          "n": 62
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 139
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": 17.6768,
+        "ttc_p90_hrs": 21.8864,
+        "ttc_p99_hrs": 41.648,
+        "att_p50": 1,
+        "att_p90": 1,
+        "close_rate": 0.3085,
+        "n_issues_found": 201,
+        "n_closed": 62,
+        "n_open": 139
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": -88.7281,
+          "abs_delta": -139.1454
+        },
+        "ttc_p90": {
+          "pct_delta": -88.3232,
+          "abs_delta": -165.5478
+        },
+        "att_p50": {
+          "pct_delta": 0,
+          "abs_delta": 0
+        },
+        "close_rate": {
+          "pct_delta": -38.6663,
+          "abs_delta": -0.1945
+        }
+      }
+    },
+    "d14": {
+      "window_days": 14,
+      "repo": "__all__",
+      "n_reviews": 1674,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "closed",
+          "n": 286
+        },
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 330
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "closed",
+          "n": 493
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 565
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": 147.8617,
+        "ttc_p90_hrs": 186.7295,
+        "ttc_p99_hrs": 194.727,
+        "att_p50": 1,
+        "att_p90": 1,
+        "close_rate": 0.466,
+        "n_issues_found": 1058,
+        "n_closed": 493,
+        "n_open": 565
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": 299.6678,
+          "abs_delta": 110.8656
+        },
+        "ttc_p90": {
+          "pct_delta": -14.5871,
+          "abs_delta": -31.8904
+        },
+        "att_p50": {
+          "pct_delta": 0,
+          "abs_delta": 0
+        },
+        "close_rate": {
+          "pct_delta": -48.6179,
+          "abs_delta": -0.4409
+        }
+      }
+    }
+  },
+  "per_repo_7d": {
+    "JohnGavin.github.io": {
+      "window_days": 7,
+      "repo": "JohnGavin.github.io",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "coMMpass": {
+      "window_days": 7,
+      "repo": "coMMpass",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_10d3f31c27c71": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_10d3f31c27c71",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_10d3f37ad0f1e": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_10d3f37ad0f1e",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_156918b1b387": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_156918b1b387",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_156933e5f86b": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_156933e5f86b",
+      "n_reviews": 2,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 2
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 2,
+        "n_closed": 0,
+        "n_open": 2
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_17f2972dcd784": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_17f2972dcd784",
+      "n_reviews": 3,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 3
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 3,
+        "n_closed": 0,
+        "n_open": 3
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_1844d12a2967": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_1844d12a2967",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_1cda60bf96e4": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_1cda60bf96e4",
+      "n_reviews": 3,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 3
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 3,
+        "n_closed": 0,
+        "n_open": 3
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_3ac72b8d6523": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_3ac72b8d6523",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_508370195cd8": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_508370195cd8",
+      "n_reviews": 4,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 4
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 4,
+        "n_closed": 0,
+        "n_open": 4
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_606515f405d1": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_606515f405d1",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_60656f910579": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_60656f910579",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_7af7679d215": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_7af7679d215",
+      "n_reviews": 3,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 3
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 3,
+        "n_closed": 0,
+        "n_open": 3
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_80333dd97cfb": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_80333dd97cfb",
+      "n_reviews": 3,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 3
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 3,
+        "n_closed": 0,
+        "n_open": 3
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_8a826a70a811": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_8a826a70a811",
+      "n_reviews": 2,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 2
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 2,
+        "n_closed": 0,
+        "n_open": 2
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_8a827a58e214": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_8a827a58e214",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_ec32155bb4ae": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_ec32155bb4ae",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_ec323471c6ba": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_ec323471c6ba",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "config_digest_git_fixture_ec326cdbffb6": {
+      "window_days": 7,
+      "repo": "config_digest_git_fixture_ec326cdbffb6",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "content": {
+      "window_days": 7,
+      "repo": "content",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "crypto": {
+      "window_days": 7,
+      "repo": "crypto",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "crypto_solwatch": {
+      "window_days": 7,
+      "repo": "crypto_solwatch",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "crypto_swarms": {
+      "window_days": 7,
+      "repo": "crypto_swarms",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "football": {
+      "window_days": 7,
+      "repo": "football",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "hello_t": {
+      "window_days": 7,
+      "repo": "hello_t",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "historical": {
+      "window_days": 7,
+      "repo": "historical",
+      "n_reviews": 85,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "closed",
+          "n": 2
+        },
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 15
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "closed",
+          "n": 50
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 18
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": 12.9376,
+        "ttc_p90_hrs": 21.3309,
+        "ttc_p99_hrs": 21.4432,
+        "att_p50": 1,
+        "att_p90": 1,
+        "close_rate": 0.7353,
+        "n_issues_found": 68,
+        "n_closed": 50,
+        "n_open": 18
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": -91.1903,
+          "abs_delta": -133.9188
+        },
+        "ttc_p90": {
+          "pct_delta": -88.4929,
+          "abs_delta": -164.0404
+        },
+        "att_p50": {
+          "pct_delta": 0,
+          "abs_delta": 0
+        },
+        "close_rate": {
+          "pct_delta": -26.4706,
+          "abs_delta": -0.2647
+        }
+      }
+    },
+    "kb_debug_test": {
+      "window_days": 7,
+      "repo": "kb_debug_test",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_e2e_test": {
+      "window_days": 7,
+      "repo": "kb_e2e_test",
+      "n_reviews": 4,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 2
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 2
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 2,
+        "n_closed": 0,
+        "n_open": 2
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_10d3f38de3911": {
+      "window_days": 7,
+      "repo": "kb_fixture_10d3f38de3911",
+      "n_reviews": 2,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_10d3f7d23c4bf": {
+      "window_days": 7,
+      "repo": "kb_fixture_10d3f7d23c4bf",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_17f293697b9b8": {
+      "window_days": 7,
+      "repo": "kb_fixture_17f293697b9b8",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_17f2952f60635": {
+      "window_days": 7,
+      "repo": "kb_fixture_17f2952f60635",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_606535093f7d": {
+      "window_days": 7,
+      "repo": "kb_fixture_606535093f7d",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_80331450fb04": {
+      "window_days": 7,
+      "repo": "kb_fixture_80331450fb04",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_80331f794b4d": {
+      "window_days": 7,
+      "repo": "kb_fixture_80331f794b4d",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_8a8238b28679": {
+      "window_days": 7,
+      "repo": "kb_fixture_8a8238b28679",
+      "n_reviews": 2,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_8a82630e45db": {
+      "window_days": 7,
+      "repo": "kb_fixture_8a82630e45db",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_8a826e44a16e": {
+      "window_days": 7,
+      "repo": "kb_fixture_8a826e44a16e",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_924937c8bb99": {
+      "window_days": 7,
+      "repo": "kb_fixture_924937c8bb99",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_9249683a38d7": {
+      "window_days": 7,
+      "repo": "kb_fixture_9249683a38d7",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_92496b76ea7d": {
+      "window_days": 7,
+      "repo": "kb_fixture_92496b76ea7d",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_92497e8e239c": {
+      "window_days": 7,
+      "repo": "kb_fixture_92497e8e239c",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_a6567ffc99d6": {
+      "window_days": 7,
+      "repo": "kb_fixture_a6567ffc99d6",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_fixture_bb3f2865b2fb": {
+      "window_days": 7,
+      "repo": "kb_fixture_bb3f2865b2fb",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_test_debug2": {
+      "window_days": 7,
+      "repo": "kb_test_debug2",
+      "n_reviews": 2,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_test_fix": {
+      "window_days": 7,
+      "repo": "kb_test_fix",
+      "n_reviews": 2,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 2
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 2,
+        "n_closed": 0,
+        "n_open": 2
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "kb_test_x": {
+      "window_days": 7,
+      "repo": "kb_test_x",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "knowledge": {
+      "window_days": 7,
+      "repo": "knowledge",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "llm": {
+      "window_days": 7,
+      "repo": "llm",
+      "n_reviews": 68,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "closed",
+          "n": 4
+        },
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 9
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "closed",
+          "n": 5
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 50
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": 25.4175,
+        "ttc_p90_hrs": 50.2395,
+        "ttc_p99_hrs": 64.9679,
+        "att_p50": 1,
+        "att_p90": 1,
+        "close_rate": 0.0909,
+        "n_issues_found": 55,
+        "n_closed": 5,
+        "n_open": 50
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": -85.5535,
+          "abs_delta": -150.5252
+        },
+        "ttc_p90": {
+          "pct_delta": -73.3551,
+          "abs_delta": -138.3125
+        },
+        "att_p50": {
+          "pct_delta": 0,
+          "abs_delta": 0
+        },
+        "close_rate": {
+          "pct_delta": -88.9731,
+          "abs_delta": -0.7335
+        }
+      }
+    },
+    "llmtelemetry": {
+      "window_days": 7,
+      "repo": "llmtelemetry",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "closed",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": 0.1814,
+        "ttc_p90_hrs": 0.1814,
+        "ttc_p99_hrs": 0.1814,
+        "att_p50": 1,
+        "att_p90": 1,
+        "close_rate": 1,
+        "n_issues_found": 1,
+        "n_closed": 1,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": -99.8687,
+          "abs_delta": -137.9239
+        },
+        "ttc_p90": {
+          "pct_delta": -99.9067,
+          "abs_delta": -194.209
+        },
+        "att_p50": {
+          "pct_delta": 0,
+          "abs_delta": 0
+        },
+        "close_rate": {
+          "pct_delta": 286.6667,
+          "abs_delta": 0.7414
+        }
+      }
+    },
+    "llmtelemetry-hook-sync": {
+      "window_days": 7,
+      "repo": "llmtelemetry-hook-sync",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "main": {
+      "window_days": 7,
+      "repo": "main",
+      "n_reviews": 8,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "closed",
+          "n": 8
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "micromort": {
+      "window_days": 7,
+      "repo": "micromort",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "my_t_project": {
+      "window_days": 7,
+      "repo": "my_t_project",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "mycare": {
+      "window_days": 7,
+      "repo": "mycare",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": -100,
+          "abs_delta": -0.3356
+        }
+      }
+    },
+    "premortem": {
+      "window_days": 7,
+      "repo": "premortem",
+      "n_reviews": 16,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "closed",
+          "n": 6
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 10
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": 14.5886,
+        "ttc_p90_hrs": 22.1366,
+        "ttc_p99_hrs": 22.2764,
+        "att_p50": 1,
+        "att_p90": 1,
+        "close_rate": 0.375,
+        "n_issues_found": 16,
+        "n_closed": 6,
+        "n_open": 10
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": -51.9489,
+          "abs_delta": -15.772
+        },
+        "ttc_p90": {
+          "pct_delta": -46.1432,
+          "abs_delta": -18.9661
+        },
+        "att_p50": {
+          "pct_delta": 0,
+          "abs_delta": 0
+        },
+        "close_rate": {
+          "pct_delta": -50,
+          "abs_delta": -0.375
+        }
+      }
+    },
+    "randomwalk": {
+      "window_days": 7,
+      "repo": "randomwalk",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "randomwalk-wiki": {
+      "window_days": 7,
+      "repo": "randomwalk-wiki",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "repo": {
+      "window_days": 7,
+      "repo": "repo",
+      "n_reviews": 4,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 3
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "repo1": {
+      "window_days": 7,
+      "repo": "repo1",
+      "n_reviews": 3,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 2
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "repo2": {
+      "window_days": 7,
+      "repo": "repo2",
+      "n_reviews": 2,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 2
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "repo5": {
+      "window_days": 7,
+      "repo": "repo5",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "repo_A8Oq": {
+      "window_days": 7,
+      "repo": "repo_A8Oq",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "repo_nwAb": {
+      "window_days": 7,
+      "repo": "repo_nwAb",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "t_demos": {
+      "window_days": 7,
+      "repo": "t_demos",
+      "n_reviews": 0,
+      "freq_table": [],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "test_repo": {
+      "window_days": 7,
+      "repo": "test_repo",
+      "n_reviews": 279,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 278
+        },
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_5HM6": {
+      "window_days": 7,
+      "repo": "testrepo_5HM6",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_64LX": {
+      "window_days": 7,
+      "repo": "testrepo_64LX",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_8z2L": {
+      "window_days": 7,
+      "repo": "testrepo_8z2L",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_B4AL": {
+      "window_days": 7,
+      "repo": "testrepo_B4AL",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_DcdY": {
+      "window_days": 7,
+      "repo": "testrepo_DcdY",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_LvIY": {
+      "window_days": 7,
+      "repo": "testrepo_LvIY",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_VDVe": {
+      "window_days": 7,
+      "repo": "testrepo_VDVe",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_YE1P": {
+      "window_days": 7,
+      "repo": "testrepo_YE1P",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_dtNk": {
+      "window_days": 7,
+      "repo": "testrepo_dtNk",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_etII": {
+      "window_days": 7,
+      "repo": "testrepo_etII",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_gr2k": {
+      "window_days": 7,
+      "repo": "testrepo_gr2k",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_kcWQ": {
+      "window_days": 7,
+      "repo": "testrepo_kcWQ",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "testrepo_zO2x": {
+      "window_days": 7,
+      "repo": "testrepo_zO2x",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "clean",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": null,
+        "n_issues_found": 0,
+        "n_closed": 0,
+        "n_open": 0
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "tlang-clone": {
+      "window_days": 7,
+      "repo": "tlang-clone",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "tmp.bFnCyv3PRK": {
+      "window_days": 7,
+      "repo": "tmp.bFnCyv3PRK",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    },
+    "tmprepo_test": {
+      "window_days": 7,
+      "repo": "tmprepo_test",
+      "n_reviews": 1,
+      "freq_table": [
+        {
+          "verdict_label": "issues_found",
+          "status": "open",
+          "n": 1
+        }
+      ],
+      "speed": {
+        "ttc_p50_hrs": null,
+        "ttc_p90_hrs": null,
+        "ttc_p99_hrs": null,
+        "att_p50": null,
+        "att_p90": null,
+        "close_rate": 0,
+        "n_issues_found": 1,
+        "n_closed": 0,
+        "n_open": 1
+      },
+      "trends": {
+        "ttc_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "ttc_p90": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "att_p50": {
+          "pct_delta": null,
+          "abs_delta": null
+        },
+        "close_rate": {
+          "pct_delta": null,
+          "abs_delta": null
+        }
+      }
+    }
+  },
+  "outliers_14d": {
+    "by_attempts": [
+      {
+        "review_id": 4376,
+        "repo": "llm",
+        "n_attempts": 1,
+        "time_to_close_hrs": 207.47,
+        "close_reason": "manual",
+        "created_at": "2026-05-21T19:36:43Z"
+      },
+      {
+        "review_id": 4371,
+        "repo": "historical",
+        "n_attempts": 1,
+        "time_to_close_hrs": 196.45,
+        "close_reason": "manual",
+        "created_at": "2026-05-21T14:49:28Z"
+      },
+      {
+        "review_id": 4262,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 195.48,
+        "close_reason": "severity-medium",
+        "created_at": "2026-05-21T07:46:51Z"
+      },
+      {
+        "review_id": 4267,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 195.24,
+        "close_reason": "severity-medium",
+        "created_at": "2026-05-21T08:01:00Z"
+      },
+      {
+        "review_id": 4272,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 194.99,
+        "close_reason": "clean-verdict-pre-fix",
+        "created_at": "2026-05-21T08:16:01Z"
+      },
+      {
+        "review_id": 4278,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 194.7,
+        "close_reason": "clean-verdict-pre-fix",
+        "created_at": "2026-05-21T08:33:06Z"
+      },
+      {
+        "review_id": 4283,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 194.49,
+        "close_reason": "severity-medium",
+        "created_at": "2026-05-21T08:45:57Z"
+      },
+      {
+        "review_id": 4287,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 194.24,
+        "close_reason": "severity-medium",
+        "created_at": "2026-05-21T09:00:53Z"
+      },
+      {
+        "review_id": 4299,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 193.65,
+        "close_reason": "severity-medium",
+        "created_at": "2026-05-21T09:36:11Z"
+      },
+      {
+        "review_id": 4304,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 193.5,
+        "close_reason": "manual",
+        "created_at": "2026-05-21T09:45:30Z"
+      }
+    ],
+    "by_time": [
+      {
+        "review_id": 4376,
+        "repo": "llm",
+        "n_attempts": 1,
+        "time_to_close_hrs": 207.47,
+        "close_reason": "manual",
+        "created_at": "2026-05-21T19:36:43Z"
+      },
+      {
+        "review_id": 4371,
+        "repo": "historical",
+        "n_attempts": 1,
+        "time_to_close_hrs": 196.45,
+        "close_reason": "manual",
+        "created_at": "2026-05-21T14:49:28Z"
+      },
+      {
+        "review_id": 4262,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 195.48,
+        "close_reason": "severity-medium",
+        "created_at": "2026-05-21T07:46:51Z"
+      },
+      {
+        "review_id": 4267,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 195.24,
+        "close_reason": "severity-medium",
+        "created_at": "2026-05-21T08:01:00Z"
+      },
+      {
+        "review_id": 4272,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 194.99,
+        "close_reason": "clean-verdict-pre-fix",
+        "created_at": "2026-05-21T08:16:01Z"
+      },
+      {
+        "review_id": 4278,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 194.7,
+        "close_reason": "clean-verdict-pre-fix",
+        "created_at": "2026-05-21T08:33:06Z"
+      },
+      {
+        "review_id": 4283,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 194.49,
+        "close_reason": "severity-medium",
+        "created_at": "2026-05-21T08:45:57Z"
+      },
+      {
+        "review_id": 4287,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 194.24,
+        "close_reason": "severity-medium",
+        "created_at": "2026-05-21T09:00:53Z"
+      },
+      {
+        "review_id": 4299,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 193.65,
+        "close_reason": "severity-medium",
+        "created_at": "2026-05-21T09:36:11Z"
+      },
+      {
+        "review_id": 4304,
+        "repo": "llmtelemetry",
+        "n_attempts": 1,
+        "time_to_close_hrs": 193.5,
+        "close_reason": "manual",
+        "created_at": "2026-05-21T09:45:30Z"
+      }
+    ]
+  }
+}
