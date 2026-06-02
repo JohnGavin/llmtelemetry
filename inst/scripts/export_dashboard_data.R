@@ -357,10 +357,11 @@ if (!has_cmonitor) {
   )
   message(cmonitor_msg)
   writeLines(cmonitor_msg, file.path(out_dir, "cmonitor_status.txt"))
+  # (#281 Phase 2): renamed to legacy_ccusage_blocks.json
   write_json_atomic(
     list(error = "cmonitor-rs missing",
          checked_at = format(Sys.time(), tz = "UTC", usetz = TRUE)),
-    file.path(out_dir, "ccusage_blocks.json"),
+    file.path(out_dir, "legacy_ccusage_blocks.json"),
     auto_unbox = TRUE
   )
   cat("  -> cmonitor-rs not found, falling back to ccusage JSON files\n")
@@ -411,10 +412,11 @@ if (has_cmonitor) {
     mutate(project = "all") |>
     arrange(date)
 
-  write_json_atomic(daily_rows, file.path(out_dir, "ccusage_daily.json"), auto_unbox = TRUE)
+  # (#281 Phase 2): renamed ccusage_daily.json -> legacy_ccusage_daily.json
+  write_json_atomic(daily_rows, file.path(out_dir, "legacy_ccusage_daily.json"), auto_unbox = TRUE)
   # Also persist to inst/extdata so CI has a valid committed snapshot
-  write_json_atomic(daily_rows, file.path(extdata, "ccusage_daily.json"), auto_unbox = TRUE)
-  cat(sprintf("  -> %d daily rows\n", nrow(daily_rows)))
+  write_json_atomic(daily_rows, file.path(extdata, "legacy_ccusage_daily.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d daily rows (legacy_ccusage_daily.json)\n", nrow(daily_rows)))
 
   # --- 2. Sessions (not available from cmonitor-rs) ---------------------------
   cat("Exporting ccusage sessions (empty — cmonitor-rs has no session view)...\n")
@@ -442,10 +444,11 @@ if (has_cmonitor) {
     )
   }) |> bind_rows() |> arrange(startTime)
 
-  write_json_atomic(blk_rows, file.path(out_dir, "ccusage_blocks.json"), auto_unbox = TRUE)
+  # (#281 Phase 2): renamed ccusage_blocks.json -> legacy_ccusage_blocks.json
+  write_json_atomic(blk_rows, file.path(out_dir, "legacy_ccusage_blocks.json"), auto_unbox = TRUE)
   # Also persist to inst/extdata so CI has a committed snapshot to fall back to
-  write_json_atomic(blk_rows, file.path(extdata, "ccusage_blocks.json"), auto_unbox = TRUE)
-  cat(sprintf("  -> %d active blocks\n", nrow(blk_rows)))
+  write_json_atomic(blk_rows, file.path(extdata, "legacy_ccusage_blocks.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> %d active blocks (legacy_ccusage_blocks.json)\n", nrow(blk_rows)))
 
   # --- 3b. Per-model daily breakdown from model_stats -------------------------
   # NOTE (#1032): model_daily is a GLOBAL metric (cost/tokens by model, not by
@@ -481,36 +484,37 @@ if (has_cmonitor) {
 } else {
   # CI fallback: read existing ccusage JSON files from inst/extdata/
   blocks_all <- list()
-  # ccusage_daily.json is the flat daily array the dashboard expects (updated by local
-  # cmonitor-rs runs). ccusage_daily_all.json is the old nested {projects, totals}
-  # format — NOT the same schema. Always use the flat version for CI fallback.
-  # CI fallback: ccusage_daily.json is already a public flat export (no paths).
+  # (#281 Phase 2): legacy_ccusage_daily.json (renamed from ccusage_daily.json).
+  # ccusage_daily_all.json is the old nested {projects, totals} format — NOT the same
+  # schema. Always use the flat version for CI fallback.
+  # CI fallback: legacy_ccusage_daily.json is already a public flat export (no paths).
   # ccusage_session_all.json and ccusage_blocks_all.json contain raw sessionIds
   # and MUST NOT be copied verbatim to the public vignettes/data/ directory.
   # Write empty placeholders for the session/blocks public files instead.
   # (privacy regression fix: Issue #1 in roborev audit)
-  fallback_daily_src <- file.path(extdata, "ccusage_daily.json")
-  fallback_daily_dst <- file.path(out_dir, "ccusage_daily.json")
+  fallback_daily_src <- file.path(extdata, "legacy_ccusage_daily.json")
+  fallback_daily_dst <- file.path(out_dir, "legacy_ccusage_daily.json")
   if (file.exists(fallback_daily_src)) {
     file.copy(fallback_daily_src, fallback_daily_dst, overwrite = TRUE)
-    cat("  -> copied ccusage_daily.json (CI fallback)\n")
+    cat("  -> copied legacy_ccusage_daily.json (CI fallback)\n")
   } else if (!file.exists(fallback_daily_dst)) {
     write_json_atomic(list(), fallback_daily_dst, auto_unbox = TRUE)
-    cat("  -> ccusage_daily.json not found, wrote empty (CI fallback)\n")
+    cat("  -> legacy_ccusage_daily.json not found, wrote empty (CI fallback)\n")
   }
   # Always write empty sessions (raw sessionIds must not appear in public output).
   write_json_atomic(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
   cat("  -> wrote empty ccusage_sessions.json (CI fallback; cmonitor-rs not available)\n")
   # Blocks: use committed inst/extdata snapshot if present, else write empty array.
   # This keeps the "Time Blocks" dashboard page populated in CI. (#141)
-  fallback_blocks_src <- file.path(extdata, "ccusage_blocks.json")
-  fallback_blocks_dst <- file.path(out_dir, "ccusage_blocks.json")
+  # (#281 Phase 2): renamed to legacy_ccusage_blocks.json
+  fallback_blocks_src <- file.path(extdata, "legacy_ccusage_blocks.json")
+  fallback_blocks_dst <- file.path(out_dir, "legacy_ccusage_blocks.json")
   if (file.exists(fallback_blocks_src)) {
     file.copy(fallback_blocks_src, fallback_blocks_dst, overwrite = TRUE)
-    cat("  -> copied ccusage_blocks.json from inst/extdata (CI fallback)\n")
+    cat("  -> copied legacy_ccusage_blocks.json from inst/extdata (CI fallback)\n")
   } else {
     write_json_atomic(list(), fallback_blocks_dst, auto_unbox = TRUE)
-    cat("  -> wrote empty ccusage_blocks.json (CI fallback; no committed snapshot)\n")
+    cat("  -> wrote empty legacy_ccusage_blocks.json (CI fallback; no committed snapshot)\n")
   }
 }
 
@@ -605,6 +609,108 @@ codex_sessions_df <- if (file.exists(codex_sessions_src)) {
 } else tibble()
 cat(sprintf("  -> codex: %d daily rows, %d sessions\n",
             nrow(codex_daily_df), nrow(codex_sessions_df)))
+
+# --- 4.6. CodexBar canonical exports (#281 Phase 2) --------------------------
+# Derives three canonical JSON files from the committed codexbar_cost_daily.json
+# snapshot (produced by sanitize_codexbar.R):
+#   codexbar_cost_per_day.json     — one row per (date, model) with cost_usd
+#   codexbar_cost_per_project.json — placeholder (empty): per-project requires
+#                                    session→project metadata join; deferred to
+#                                    Phase 3 once project attribution is verified
+#   codexbar_cost_per_session.json — placeholder (empty): no session-level
+#                                    CodexBar data available from sanitized source
+#
+# Uses parse_codexbar_cost() from R/codexbar.R which is loaded below.
+cat("Exporting CodexBar canonical rollups (#281 Phase 2)...\n")
+tryCatch({
+  # Source the codexbar helpers if not already loaded
+  codexbar_helper <- file.path(pkg_root, "R", "codexbar.R")
+  if (file.exists(codexbar_helper) &&
+      !exists("parse_codexbar_cost", mode = "function")) {
+    source(codexbar_helper, local = FALSE)
+  }
+
+  codexbar_cost_src <- file.path(extdata, "codexbar_cost_daily.json")
+
+  if (file.exists(codexbar_cost_src) &&
+      exists("parse_codexbar_cost", mode = "function")) {
+    cb_raw <- parse_codexbar_cost(codexbar_cost_src)
+
+    # --- 2a-i: codexbar_cost_per_day.json -----------------------------------
+    # One row per (date, model) with total cost_usd across all providers.
+    if (nrow(cb_raw) > 0L) {
+      cb_per_day <- cb_raw |>
+        group_by(date, model) |>
+        summarise(
+          cost_usd     = round(sum(cost, na.rm = TRUE), 4),
+          total_tokens = sum(total_tokens, na.rm = TRUE),
+          .groups      = "drop"
+        ) |>
+        arrange(date, model)
+
+      write_json_atomic(cb_per_day,
+                        file.path(extdata, "codexbar_cost_per_day.json"),
+                        auto_unbox = TRUE)
+      write_json_atomic(cb_per_day,
+                        file.path(out_dir, "codexbar_cost_per_day.json"),
+                        auto_unbox = TRUE)
+      cat(sprintf("  -> codexbar_cost_per_day.json: %d rows (date×model)\n",
+                  nrow(cb_per_day)))
+    } else {
+      write_json_atomic(list(), file.path(extdata, "codexbar_cost_per_day.json"),
+                        auto_unbox = TRUE)
+      write_json_atomic(list(), file.path(out_dir, "codexbar_cost_per_day.json"),
+                        auto_unbox = TRUE)
+      cat("  -> codexbar_cost_per_day.json: empty (no CodexBar cost data)\n")
+    }
+
+    # --- 2a-ii: codexbar_cost_per_project.json (placeholder) ---------------
+    # Per-project attribution requires a session→project metadata join.
+    # CodexBar does not expose session-level project context in its cost JSON.
+    # Placeholder committed as [] until Phase 3 adds the join.
+    write_json_atomic(list(), file.path(extdata, "codexbar_cost_per_project.json"),
+                      auto_unbox = TRUE)
+    write_json_atomic(list(), file.path(out_dir, "codexbar_cost_per_project.json"),
+                      auto_unbox = TRUE)
+    cat("  -> codexbar_cost_per_project.json: [] placeholder (Phase 3 will add join)\n")
+
+    # --- 2a-iii: codexbar_cost_per_session.json (placeholder) ---------------
+    # No session-level CodexBar data in the sanitized source JSON.
+    # Placeholder committed as [] until sanitize_codexbar.R exposes session data.
+    write_json_atomic(list(), file.path(extdata, "codexbar_cost_per_session.json"),
+                      auto_unbox = TRUE)
+    write_json_atomic(list(), file.path(out_dir, "codexbar_cost_per_session.json"),
+                      auto_unbox = TRUE)
+    cat("  -> codexbar_cost_per_session.json: [] placeholder (no session-level CodexBar data)\n")
+
+  } else {
+    # CI fallback or missing codexbar_cost_daily.json: write empty placeholders
+    for (cb_file in c("codexbar_cost_per_day.json",
+                      "codexbar_cost_per_project.json",
+                      "codexbar_cost_per_session.json")) {
+      src <- file.path(extdata, cb_file)
+      dst <- file.path(out_dir, cb_file)
+      if (file.exists(src)) {
+        file.copy(src, dst, overwrite = TRUE)
+        cat(sprintf("  -> %s: copied from inst/extdata (CI fallback)\n", cb_file))
+      } else {
+        write_json_atomic(list(), dst, auto_unbox = TRUE)
+        write_json_atomic(list(), src, auto_unbox = TRUE)
+        cat(sprintf("  -> %s: wrote empty placeholder\n", cb_file))
+      }
+    }
+  }
+}, error = function(e) {
+  cat(sprintf("  -> CodexBar canonical exports error: %s\n", conditionMessage(e)))
+  for (cb_file in c("codexbar_cost_per_day.json",
+                    "codexbar_cost_per_project.json",
+                    "codexbar_cost_per_session.json")) {
+    tryCatch(
+      write_json_atomic(list(), file.path(out_dir, cb_file), auto_unbox = TRUE),
+      error = function(e2) NULL
+    )
+  }
+})
 
 # --- 5. Compute cmonitor summary from cmonitor-rs blocks ----------------------
 cat("Exporting cmonitor summary...\n")
@@ -1528,8 +1634,34 @@ api_index <- list(
   updated  = format(Sys.Date(), "%Y-%m-%d"),
   endpoints = list(
     list(
-      path        = "/ccusage_daily.json",
-      description = "Daily Claude API usage aggregated by date (last 90 days)",
+      path        = "/codexbar_cost_per_day.json",
+      description = "Canonical daily cost from CodexBar (primary; #281 Phase 2)",
+      type        = "array",
+      source      = "codexbar_cost_daily.json via parse_codexbar_cost()",
+      schema      = list(
+        date         = "string",
+        model        = "string",
+        cost_usd     = "number",
+        total_tokens = "integer"
+      )
+    ),
+    list(
+      path        = "/codexbar_cost_per_project.json",
+      description = "Canonical per-project daily cost from CodexBar (placeholder; Phase 3 will add join)",
+      type        = "array",
+      source      = "codexbar_cost_daily.json via session-project metadata join (pending)",
+      schema      = list()
+    ),
+    list(
+      path        = "/codexbar_cost_per_session.json",
+      description = "Canonical per-session cost from CodexBar (placeholder; pending session data)",
+      type        = "array",
+      source      = "codexbar session-level data (pending sanitize_codexbar.R update)",
+      schema      = list()
+    ),
+    list(
+      path        = "/legacy_ccusage_daily.json",
+      description = "LEGACY: Daily Claude API usage from cmonitor-rs (renamed from ccusage_daily.json in #281 Phase 2)",
       type        = "array",
       source      = "cmonitor-rs CLI (--view daily --output json --since 90d)",
       source_url  = "https://github.com/anthropics/cmonitor",
@@ -1553,8 +1685,8 @@ api_index <- list(
       schema      = list()
     ),
     list(
-      path        = "/ccusage_blocks.json",
-      description = "Claude API usage grouped into contiguous time blocks",
+      path        = "/legacy_ccusage_blocks.json",
+      description = "LEGACY: Claude API usage time blocks from cmonitor-rs (renamed from ccusage_blocks.json in #281 Phase 2)",
       type        = "array",
       source      = "cmonitor-rs CLI (--view daily --output json --since 90d)",
       source_url  = "https://github.com/anthropics/cmonitor",
@@ -5109,11 +5241,11 @@ tryCatch({
 
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
-# ccusage_blocks is intentionally excluded from critical_files: the CI fallback
-# writes an empty array [] when cmonitor-rs is unavailable (issue #141).
-# Schema validation for ccusage_blocks (valid JSON array, length 0 allowed) runs
-# separately below.
-critical_files <- c("ccusage_daily", "git_commits",
+# legacy_ccusage_blocks is intentionally excluded from critical_files: the CI
+# fallback writes an empty array [] when cmonitor-rs is unavailable (#141).
+# Schema validation for legacy_ccusage_blocks (valid JSON array, length 0 allowed)
+# runs separately below. (#281 Phase 2): ccusage_daily -> legacy_ccusage_daily.
+critical_files <- c("legacy_ccusage_daily", "git_commits",
                      "git_bus_factor", "git_velocity", "git_timing",
                      "git_churn", "git_bugs")
 qa_errors <- 0L
@@ -5156,8 +5288,9 @@ if (qa_errors > 0L) {
 cat("QA passed: all critical data files have rows\n\n")
 
 # Schema-only validation for optional files: valid JSON array, length 0 allowed.
-# ccusage_blocks.json is written as [] by the CI fallback (no cmonitor-rs).
-optional_schema_files <- c("ccusage_blocks", "self_review_findings")
+# legacy_ccusage_blocks.json is written as [] by the CI fallback (no cmonitor-rs).
+# (#281 Phase 2): ccusage_blocks -> legacy_ccusage_blocks.
+optional_schema_files <- c("legacy_ccusage_blocks", "self_review_findings")
 for (f in optional_schema_files) {
   path <- file.path(out_dir, paste0(f, ".json"))
   if (!file.exists(path)) {
@@ -5197,8 +5330,8 @@ writeLines(
     format(Sys.time(), tz = "UTC", usetz = TRUE),
     sprintf("source_host=%s", Sys.info()[["nodename"]]),
     sprintf("ccusage_present=%s", as.character(
-      file.exists(file.path(out_dir, "ccusage_blocks.json")) &&
-      file.info(file.path(out_dir, "ccusage_blocks.json"))$size > 50
+      file.exists(file.path(out_dir, "legacy_ccusage_blocks.json")) &&
+      file.info(file.path(out_dir, "legacy_ccusage_blocks.json"))$size > 50
     )),
     sprintf("predictions_n=%d", as.integer(n_predictions)),
     sprintf("sessions_n=%d",    as.integer(n_sessions))

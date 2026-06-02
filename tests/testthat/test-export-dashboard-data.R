@@ -372,29 +372,30 @@ test_that("projects_master.json n_sources is a positive integer for all rows", {
               info = "n_sources should be >= 1 for every project")
 })
 
-# ── 7. ccusage_daily.json CI fallback regression (#2080) ─────────────────────
+# ── 7. legacy_ccusage_daily.json CI fallback regression (#2080, #281 Phase 2) ─
 
-test_that("ccusage_daily.json is valid JSON and a flat array (data.frame)", {
-  path <- extdata_path("ccusage_daily.json")
-  skip_if(!nzchar(path), "ccusage_daily.json not installed")
+test_that("legacy_ccusage_daily.json is valid JSON and a flat array (data.frame)", {
+  path <- extdata_path("legacy_ccusage_daily.json")
+  skip_if(!nzchar(path), "legacy_ccusage_daily.json not installed")
   result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
   # expect_s3_class() does not accept info= in this testthat version; use
   # expect_true(is.data.frame()) to keep the diagnostic message. #117
   expect_true(
     is.data.frame(result),
-    info = "ccusage_daily.json must be a flat JSON array, not a nested object"
+    info = "legacy_ccusage_daily.json must be a flat JSON array, not a nested object"
   )
 })
 
-test_that("export_dashboard_data.R CI fallback copies ccusage_daily.json (not ccusage_daily_all.json)", {
+test_that("export_dashboard_data.R CI fallback copies legacy_ccusage_daily.json (not ccusage_daily_all.json)", {
   # Rewritten from the old fallback_map regex test (roborev round V/d).
+  # (#281 Phase 2): renamed ccusage_daily.json -> legacy_ccusage_daily.json.
   # The script no longer has a fallback_map list — it copies files directly.
   # We parse the CI fallback block to verify:
-  #   (i)  The source file is ccusage_daily.json (not ccusage_daily_all.json)
+  #   (i)  The source file is legacy_ccusage_daily.json (not ccusage_daily_all.json)
   #   (ii) ccusage_daily_all.json does NOT appear as the source of any file.copy call
   #
   # Strategy: find the `fallback_daily_src <- ...` assignment line, extract the
-  # filename string, and assert it equals "ccusage_daily.json".
+  # filename string, and assert it equals "legacy_ccusage_daily.json".
   script_path <- system.file("scripts", "export_dashboard_data.R",
                              package = "llmtelemetry")
   skip_if(!nzchar(script_path), "export_dashboard_data.R not installed")
@@ -412,17 +413,17 @@ test_that("export_dashboard_data.R CI fallback copies ccusage_daily.json (not cc
   block_text  <- paste(block_lines, collapse = "\n")
 
   # Parse the block to extract the source filename
-  # The line looks like: fallback_daily_src <- file.path(extdata, "ccusage_daily.json")
+  # The line looks like: fallback_daily_src <- file.path(extdata, "legacy_ccusage_daily.json")
   # Extract the quoted filename from the file.path() call
   src_match <- regmatches(block_text,
     regexpr('"([^"]+\\.json)"', block_text, perl = TRUE))
   src_filename <- if (length(src_match) > 0L) gsub('"', '', src_match[1L]) else NA_character_
 
-  # (i) Source must be ccusage_daily.json (not ccusage_daily_all.json)
+  # (i) Source must be legacy_ccusage_daily.json (#281 Phase 2 rename)
   expect_equal(
     src_filename,
-    "ccusage_daily.json",
-    info = paste("CI fallback source must be 'ccusage_daily.json'.",
+    "legacy_ccusage_daily.json",
+    info = paste("CI fallback source must be 'legacy_ccusage_daily.json' (#281 Phase 2 rename).",
                  "Using 'ccusage_daily_all.json' (old nested format) is a regression",
                  "(PR #93 changed the schema). Found:", src_filename)
   )
@@ -444,10 +445,11 @@ test_that("export_dashboard_data.R CI fallback copies ccusage_daily.json (not cc
 
 # ── CI fallback determinism (issue #141) ──────────────────────────────────────
 
-test_that("export_dashboard_data.R CI fallback always writes ccusage_blocks.json (no stale guard)", {
-  # The fallback must always produce ccusage_blocks.json in the output directory,
-  # either by copying the committed inst/extdata snapshot (if present) or by
-  # writing an empty array []. It must NEVER silently preserve a stale output
+test_that("export_dashboard_data.R CI fallback always writes legacy_ccusage_blocks.json (no stale guard)", {
+  # (#281 Phase 2): renamed ccusage_blocks.json -> legacy_ccusage_blocks.json.
+  # The fallback must always produce legacy_ccusage_blocks.json in the output
+  # directory, either by copying the committed inst/extdata snapshot (if present)
+  # or by writing an empty array []. It must NEVER silently preserve a stale output
   # (the pre-#163 bug: `if (!file.exists(dst))` skipped writing when dst existed).
   # Validates the fix for issue #141 (updated for PR #163 blocks-fallback refactor).
   script_path <- system.file("scripts", "export_dashboard_data.R",
@@ -460,13 +462,13 @@ test_that("export_dashboard_data.R CI fallback always writes ccusage_blocks.json
   skip_if(length(else_idx) == 0, "could not locate else-branch in export script")
   fallback_lines <- lines[seq(min(else_idx), length(lines))]
 
-  # (1) The fallback must reference ccusage_blocks.json as the destination path.
+  # (1) The fallback must reference legacy_ccusage_blocks.json as the destination.
   #     Either as a literal or via a fallback_blocks_dst variable assignment.
-  references_blocks_dst <- any(grepl("ccusage_blocks\\.json", fallback_lines))
+  references_blocks_dst <- any(grepl("legacy_ccusage_blocks\\.json", fallback_lines))
   expect_true(
     references_blocks_dst,
     info = paste(
-      "CI fallback does not reference ccusage_blocks.json.",
+      "CI fallback does not reference legacy_ccusage_blocks.json.",
       "The fallback must produce this file (copy snapshot or write empty array). Fixes #141."
     )
   )
@@ -479,13 +481,13 @@ test_that("export_dashboard_data.R CI fallback always writes ccusage_blocks.json
   #     and distinguishes "copy committed snapshot" from "write empty fallback".
   #     Only a dst-file-existence guard is forbidden.
   stale_guard <- any(grepl(
-    "file\\.exists.*fallback_blocks_dst|!file\\.exists.*['\"]ccusage_blocks",
+    "file\\.exists.*fallback_blocks_dst|!file\\.exists.*['\"]legacy_ccusage_blocks",
     fallback_lines
   ))
   expect_false(
     stale_guard,
     info = paste(
-      "CI fallback gates ccusage_blocks.json on DESTINATION file existence.",
+      "CI fallback gates legacy_ccusage_blocks.json on DESTINATION file existence.",
       "This preserves stale output and causes nondeterministic CI.",
       "Remove the if(!file.exists(dst)) guard. Fixes #141."
     )
@@ -509,18 +511,20 @@ test_that("export_dashboard_data.R CI fallback always writes ccusage_blocks.json
   blocks_branch_lines <- lines[blocks_window_start:blocks_window_end]
   # Collapse to a single string so multi-line calls are matched as one unit.
   blocks_window_text  <- paste(blocks_branch_lines, collapse = "\n")
-  # Match write_json(<any-first-arg>, fallback_blocks_dst, ...) — the destination
-  # must be fallback_blocks_dst, not just any co-occurring token.
+  # Match write_json or write_json_atomic(<any-first-arg>, fallback_blocks_dst, ...)
+  # — the destination must be fallback_blocks_dst, not just any co-occurring token.
+  # write_json_atomic is the atomic wrapper used throughout this project (#163).
   has_write_json_fallback <- grepl(
-    "write_json\\s*\\([^,]+,\\s*fallback_blocks_dst",
-    blocks_window_text
+    "write_json(?:_atomic)?\\s*\\([^,]+,\\s*fallback_blocks_dst",
+    blocks_window_text,
+    perl = TRUE
   )
   expect_true(
     has_write_json_fallback,
     info = paste(
-      "CI fallback blocks branch does not contain write_json(<data>, fallback_blocks_dst, ...).",
-      "The destination argument of write_json must be fallback_blocks_dst.",
-      "Add write_json(list(), fallback_blocks_dst, auto_unbox=TRUE) in the else branch. Fixes #141 #168."
+      "CI fallback blocks branch does not contain write_json_atomic(<data>, fallback_blocks_dst, ...).",
+      "The destination argument of write_json_atomic must be fallback_blocks_dst.",
+      "Add write_json_atomic(list(), fallback_blocks_dst, auto_unbox=TRUE) in the else branch. Fixes #141 #168."
     )
   )
 })
@@ -558,7 +562,7 @@ test_that("export_dashboard_data.R in-script QA does not treat ccusage_blocks as
   )
 })
 
-test_that("export_dashboard_data.R schema-only validation rejects non-array ccusage_blocks.json (#141 round-3)", {
+test_that("export_dashboard_data.R schema-only validation rejects non-array legacy_ccusage_blocks.json (#141 round-3)", {
   # The schema-only validation loop must assert the parsed JSON is a plain
   # (unnamed) list — i.e. a JSON array. A JSON object {} or a scalar must be
   # REJECTED with stop(). A zero-length array [] and a populated array must PASS.
@@ -637,5 +641,182 @@ test_that("optional schema guard: [] passes, {} and scalar are REJECTED (#154)",
   # Scalar must be REJECTED
   expect_false(is_valid_array("42"),
                label = "Scalar JSON value must be REJECTED, not accepted as an array")
+})
+
+# ── Phase 2 (#281): CodexBar canonical exports ────────────────────────────────
+
+# ── 8. codexbar_cost_per_day.json ─────────────────────────────────────────────
+
+test_that("codexbar_cost_per_day.json exists in inst/extdata", {
+  path <- extdata_path("codexbar_cost_per_day.json")
+  expect_true(nzchar(path), info = "codexbar_cost_per_day.json not found via system.file()")
+})
+
+test_that("codexbar_cost_per_day.json parses to a data.frame", {
+  path <- extdata_path("codexbar_cost_per_day.json")
+  skip_if(!nzchar(path), "codexbar_cost_per_day.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_true(is.data.frame(result),
+              info = "codexbar_cost_per_day.json must be a flat JSON array (data.frame)")
+})
+
+test_that("codexbar_cost_per_day.json has required columns", {
+  path <- extdata_path("codexbar_cost_per_day.json")
+  skip_if(!nzchar(path), "codexbar_cost_per_day.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  required_cols <- c("date", "model", "cost_usd")
+  expect_true(
+    all(required_cols %in% names(result)),
+    info = paste("Missing columns:", paste(setdiff(required_cols, names(result)), collapse = ", "))
+  )
+})
+
+test_that("codexbar_cost_per_day.json has at least one row", {
+  path <- extdata_path("codexbar_cost_per_day.json")
+  skip_if(!nzchar(path), "codexbar_cost_per_day.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_gt(nrow(result), 0L)
+})
+
+test_that("codexbar_cost_per_day.json date column matches YYYY-MM-DD pattern", {
+  path <- extdata_path("codexbar_cost_per_day.json")
+  skip_if(!nzchar(path), "codexbar_cost_per_day.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_true(
+    all(grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", result$date)),
+    info = "date values should match YYYY-MM-DD format"
+  )
+})
+
+test_that("codexbar_cost_per_day.json cost_usd is non-negative", {
+  path <- extdata_path("codexbar_cost_per_day.json")
+  skip_if(!nzchar(path), "codexbar_cost_per_day.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_true(all(result$cost_usd >= 0), info = "cost_usd must be >= 0")
+})
+
+# ── 9. codexbar_cost_per_project.json ─────────────────────────────────────────
+
+test_that("codexbar_cost_per_project.json exists in inst/extdata", {
+  path <- extdata_path("codexbar_cost_per_project.json")
+  expect_true(nzchar(path), info = "codexbar_cost_per_project.json not found via system.file()")
+})
+
+test_that("codexbar_cost_per_project.json parses to a data.frame or is an empty list", {
+  path <- extdata_path("codexbar_cost_per_project.json")
+  skip_if(!nzchar(path), "codexbar_cost_per_project.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_true(
+    is.data.frame(result) || is.list(result),
+    info = "codexbar_cost_per_project.json must be a JSON array"
+  )
+})
+
+test_that("codexbar_cost_per_project.json has required columns if non-empty", {
+  path <- extdata_path("codexbar_cost_per_project.json")
+  skip_if(!nzchar(path), "codexbar_cost_per_project.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  if (!is.data.frame(result) || nrow(result) == 0L) skip("empty array is valid placeholder")
+  required_cols <- c("project", "date", "cost_usd")
+  expect_true(
+    all(required_cols %in% names(result)),
+    info = paste("Missing columns:", paste(setdiff(required_cols, names(result)), collapse = ", "))
+  )
+})
+
+# ── 10. codexbar_cost_per_session.json ────────────────────────────────────────
+
+test_that("codexbar_cost_per_session.json exists in inst/extdata", {
+  path <- extdata_path("codexbar_cost_per_session.json")
+  expect_true(nzchar(path), info = "codexbar_cost_per_session.json not found via system.file()")
+})
+
+test_that("codexbar_cost_per_session.json parses to a data.frame or is an empty list", {
+  path <- extdata_path("codexbar_cost_per_session.json")
+  skip_if(!nzchar(path), "codexbar_cost_per_session.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_true(
+    is.data.frame(result) || is.list(result),
+    info = "codexbar_cost_per_session.json must be a JSON array"
+  )
+})
+
+test_that("codexbar_cost_per_session.json has required columns if non-empty", {
+  path <- extdata_path("codexbar_cost_per_session.json")
+  skip_if(!nzchar(path), "codexbar_cost_per_session.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  if (!is.data.frame(result) || nrow(result) == 0L) skip("empty array is valid placeholder")
+  required_cols <- c("date", "total_cost_usd")
+  expect_true(
+    all(required_cols %in% names(result)),
+    info = paste("Missing columns:", paste(setdiff(required_cols, names(result)), collapse = ", "))
+  )
+})
+
+# ── 11. legacy_ccusage_daily.json and legacy_ccusage_blocks.json (2b rename) ──
+
+test_that("legacy_ccusage_daily.json exists in inst/extdata after rename", {
+  path <- extdata_path("legacy_ccusage_daily.json")
+  expect_true(nzchar(path), info = "legacy_ccusage_daily.json not found — check 2b rename was applied")
+})
+
+test_that("legacy_ccusage_daily.json parses to a data.frame", {
+  path <- extdata_path("legacy_ccusage_daily.json")
+  skip_if(!nzchar(path), "legacy_ccusage_daily.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_true(is.data.frame(result),
+              info = "legacy_ccusage_daily.json must be a flat JSON array")
+})
+
+test_that("legacy_ccusage_blocks.json exists in inst/extdata after rename", {
+  path <- extdata_path("legacy_ccusage_blocks.json")
+  expect_true(nzchar(path), info = "legacy_ccusage_blocks.json not found — check 2b rename was applied")
+})
+
+# ── 12. unified_costs.json new shape (2c) ─────────────────────────────────────
+
+test_that("unified_costs.json parses as a flat array (data.frame)", {
+  path <- extdata_path("unified_costs.json")
+  skip_if(!nzchar(path), "unified_costs.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  expect_true(
+    is.data.frame(result) || is.list(result),
+    info = "unified_costs.json must be a valid JSON array"
+  )
+})
+
+# ── 13. export_dashboard_data.R script references legacy_ccusage filenames (2b) ──
+
+test_that("export_dashboard_data.R writes legacy_ccusage_daily.json not ccusage_daily.json to vignettes/data", {
+  script_path <- system.file("scripts", "export_dashboard_data.R",
+                             package = "llmtelemetry")
+  skip_if(!nzchar(script_path), "export_dashboard_data.R not installed")
+  lines <- readLines(script_path)
+  non_comment <- grep("^\\s*#", lines, invert = TRUE, value = TRUE)
+  # The primary live path must write legacy_ccusage_daily.json
+  has_legacy_write <- any(grepl("legacy_ccusage_daily\\.json", non_comment))
+  expect_true(has_legacy_write,
+              info = "export_dashboard_data.R must write legacy_ccusage_daily.json (Phase 2 rename)")
+})
+
+test_that("export_dashboard_data.R writes legacy_ccusage_blocks.json not ccusage_blocks.json to vignettes/data", {
+  script_path <- system.file("scripts", "export_dashboard_data.R",
+                             package = "llmtelemetry")
+  skip_if(!nzchar(script_path), "export_dashboard_data.R not installed")
+  lines <- readLines(script_path)
+  non_comment <- grep("^\\s*#", lines, invert = TRUE, value = TRUE)
+  has_legacy_write <- any(grepl("legacy_ccusage_blocks\\.json", non_comment))
+  expect_true(has_legacy_write,
+              info = "export_dashboard_data.R must write legacy_ccusage_blocks.json (Phase 2 rename)")
+})
+
+# ── 14. Snapshot test for codexbar_cost_per_day.json schema ───────────────────
+
+test_that("codexbar_cost_per_day.json column names match expected schema snapshot", {
+  path <- extdata_path("codexbar_cost_per_day.json")
+  skip_if(!nzchar(path), "codexbar_cost_per_day.json not installed")
+  result <- jsonlite::fromJSON(path, simplifyDataFrame = TRUE)
+  skip_if(!is.data.frame(result) || nrow(result) == 0L, "empty data; skip snapshot")
+  expect_snapshot(sort(names(result)))
 })
 

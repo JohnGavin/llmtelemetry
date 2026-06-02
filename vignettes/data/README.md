@@ -20,9 +20,10 @@ It contains the current version, list of all endpoints, their schemas, and data 
 
 ## Endpoints
 
-### ccusage_daily.json
+### legacy_ccusage_daily.json
 
-Daily Claude API usage aggregated by project.
+LEGACY — renamed from `ccusage_daily.json` in #281 Phase 2. Daily Claude API usage aggregated by project from cmonitor-rs.
+Use `codexbar_cost_per_day.json` for the canonical CodexBar source.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -62,9 +63,9 @@ Claude API sessions with token and cost totals.
 
 ---
 
-### ccusage_blocks.json
+### legacy_ccusage_blocks.json
 
-Claude API usage grouped into contiguous time blocks (gaps and zero-cost blocks excluded).
+LEGACY — renamed from `ccusage_blocks.json` in #281 Phase 2. Claude API usage grouped into contiguous time blocks (gaps and zero-cost blocks excluded).
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -166,9 +167,11 @@ base_url <- "https://johngavin.github.io/llmtelemetry/data"
 index <- fromJSON(paste0(base_url, "/index.json"))
 index$endpoints$path
 
-# Load daily Claude usage
-daily <- fromJSON(paste0(base_url, "/ccusage_daily.json"))
+# Load daily Claude usage (CodexBar canonical; legacy ccusage via legacy_ccusage_daily.json)
+daily <- fromJSON(paste0(base_url, "/codexbar_cost_per_day.json"))
 head(daily)
+# Legacy ccusage daily (renamed in #281 Phase 2):
+# legacy_daily <- fromJSON(paste0(base_url, "/legacy_ccusage_daily.json"))
 ```
 
 ```python
@@ -181,6 +184,7 @@ index = requests.get(f"{base_url}/index.json").json()
 for ep in index["endpoints"]:
     print(ep["path"], "-", ep["description"])
 
-# Load daily Claude usage
-daily = requests.get(f"{base_url}/ccusage_daily.json").json()
+# Load daily Claude usage (CodexBar canonical; legacy ccusage via legacy_ccusage_daily.json)
+daily = requests.get(f"{base_url}/codexbar_cost_per_day.json").json()
+# Legacy: daily = requests.get(f"{base_url}/legacy_ccusage_daily.json").json()
 ```
