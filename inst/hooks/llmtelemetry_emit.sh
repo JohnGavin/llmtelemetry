@@ -1,33 +1,211 @@
 #!/usr/bin/env bash
-# llmtelemetry_emit.sh — Phase 1D push hook for epic #83.
-# Appends telemetry events to a staging JSONL file.
-# Symlink from ~/.claude/hooks/ to enable.
+# llmtelemetry_emit.sh — Template hook bundled with the llmtelemetry R package.
 #
-# Usage: stdin = JSON object, OR pass --event-type plus key=value pairs.
-# Writes to ~/.claude/logs/llmtelemetry-staging/events-YYYY-MM-DD.jsonl
+# Installation: copy (or symlink) to ~/.claude/hooks/llmtelemetry_emit.sh
+# then wire it in ~/.claude/settings.json:
+#
+#   "hooks": {
+#     "SessionStart": [{ "hooks": [{ "type": "command",
+#       "command": "~/.claude/hooks/llmtelemetry_emit.sh start" }] }],
+#     "Stop":         [{ "hooks": [{ "type": "command",
+#       "command": "~/.claude/hooks/llmtelemetry_emit.sh stop"  }] }]
+#   }
+#
+# Usage:
+#   llmtelemetry_emit.sh start   (SessionStart hook)
+#   llmtelemetry_emit.sh stop    (Stop hook)
+#
+# Opt-in (either flag suffices):
+#   Global:      touch ~/.claude/.llmtelemetry_emit
+#   Per-project: touch <project_dir>/.llmtelemetry_emit
+#
+# Staging output:
+#   ${LLMTELEMETRY_STAGING_DIR}/events-HOST-DATE.jsonl
+#   Default LLMTELEMETRY_STAGING_DIR: ~/.claude/logs/llmtelemetry-staging
+#
+# Format: {"ts":"...","host":"...","pid":"...","payload":{...}}
+#
+# Fire-and-forget: always exits 0. Never blocks session start/stop.
+#
+# Real-session-end gate: the Stop hook fires after EVERY Claude response,
+# not only at actual session end. To avoid spurious stop events on every
+# response, stop emission is gated behind a per-session sentinel file:
+#   ~/.claude/.bye-requested.<SESSION_ID>
+# The sentinel is written by /bye (the session-end skill) and consumed here
+# immediately. Mid-session Stop invocations skip emit entirely.
+#
+# The per-session sentinel prevents one concurrent session's Stop from
+# consuming another session's sentinel (the global .bye-requested would be
+# a shared resource vulnerable to cross-session consumption).
+#
+# The /bye skill must write the per-session sentinel using the same session ID
+# this hook derives. When CLAUDE_SESSION_ID is set, /bye should run:
+#   touch ~/.claude/.bye-requested.${CLAUDE_SESSION_ID}
+# This hook also checks the legacy global sentinel (~/.claude/.bye-requested)
+# as a backward-compatibility fallback; if found, it is consumed only when no
+# newer per-session sentinel exists, and only for the session whose start state
+# file is present.
+#
+# Concurrent-session safety: both sentinel files and state files are namespaced
+# by SESSION_ID so that overlapping sessions don't overwrite each other.
+#
+# Stable session ID: CLAUDE_SESSION_ID (env var) is preferred; fallback reads
+# ~/.claude/logs/.current_session; if both absent the start invocation generates
+# a random token, persists it to a stable-key state file, and the matching stop
+# reads it back — ensuring the start/stop pair always uses the same ID.
+#
+# To find the installed path after install.packages("llmtelemetry"):
+#   system.file("hooks", "llmtelemetry_emit.sh", package = "llmtelemetry")
 
-set -euo pipefail
+set -uo pipefail
 
-STAGING_DIR="${LLMTELEMETRY_STAGING_DIR:-$HOME/.claude/logs/llmtelemetry-staging}"
-mkdir -p "$STAGING_DIR"
+MODE="${1:-stop}"
+LOG_DIR="$HOME/.claude/logs"
+STAGING_DIR="${LLMTELEMETRY_STAGING_DIR:-$LOG_DIR/llmtelemetry-staging}"
+GLOBAL_FLAG="$HOME/.claude/.llmtelemetry_emit"
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd 2>/dev/null || echo "")}"
+PROJECT_FLAG="$PROJECT_DIR/.llmtelemetry_emit"
 
-TODAY=$(date -u +%Y-%m-%d)
-NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-STAGING_FILE="$STAGING_DIR/events-$TODAY.jsonl"
-
-# If stdin has data, treat it as the event payload (must be valid JSON object).
-# Else build a minimal event from arguments.
-if [ ! -t 0 ]; then
-  PAYLOAD=$(cat)
-else
-  PAYLOAD="{}"
+# Opt-in gate (fail-open: if gate check errors, skip emit silently)
+if [ ! -f "$GLOBAL_FLAG" ] && [ ! -f "$PROJECT_FLAG" ]; then
+  exit 0
 fi
 
-# Wrap in an envelope with timestamp + source
-ENVELOPE=$(printf '{"ts":"%s","host":"%s","pid":"%s","payload":%s}\n' \
-                  "$NOW" "$(hostname -s)" "$$" "$PAYLOAD")
+# ── Stable session ID resolution ─────────────────────────────────────────────
+# Priority: CLAUDE_SESSION_ID env var → .current_session file → persisted
+# fallback. A time-based fallback is NOT used here because start and stop
+# run at different times, producing different timestamps and mismatched IDs.
+#
+# Stable-fallback scheme: an anchor file keyed by PPID (the parent process id,
+# which is the Claude Code process — identical for both the start and stop hook
+# invocations of the same session).  PPID is a POSIX shell variable, available
+# without `ps` or any external tool.
+#
+# start: generates a random token, writes it to $LOG_DIR/.llmtelemetry_sid_ppid.$PPID
+# stop:  reads the token back using the same PPID key
+#
+# This pairing is reliable because:
+#   - Both invocations are child processes of the same Claude process (same PPID).
+#   - PPID is not reused during a running Claude session.
+#   - If multiple Claude processes run concurrently, each has a distinct PID,
+#     so their children have distinct PPIDs — no cross-session collision.
+SESSION_ID="${CLAUDE_SESSION_ID:-}"
+if [ -z "$SESSION_ID" ] && [ -f "$LOG_DIR/.current_session" ]; then
+  SESSION_ID=$(cat "$LOG_DIR/.current_session" 2>/dev/null || echo "")
+fi
 
-# Atomic append: write to .tmp then concatenate (best-effort, lockless)
-echo "$ENVELOPE" >> "$STAGING_FILE"
+# PPID is available in every POSIX shell without external tools
+_PPID="${PPID:-}"
+_ANCHOR_FILE="${LOG_DIR}/.llmtelemetry_sid_ppid.${_PPID}"
+
+if [ -z "$SESSION_ID" ]; then
+  if [ "$MODE" = "start" ]; then
+    # Generate a stable random token and persist it under the PPID anchor key
+    SESSION_ID="hook-$(LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 12 || echo "fb$(date -u '+%H%M%S')")"
+    printf '%s' "$SESSION_ID" > "$_ANCHOR_FILE" 2>/dev/null || true
+  else
+    # stop: read the token generated by start
+    if [ -n "$_PPID" ] && [ -f "$_ANCHOR_FILE" ]; then
+      SESSION_ID=$(cat "$_ANCHOR_FILE" 2>/dev/null || echo "")
+    fi
+    # Final safety net: if still empty, nothing to match — exit cleanly
+    [ -n "$SESSION_ID" ] || exit 0
+  fi
+fi
+
+# Per-session state files — namespaced by SESSION_ID to avoid concurrent collisions
+STATE_START="$LOG_DIR/.llmtelemetry_started_at.${SESSION_ID}"
+STATE_SID="$LOG_DIR/.llmtelemetry_session_id.${SESSION_ID}"
+
+# Derive project name from project directory
+PROJECT=$(basename "${PROJECT_DIR:-$(pwd 2>/dev/null || echo unknown)}")
+
+# ── START mode: record UTC start time and session ID ─────────────────────────
+if [ "$MODE" = "start" ]; then
+  date -u '+%Y-%m-%dT%H:%M:%SZ' > "$STATE_START" 2>/dev/null || true
+  printf '%s' "$SESSION_ID" > "$STATE_SID" 2>/dev/null || true
+  exit 0
+fi
+
+# ── STOP mode: gate on per-session /bye sentinel ─────────────────────────────
+# The Stop hook fires after every Claude response. Only emit session_stop when
+# the user has explicitly ended the session via /bye, which writes the sentinel.
+#
+# Per-session sentinel: ~/.claude/.bye-requested.<SESSION_ID>
+# Prevents one concurrent session's Stop from consuming another's sentinel.
+# The /bye skill should write: touch ~/.claude/.bye-requested.${CLAUDE_SESSION_ID}
+_BYE_SENTINEL_SESSION="${HOME}/.claude/.bye-requested.${SESSION_ID}"
+_BYE_SENTINEL_LEGACY="${HOME}/.claude/.bye-requested"
+
+if [ -f "$_BYE_SENTINEL_SESSION" ]; then
+  # Per-session sentinel present: consume it and proceed with emit
+  rm -f "$_BYE_SENTINEL_SESSION" 2>/dev/null || true
+elif [ -f "$_BYE_SENTINEL_LEGACY" ] && [ -f "$STATE_START" ]; then
+  # Legacy global sentinel present AND this session has a start record:
+  # consume the global sentinel (backward compat) and proceed with emit.
+  # NOTE: in concurrent-session deployments, upgrade /bye to write the
+  # per-session sentinel to eliminate the residual race on the legacy path.
+  rm -f "$_BYE_SENTINEL_LEGACY" 2>/dev/null || true
+else
+  # Not a real session end — skip telemetry emit. State files are preserved
+  # so the eventual real /bye stop can compute accurate duration.
+  exit 0
+fi
+
+# ── STOP mode: emit JSONL envelope ───────────────────────────────────────────
+mkdir -p "$STAGING_DIR" 2>/dev/null || exit 0
+
+HOST=$(hostname -s 2>/dev/null || echo "unknown")
+TS_END=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+DATE=$(date +%Y-%m-%d)
+
+# Read start time written by start mode (fall back to empty)
+TS_START=""
+if [ -f "$STATE_START" ]; then
+  TS_START=$(cat "$STATE_START" 2>/dev/null || echo "")
+fi
+# Restore session ID written at start (may differ from env var in some sessions)
+if [ -f "$STATE_SID" ]; then
+  SAVED_SID=$(cat "$STATE_SID" 2>/dev/null || echo "")
+  [ -n "$SAVED_SID" ] && SESSION_ID="$SAVED_SID"
+fi
+
+# Compute duration_min using python3 (portable: works with BSD and GNU date)
+DURATION_MIN="null"
+if [ -n "$TS_START" ]; then
+  DURATION_MIN=$(python3 - "$TS_START" 2>/dev/null <<'PYEOF'
+import sys, datetime
+try:
+    start = datetime.datetime.strptime(sys.argv[1], "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=datetime.timezone.utc)
+    now   = datetime.datetime.now(datetime.timezone.utc)
+    print(f"{(now - start).total_seconds() / 60:.2f}")
+except Exception:
+    print("null")
+PYEOF
+  ) || DURATION_MIN="null"
+fi
+
+# Minimal JSON escaping for string fields (backslash and double-quote)
+jsons() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+# Build and append the JSONL envelope
+JSONL=$(printf \
+  '{"ts":"%s","host":"%s","pid":"%s","payload":{"event_type":"session_stop","session_id":"%s","project":"%s","started_at":"%s","ended_at":"%s","duration_min":%s,"agent":"claude-code","source":"claude-code-hook","working_dir":"%s"}}' \
+  "$TS_END" \
+  "$(jsons "$HOST")" \
+  "$$" \
+  "$(jsons "$SESSION_ID")" \
+  "$(jsons "$PROJECT")" \
+  "$(jsons "${TS_START:-}")" \
+  "$TS_END" \
+  "$DURATION_MIN" \
+  "$(jsons "$PROJECT_DIR")")
+
+printf '%s\n' "$JSONL" >> "$STAGING_DIR/events-${HOST}-${DATE}.jsonl" 2>/dev/null || true
+
+# Clean up per-session state files and PPID anchor (only on real session end)
+rm -f "$STATE_START" "$STATE_SID" 2>/dev/null || true
+[ -n "$_PPID" ] && rm -f "$_ANCHOR_FILE" 2>/dev/null || true
 
 exit 0
