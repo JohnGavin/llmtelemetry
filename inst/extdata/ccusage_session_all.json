@@ -1,6 +1,339 @@
 {
   "sessions": [
     {
+      "sessionId": "sanitized@llm@hd442bc158f68",
+      "inputTokens": 96015,
+      "outputTokens": 2534259,
+      "cacheCreationTokens": 41821941,
+      "cacheReadTokens": 1194883302,
+      "totalTokens": 1239335517,
+      "totalCost": 911.1605,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-5-20250929",
+        "claude-sonnet-4-6",
+        "claude-opus-4-8"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-6",
+          "inputTokens": 17865,
+          "outputTokens": 615222,
+          "cacheCreationTokens": 21022810,
+          "cacheReadTokens": 609858270,
+          "cost": 451.7916
+        },
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 6665,
+          "outputTokens": 1883804,
+          "cacheCreationTokens": 15885440,
+          "cacheReadTokens": 449884461,
+          "cost": 371.3547
+        },
+        {
+          "modelName": "claude-opus-4-5-20251101",
+          "inputTokens": 7757,
+          "outputTokens": 2928,
+          "cacheCreationTokens": 3516168,
+          "cacheReadTokens": 92216426,
+          "cost": 68.1962
+        },
+        {
+          "modelName": "claude-sonnet-4-5-20250929",
+          "inputTokens": 10159,
+          "outputTokens": 814,
+          "cacheCreationTokens": 900027,
+          "cacheReadTokens": 29837013,
+          "cost": 12.3689
+        },
+        {
+          "modelName": "claude-sonnet-4-6",
+          "inputTokens": 133,
+          "outputTokens": 31339,
+          "cacheCreationTokens": 136898,
+          "cacheReadTokens": 13014796,
+          "cost": 4.8883
+        },
+        {
+          "modelName": "claude-opus-4-8",
+          "inputTokens": 53436,
+          "outputTokens": 152,
+          "cacheCreationTokens": 360598,
+          "cacheReadTokens": 72336,
+          "cost": 2.5609
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@premortem@hc9e4c9f9abc4",
+      "inputTokens": 720,
+      "outputTokens": 371910,
+      "cacheCreationTokens": 4607070,
+      "cacheReadTokens": 251196737,
+      "totalTokens": 256176437,
+      "totalCost": 163.6939,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 720,
+          "outputTokens": 371910,
+          "cacheCreationTokens": 4607070,
+          "cacheReadTokens": 251196737,
+          "cost": 163.6939
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@llmtelemetry@hcf09e0ceadc9",
+      "inputTokens": 70,
+      "outputTokens": 14685,
+      "cacheCreationTokens": 367132,
+      "cacheReadTokens": 8856537,
+      "totalTokens": 9238424,
+      "totalCost": 7.0903,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 70,
+          "outputTokens": 14685,
+          "cacheCreationTokens": 367132,
+          "cacheReadTokens": 8856537,
+          "cost": 7.0903
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@feat@h7e60d355f4df",
+      "inputTokens": 128,
+      "outputTokens": 46085,
+      "cacheCreationTokens": 494813,
+      "cacheReadTokens": 23318938,
+      "totalTokens": 23859964,
+      "totalCost": 15.9048,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 128,
+          "outputTokens": 46085,
+          "cacheCreationTokens": 494813,
+          "cacheReadTokens": 23318938,
+          "cost": 15.9048
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@historical@h07f5c52fdc22",
+      "inputTokens": 65,
+      "outputTokens": 37372,
+      "cacheCreationTokens": 607703,
+      "cacheReadTokens": 7959001,
+      "totalTokens": 8604141,
+      "totalCost": 8.7123,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 65,
+          "outputTokens": 37372,
+          "cacheCreationTokens": 607703,
+          "cacheReadTokens": 7959001,
+          "cost": 8.7123
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "subagents",
+      "inputTokens": 213,
+      "outputTokens": 16352,
+      "cacheCreationTokens": 2691949,
+      "cacheReadTokens": 30014181,
+      "totalTokens": 32722695,
+      "totalCost": 19.345,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-sonnet-4-6"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-sonnet-4-6",
+          "inputTokens": 213,
+          "outputTokens": 16352,
+          "cacheCreationTokens": 2691949,
+          "cacheReadTokens": 30014181,
+          "cost": 19.345
+        }
+      ],
+      "projectPath": "sanitized@feat@h7e60d355f4df"
+    },
+    {
+      "sessionId": "subagents",
+      "inputTokens": 81,
+      "outputTokens": 4354,
+      "cacheCreationTokens": 162022,
+      "cacheReadTokens": 9978950,
+      "totalTokens": 10145407,
+      "totalCost": 3.6668,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-sonnet-4-6"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-sonnet-4-6",
+          "inputTokens": 81,
+          "outputTokens": 4354,
+          "cacheCreationTokens": 162022,
+          "cacheReadTokens": 9978950,
+          "cost": 3.6668
+        }
+      ],
+      "projectPath": "sanitized@historical@h07f5c52fdc22"
+    },
+    {
+      "sessionId": "sanitized@unknown@h4e11ff3341b3",
+      "inputTokens": 8,
+      "outputTokens": 3474,
+      "cacheCreationTokens": 231516,
+      "cacheReadTokens": 686946,
+      "totalTokens": 921944,
+      "totalCost": 1.8773,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 8,
+          "outputTokens": 3474,
+          "cacheCreationTokens": 231516,
+          "cacheReadTokens": 686946,
+          "cost": 1.8773
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@unknown@hbc90401ab17e",
+      "inputTokens": 6,
+      "outputTokens": 22182,
+      "cacheCreationTokens": 214225,
+      "cacheReadTokens": 246973,
+      "totalTokens": 483386,
+      "totalCost": 2.017,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 6,
+          "outputTokens": 22182,
+          "cacheCreationTokens": 214225,
+          "cacheReadTokens": 246973,
+          "cost": 2.017
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@historical@hab1dbae317d5",
+      "inputTokens": 5,
+      "outputTokens": 4812,
+      "cacheCreationTokens": 173067,
+      "cacheReadTokens": 17051,
+      "totalTokens": 194935,
+      "totalCost": 1.2105,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 5,
+          "outputTokens": 4812,
+          "cacheCreationTokens": 173067,
+          "cacheReadTokens": 17051,
+          "cost": 1.2105
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@unknown@h0fceaf63ae09",
+      "inputTokens": 7,
+      "outputTokens": 3151,
+      "cacheCreationTokens": 211347,
+      "cacheReadTokens": 468867,
+      "totalTokens": 683372,
+      "totalCost": 1.6342,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 7,
+          "outputTokens": 3151,
+          "cacheCreationTokens": 211347,
+          "cacheReadTokens": 468867,
+          "cost": 1.6342
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@unknown@hb4b98c9e003f",
+      "inputTokens": 5,
+      "outputTokens": 2395,
+      "cacheCreationTokens": 209117,
+      "cacheReadTokens": 17051,
+      "totalTokens": 228568,
+      "totalCost": 1.3754,
+      "lastActivity": "2026-06-04",
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-7",
+          "inputTokens": 5,
+          "outputTokens": 2395,
+          "cacheCreationTokens": 209117,
+          "cacheReadTokens": 17051,
+          "cost": 1.3754
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
       "sessionId": "sanitized@historical@he19191e50cc8",
       "inputTokens": 85034,
       "outputTokens": 2791906,
@@ -47,30 +380,6 @@
           "cacheCreationTokens": 385048,
           "cacheReadTokens": 72336,
           "cost": 2.7289
-        }
-      ],
-      "projectPath": "Unknown Project"
-    },
-    {
-      "sessionId": "sanitized@premortem@hc9e4c9f9abc4",
-      "inputTokens": 705,
-      "outputTokens": 365132,
-      "cacheCreationTokens": 4461851,
-      "cacheReadTokens": 249675804,
-      "totalTokens": 254503492,
-      "totalCost": 161.8563,
-      "lastActivity": "2026-06-03",
-      "modelsUsed": [
-        "claude-opus-4-7"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-opus-4-7",
-          "inputTokens": 705,
-          "outputTokens": 365132,
-          "cacheCreationTokens": 4461851,
-          "cacheReadTokens": 249675804,
-          "cost": 161.8563
         }
       ],
       "projectPath": "Unknown Project"
@@ -545,75 +854,6 @@
           "cacheCreationTokens": 212912,
           "cacheReadTokens": 0,
           "cost": 1.3965
-        }
-      ],
-      "projectPath": "Unknown Project"
-    },
-    {
-      "sessionId": "sanitized@llm@hd442bc158f68",
-      "inputTokens": 96010,
-      "outputTokens": 2527167,
-      "cacheCreationTokens": 41640477,
-      "cacheReadTokens": 1194866251,
-      "totalTokens": 1239129905,
-      "totalCost": 909.8405,
-      "lastActivity": "2026-06-02",
-      "modelsUsed": [
-        "claude-opus-4-6",
-        "claude-opus-4-7",
-        "claude-opus-4-5-20251101",
-        "claude-sonnet-4-5-20250929",
-        "claude-sonnet-4-6",
-        "claude-opus-4-8"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-opus-4-6",
-          "inputTokens": 17865,
-          "outputTokens": 615222,
-          "cacheCreationTokens": 21022810,
-          "cacheReadTokens": 609858270,
-          "cost": 451.7916
-        },
-        {
-          "modelName": "claude-opus-4-7",
-          "inputTokens": 6660,
-          "outputTokens": 1876712,
-          "cacheCreationTokens": 15703976,
-          "cacheReadTokens": 449867410,
-          "cost": 370.0347
-        },
-        {
-          "modelName": "claude-opus-4-5-20251101",
-          "inputTokens": 7757,
-          "outputTokens": 2928,
-          "cacheCreationTokens": 3516168,
-          "cacheReadTokens": 92216426,
-          "cost": 68.1962
-        },
-        {
-          "modelName": "claude-sonnet-4-5-20250929",
-          "inputTokens": 10159,
-          "outputTokens": 814,
-          "cacheCreationTokens": 900027,
-          "cacheReadTokens": 29837013,
-          "cost": 12.3689
-        },
-        {
-          "modelName": "claude-sonnet-4-6",
-          "inputTokens": 133,
-          "outputTokens": 31339,
-          "cacheCreationTokens": 136898,
-          "cacheReadTokens": 13014796,
-          "cost": 4.8883
-        },
-        {
-          "modelName": "claude-opus-4-8",
-          "inputTokens": 53436,
-          "outputTokens": 152,
-          "cacheCreationTokens": 360598,
-          "cacheReadTokens": 72336,
-          "cost": 2.5609
         }
       ],
       "projectPath": "Unknown Project"
@@ -6355,39 +6595,6 @@
       "projectPath": "sanitized@llm@hd442bc158f68"
     },
     {
-      "sessionId": "sanitized@urban@h0a0d569fe617",
-      "inputTokens": 4370,
-      "outputTokens": 425369,
-      "cacheCreationTokens": 5712245,
-      "cacheReadTokens": 285271696,
-      "totalTokens": 291413680,
-      "totalCost": 188.9935,
-      "lastActivity": "2026-05-04",
-      "modelsUsed": [
-        "claude-opus-4-6",
-        "claude-opus-4-7"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-opus-4-6",
-          "inputTokens": 4314,
-          "outputTokens": 404018,
-          "cacheCreationTokens": 5577443,
-          "cacheReadTokens": 281185717,
-          "cost": 185.5739
-        },
-        {
-          "modelName": "claude-opus-4-7",
-          "inputTokens": 56,
-          "outputTokens": 21351,
-          "cacheCreationTokens": 134802,
-          "cacheReadTokens": 4085979,
-          "cost": 3.4196
-        }
-      ],
-      "projectPath": "Unknown Project"
-    },
-    {
       "sessionId": "subagents",
       "inputTokens": 2170,
       "outputTokens": 175021,
@@ -6452,39 +6659,6 @@
         }
       ],
       "projectPath": "sanitized@llm@hd442bc158f68"
-    },
-    {
-      "sessionId": "subagents",
-      "inputTokens": 257,
-      "outputTokens": 157437,
-      "cacheCreationTokens": 1625891,
-      "cacheReadTokens": 9638518,
-      "totalTokens": 11422103,
-      "totalCost": 10.6412,
-      "lastActivity": "2026-04-29",
-      "modelsUsed": [
-        "claude-sonnet-4-6",
-        "claude-haiku-4-5-20251001"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-sonnet-4-6",
-          "inputTokens": 217,
-          "outputTokens": 155294,
-          "cacheCreationTokens": 1371835,
-          "cacheReadTokens": 9372672,
-          "cost": 10.2862
-        },
-        {
-          "modelName": "claude-haiku-4-5-20251001",
-          "inputTokens": 40,
-          "outputTokens": 2143,
-          "cacheCreationTokens": 254056,
-          "cacheReadTokens": 265846,
-          "cost": 0.3549
-        }
-      ],
-      "projectPath": "sanitized@urban@h0a0d569fe617"
     },
     {
       "sessionId": "subagents",
@@ -6662,11 +6836,11 @@
     }
   ],
   "totals": {
-    "inputTokens": 2625201,
-    "outputTokens": 24823169,
-    "cacheCreationTokens": 385078640,
-    "cacheReadTokens": 13315884040,
-    "totalCost": 8476.8768,
-    "totalTokens": 13728411050
+    "inputTokens": 2621182,
+    "outputTokens": 24409095,
+    "cacheCreationTokens": 383430078,
+    "cacheReadTokens": 13104076305,
+    "totalCost": 8343.2334,
+    "totalTokens": 13514536660
   }
 }
