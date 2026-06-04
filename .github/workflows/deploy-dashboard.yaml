@@ -75,13 +75,14 @@ jobs:
           python3 << 'PYEOF'
           import json, os, sys
           data_dir = "vignettes/data"
-          critical = ["ccusage_daily", "git_commits",
+          critical = ["legacy_ccusage_daily", "git_commits",
                       "git_bus_factor", "git_velocity", "git_timing",
                       "git_churn", "git_bugs"]
-          # ccusage_blocks is produced by cmonitor-rs, which is unavailable in CI.
+          # legacy_ccusage_blocks is produced by cmonitor-rs, which is unavailable in CI.
           # The CI fallback writes a valid empty JSON array. Treat as optional so
           # the deploy is not hard-failed when cmonitor-rs is absent. Fixes #141.
-          optional = ["ccusage_blocks", "gemini_daily", "gemini_sessions",
+          # (Renamed from ccusage_daily/ccusage_blocks in #281 Phase 2 / #284.)
+          optional = ["legacy_ccusage_blocks", "gemini_daily", "gemini_sessions",
                       "unified_sessions", "unified_costs", "git_tags",
                       "git_crisis", "git_todo", "predictions", "calibration_buckets"]
           def count_rows(d):
