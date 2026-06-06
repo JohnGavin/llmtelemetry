@@ -5274,8 +5274,15 @@ server <- function(input, output, session) {
 
   output$rv_noise_rate_chart <- renderUI({
     raw <- roborev_noise_rate_raw
-    if (is.null(raw) || !is.list(raw) || length(raw$daily) == 0L)
-      return(ec_empty("No noise-rate data yet — roborev_noise_rate.json not deployed", h = "320px"))
+    if (is.null(raw) || !is.list(raw) || length(raw$daily) == 0L) {
+      # The file IS deployed (HTTP 200) but the daily array is empty:
+      # roborev_daily_metrics in unified.duckdb hasn't been populated since
+      # 2026-05-30. The previous message "not deployed" was misleading.
+      gen <- if (is.list(raw) && !is.null(raw$generated_at)) raw$generated_at else "unknown"
+      return(ec_empty(
+        paste0("No noise-rate data yet — roborev_daily_metrics empty (last regen ", gen, ")"),
+        h = "320px"))
+    }
 
     daily_raw <- raw$daily
     # Normalise: fromJSON may return a data.frame or list-of-lists
@@ -5618,10 +5625,15 @@ server <- function(input, output, session) {
     sm <- sm[order(sm$total_addressed, decreasing = TRUE), ]
     rows <- lapply(seq_len(nrow(sm)), function(i) {
       r <- sm[i, , drop = FALSE]
-      cost_str <- if ("cost_usd_per_finding" %in% names(r) &&
-                      !is.null(r$cost_usd_per_finding) &&
-                      !is.na(r$cost_usd_per_finding)) {
-        sprintf("$%.4f", r$cost_usd_per_finding)
+      # The upstream JSON has cost_usd_per_finding as an empty object {}
+      # (not yet instrumented). When jsonlite parses {} into a single-row
+      # data.frame slice, r$cost_usd_per_finding is an empty list(); then
+      # is.na(list()) returns logical(0), and `if (logical(0))` throws
+      # "missing value where TRUE/FALSE needed". Tighten the guard to
+      # accept only a scalar numeric.
+      cost_val <- r$cost_usd_per_finding
+      cost_str <- if (is.numeric(cost_val) && length(cost_val) == 1L && !is.na(cost_val)) {
+        sprintf("$%.4f", cost_val)
       } else "— (not instrumented)"
       tags$tr(
         style = paste0("color:", agent_colour(r$agent), ";"),
