@@ -83,9 +83,37 @@ library(lubridate, warn.conflicts = FALSE)
 # --- Helpers ------------------------------------------------------------------
 coalesce2 <- function(x, y) { x[is.na(x)] <- y[is.na(x)]; x }
 
+# to_chart_json — toJSON wrapper that handles DT::JS()/htmlwidgets::JS()
+# (S3 class "JS_EVAL"). jsonlite has no asJSON.JS_EVAL method, so a spec
+# containing a JS() leaf throws 'No method asJSON S3 class: JS_EVAL'.
+# Walk the spec, swap each JS_EVAL leaf for a unique placeholder, serialize,
+# then substitute each placeholder for its original JS code (which becomes
+# a function literal in the resulting JSON-with-functions string that
+# echarts.setOption() can eval). Fixes #287 follow-up: many dashboard panels
+# that used DT::JS() for axis label / tooltip formatters were silently
+# failing with this error.
+to_chart_json <- function(option) {
+  store <- list()
+  walk <- function(x) {
+    if (inherits(x, "JS_EVAL")) {
+      key <- paste0("__JS_EVAL_", length(store), "__")
+      store[[key]] <<- paste(as.character(x), collapse = "\n")
+      return(key)
+    }
+    if (is.list(x)) return(lapply(x, walk))
+    x
+  }
+  option <- walk(option)
+  j <- toJSON(option, auto_unbox = TRUE, null = "null")
+  for (key in names(store)) {
+    j <- gsub(paste0('"', key, '"'), store[[key]], j, fixed = TRUE)
+  }
+  j
+}
+
 ec <- function(option, h = "300px", aria_label = "Interactive chart") {
   id <- paste0("ec", sample.int(1e7, 1))
-  j <- toJSON(option, auto_unbox = TRUE, null = "null")
+  j <- to_chart_json(option)
   tagList(
     tags$div(id = id, class = "echart-div", role = "button", `aria-label` = aria_label,
              tabindex = "0",
@@ -191,7 +219,7 @@ ec_scatter <- function(data_pts, color = "#377eb8", h = "300px",
     series = list(list(type = "scatter", data = data_pts,
                        itemStyle = list(color = color)))
   )
-  j <- toJSON(opt, auto_unbox = TRUE, null = "null")
+  j <- to_chart_json(opt)
   tagList(
     tags$div(id = id, class = "echart-div", role = "button", `aria-label` = aria_label,
              tabindex = "0", style = paste0("width:100%;height:", h, ";cursor:zoom-in")),
@@ -249,7 +277,7 @@ ec_heatmap <- function(data, x, y, value, h = "350px",
       emphasis = list(itemStyle = list(shadowBlur = 10, shadowColor = "rgba(0,0,0,0.5)"))
     ))
   )
-  j <- toJSON(opt, auto_unbox = TRUE, null = "null")
+  j <- to_chart_json(opt)
   tagList(
     tags$div(id = id, class = "echart-div", role = "img",
              `aria-label` = aria_label, tabindex = "0",
@@ -295,7 +323,7 @@ ec_force_graph <- function(nodes, edges, h = "400px",
         lineStyle = list(width = 4))
     ))
   )
-  j <- toJSON(opt, auto_unbox = TRUE, null = "null")
+  j <- to_chart_json(opt)
   tagList(
     tags$div(id = id, class = "echart-div", role = "img",
              `aria-label` = aria_label, tabindex = "0",
@@ -3364,7 +3392,9 @@ server <- function(input, output, session) {
       ))
     )
     id <- paste0("ec", sample.int(1e7, 1))
-    j <- toJSON(spec, auto_unbox = TRUE, null = "null")
+    # Use to_chart_json so any embedded JS_EVAL is handled centrally; the
+    # remaining "__SHARE_FMT__" placeholder uses the same swap-then-gsub idiom.
+    j <- to_chart_json(spec)
     j <- gsub('"__SHARE_FMT__"', 'function(p){return p.value[2]+"% share"}', j, fixed = TRUE)
     tagList(
       tags$div(id = id, class = "echart-div", role = "button",
@@ -3577,7 +3607,7 @@ server <- function(input, output, session) {
       series = list(list(type = "scatter", data = pts,
                          itemStyle = list(color = pal$claude)))
     )
-    j <- toJSON(opt, auto_unbox = TRUE, null = "null")
+    j <- to_chart_json(opt)
     tagList(
       tags$div(id = id, class = "echart-div", role = "button",
                `aria-label` = "Cost vs duration scatter chart — click to enlarge",
@@ -3944,7 +3974,7 @@ server <- function(input, output, session) {
              itemStyle = list(color = pal$claude))
       )
     )
-    j <- toJSON(opt, auto_unbox = TRUE, null = "null")
+    j <- to_chart_json(opt)
     tagList(
       tags$div(id = id, class = "echart-div", style = "width:100%;height:340px"),
       tags$script(HTML(paste0(
