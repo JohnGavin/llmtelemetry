@@ -1,19 +1,19 @@
 [
   {
+    "version": "0.136.0",
     "source": "oauth",
     "usage": {
-      "primary": {
-        "resetsAt": "2026-07-06T04:46:32Z",
-        "usedPercent": 5,
-        "windowMinutes": 43200,
-        "resetDescription": "6 Jul 2026 at 5:46"
-      },
+      "tertiary": {},
       "secondary": {},
-      "updatedAt": "2026-06-06T04:46:32Z",
-      "tertiary": {}
+      "primary": {
+        "resetsAt": "2026-07-06T18:48:05Z",
+        "usedPercent": 5,
+        "resetDescription": "6 Jul 2026 at 19:48",
+        "windowMinutes": 43200
+      },
+      "updatedAt": "2026-06-06T18:48:05Z"
     },
-    "provider": "codex",
-    "version": "0.136.0"
+    "provider": "codex"
   },
   {
     "source": "auto",
@@ -32,17 +32,33 @@
     "provider": "azureopenai"
   },
   {
+    "version": "2.1.167",
     "source": "web",
     "usage": {
-      "primary": {
-        "usedPercent": 0,
-        "windowMinutes": 300
+      "tertiary": {
+        "resetsAt": "2026-06-13T00:00:00Z",
+        "usedPercent": 15,
+        "resetDescription": "Jun 13 at 1:00AM",
+        "windowMinutes": 10080
+      },
+      "providerCost": {
+        "limit": 0,
+        "currencyCode": "GBP",
+        "period": "Monthly cap",
+        "used": 0,
+        "updatedAt": "2026-06-06T18:48:06Z"
       },
       "secondary": {
         "resetsAt": "2026-06-13T00:00:00Z",
-        "usedPercent": 0,
-        "windowMinutes": 10080,
-        "resetDescription": "Jun 13 at 1:00AM"
+        "usedPercent": 25,
+        "resetDescription": "Jun 13 at 1:00AM",
+        "windowMinutes": 10080
+      },
+      "primary": {
+        "resetsAt": "2026-06-06T20:40:00Z",
+        "usedPercent": 100,
+        "resetDescription": "Jun 6 at 9:40PM",
+        "windowMinutes": 300
       },
       "extraRateWindows": [
         {
@@ -62,23 +78,9 @@
           "title": "Daily Routines"
         }
       ],
-      "updatedAt": "2026-06-06T04:46:34Z",
-      "tertiary": {
-        "resetsAt": "2026-06-13T00:00:00Z",
-        "usedPercent": 0,
-        "windowMinutes": 10080,
-        "resetDescription": "Jun 13 at 1:00AM"
-      },
-      "providerCost": {
-        "limit": 0,
-        "currencyCode": "GBP",
-        "period": "Monthly cap",
-        "used": 0,
-        "updatedAt": "2026-06-06T04:46:34Z"
-      }
+      "updatedAt": "2026-06-06T18:48:06Z"
     },
-    "provider": "claude",
-    "version": "2.1.166"
+    "provider": "claude"
   },
   {
     "source": "auto",
@@ -131,25 +133,25 @@
   {
     "source": "oauth-api",
     "usage": {
+      "tertiary": {
+        "resetsAt": "2026-06-07T18:48:10Z",
+        "usedPercent": 0,
+        "resetDescription": "Resets in 23h 59m",
+        "windowMinutes": 1440
+      },
+      "secondary": {
+        "resetsAt": "2026-06-07T18:48:10Z",
+        "usedPercent": 0,
+        "resetDescription": "Resets in 23h 59m",
+        "windowMinutes": 1440
+      },
       "primary": {
         "resetsAt": "1970-01-01T00:00:00Z",
         "usedPercent": 100,
-        "windowMinutes": 1440,
-        "resetDescription": "Resets soon"
+        "resetDescription": "Resets soon",
+        "windowMinutes": 1440
       },
-      "secondary": {
-        "resetsAt": "2026-06-07T04:46:37Z",
-        "usedPercent": 0,
-        "windowMinutes": 1440,
-        "resetDescription": "Resets in 23h 59m"
-      },
-      "updatedAt": "2026-06-06T04:46:37Z",
-      "tertiary": {
-        "resetsAt": "2026-06-07T04:46:37Z",
-        "usedPercent": 0,
-        "windowMinutes": 1440,
-        "resetDescription": "Resets in 23h 59m"
-      }
+      "updatedAt": "2026-06-06T18:48:11Z"
     },
     "provider": "gemini"
   },
