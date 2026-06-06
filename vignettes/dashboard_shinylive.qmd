@@ -1339,11 +1339,17 @@ ui <- page_navbar(
           tags$tbody(
             tooltip(
               tags$tr(tags$td("Total Cost"), tags$td(textOutput("vb_cost", inline = TRUE))),
-              "Sum of API charges for input, output, and cache tokens (Claude + Gemini + Codex est.)"
+              "Sum of API charges. Primary: CodexBar (Claude + OpenAI). Gemini added separately (not in CodexBar coverage)."
+            ),
+            tooltip(
+              tags$tr(tags$td("Δ% (ccusage cross-check)", class = "text-muted small"),
+                       tags$td(textOutput("vb_cc_delta", inline = TRUE),
+                               class = "text-muted small")),
+              "Δ% = (ccusage − CodexBar) / CodexBar, Claude-only rows. Cross-check only (#281)."
             ),
             tooltip(
               tags$tr(tags$td("Total Tokens"), tags$td(textOutput("vb_tokens", inline = TRUE))),
-              "Sum of input + output + cache tokens across all providers (Claude + Gemini + Codex)"
+              "Sum of input + output + cache tokens. Primary: CodexBar (Claude + OpenAI). Gemini added separately."
             ),
             tooltip(
               tags$tr(tags$td("Active Days"), tags$td(textOutput("vb_days", inline = TRUE))),
@@ -1356,7 +1362,11 @@ ui <- page_navbar(
           )
         ),
         card_footer(class = "text-muted small",
-          "Key metrics for the selected time horizon. Costs from ccusage + Gemini billing API + Codex est. Sessions from Claude Code hook telemetry.")
+          "Key metrics for the selected time horizon. Costs: primary source is ",
+          tags$code("codexbar_cost_per_day.json"),
+          " (Claude + OpenAI on a single rollup); Gemini added separately from ",
+          tags$code("gemini_usage.duckdb"),
+          ". ccusage is shown as a Δ% cross-check (#281 Phase 3b — kept as a fallback through 2026-09-02). Sessions from Claude Code hook telemetry.")
       )
     ),
     layout_columns(col_widths = c(12),
@@ -2747,30 +2757,70 @@ server <- function(input, output, session) {
   }
 
   # --- Overview ---------------------------------------------------------------
+  # #281 Phase 3b: CodexBar primary for Overview KPIs.
+  # cb_d() covers Claude (claude-*) AND OpenAI (gpt-*) on a single per-date×model
+  # rollup. ccusage and codex_daily are both subsets of CodexBar's coverage,
+  # so summing all three double-counts. Gemini is NOT in CodexBar (no upstream
+  # provider integration yet), so it stays additive.
+  # If cb_d() is empty for the window (e.g. cutoff predates 2026-05-04), fall
+  # back to (ccusage + codex est) so the dashboard still renders during the
+  # transition period.
+  overview_cost_primary <- reactive({
+    if (nrow(cb_d()) > 0 && "cost_usd" %in% names(cb_d())) {
+      list(value = sum(cb_d()$cost_usd, na.rm = TRUE), source = "codexbar")
+    } else {
+      cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalCost, na.rm = TRUE) else 0
+      cx <- if (nrow(codex_d()) > 0 && "est_cost_usd" %in% names(codex_d()))
+              sum(codex_d()$est_cost_usd, na.rm = TRUE) else 0
+      list(value = cc + cx, source = "ccusage+codex (fallback)")
+    }
+  })
+  overview_tokens_primary <- reactive({
+    if (nrow(cb_d()) > 0 && "total_tokens" %in% names(cb_d())) {
+      sum(cb_d()$total_tokens, na.rm = TRUE)
+    } else {
+      cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalTokens, na.rm = TRUE) else 0
+      cx <- if (nrow(codex_d()) > 0 && "total_tokens" %in% names(codex_d()))
+              sum(codex_d()$total_tokens, na.rm = TRUE) else 0
+      cc + cx
+    }
+  })
   output$vb_cost <- renderText({
-    cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalCost, na.rm = TRUE) else 0
+    primary <- overview_cost_primary()$value
     gm <- if (nrow(gem_d()) > 0) sum(gem_d()$total_cost, na.rm = TRUE) else 0
-    cx <- if (nrow(codex_d()) > 0 && "est_cost_usd" %in% names(codex_d()))
-            sum(codex_d()$est_cost_usd, na.rm = TRUE) else 0
-    sprintf("$%s", format(round(cc + gm + cx), big.mark = ","))
+    sprintf("$%s", format(round(primary + gm), big.mark = ","))
   })
   output$vb_tokens <- renderText({
-    cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalTokens, na.rm = TRUE) else 0
+    primary <- overview_tokens_primary()
     gm <- if (nrow(gem_d()) > 0) sum(gem_d()$total_tokens, na.rm = TRUE) else 0
-    cx <- if (nrow(codex_d()) > 0 && "total_tokens" %in% names(codex_d()))
-            sum(codex_d()$total_tokens, na.rm = TRUE) else 0
-    total <- cc + gm + cx
+    total <- primary + gm
     if (total >= 1e9) sprintf("%.1fB", total / 1e9)
     else if (total >= 1e6) sprintf("%.1fM", total / 1e6)
     else format(total, big.mark = ",")
   })
   output$vb_days <- renderText({
-    dates <- c(
+    # Use CodexBar dates when available; fall back to ccusage + codex.
+    primary_dates <- if (nrow(cb_d()) > 0) unique(cb_d()$date) else c(
       if (nrow(cc_d()) > 0) unique(cc_d()$date),
-      if (nrow(gem_d()) > 0) unique(gem_d()$date),
       if (nrow(codex_d()) > 0) unique(codex_d()$date)
     )
+    dates <- c(primary_dates,
+               if (nrow(gem_d()) > 0) unique(gem_d()$date))
     as.character(length(unique(dates)))
+  })
+  # Cross-check Δ%: ccusage (Claude only) vs CodexBar (Claude+OpenAI) for the
+  # same window. Lands #281 Phase 1's "cross-check" pattern on the Overview KPI
+  # block. Reads NULL when CodexBar isn't the active primary (fallback path).
+  output$vb_cc_delta <- renderText({
+    if (overview_cost_primary()$source != "codexbar") return("— (CodexBar fallback)")
+    cb <- if (nrow(cb_d()) > 0 && "cost_usd" %in% names(cb_d())) {
+      # ccusage covers Claude only — compare to CodexBar Claude rows only.
+      sum(cb_d()$cost_usd[grepl("^claude", cb_d()$model)], na.rm = TRUE)
+    } else 0
+    cc <- if (nrow(cc_d()) > 0) sum(cc_d()$totalCost, na.rm = TRUE) else 0
+    if (cb <= 0) return("— (no CodexBar Claude rows)")
+    delta_pct <- 100 * (cc - cb) / cb
+    sprintf("%+.1f%% (ccusage vs CodexBar Claude)", delta_pct)
   })
   output$vb_sessions <- renderText({
     n <- 0L
