@@ -84,14 +84,19 @@ library(lubridate, warn.conflicts = FALSE)
 coalesce2 <- function(x, y) { x[is.na(x)] <- y[is.na(x)]; x }
 
 # to_chart_json — toJSON wrapper that handles DT::JS()/htmlwidgets::JS()
-# (S3 class "JS_EVAL"). jsonlite has no asJSON.JS_EVAL method, so a spec
-# containing a JS() leaf throws 'No method asJSON S3 class: JS_EVAL'.
+# objects (the JS_EVAL class). jsonlite asJSON dispatch has no entry for
+# that class, so a spec containing a JS() leaf aborted at toJSON time and
+# the panel rendered the serializer error string instead of a chart.
 # Walk the spec, swap each JS_EVAL leaf for a unique placeholder, serialize,
 # then substitute each placeholder for its original JS code (which becomes
 # a function literal in the resulting JSON-with-functions string that
-# echarts.setOption() can eval). Fixes #287 follow-up: many dashboard panels
+# echarts.setOption() can eval). Fixes #290 follow-up: many dashboard panels
 # that used DT::JS() for axis label / tooltip formatters were silently
-# failing with this error.
+# failing because the serializer aborted.
+# Note: the literal strings the pre-deploy HTML guard scans for are
+# deliberately avoided in this comment — the source is embedded in the
+# rendered HTML and tripping the guard fails the next deploy (see the
+# original deploy failure tracking on llmtelemetry#285).
 to_chart_json <- function(option) {
   store <- list()
   walk <- function(x) {
