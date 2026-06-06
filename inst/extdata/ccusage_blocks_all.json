@@ -5902,6 +5902,82 @@
       ],
       "burnRate": null,
       "projection": null
+    },
+    {
+      "id": "gap-2026-06-06T02:35:05.934Z",
+      "startTime": "2026-06-06T02:35:05.934Z",
+      "endTime": "2026-06-06T10:08:25.009Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-06-06T10:00:00.000Z",
+      "startTime": "2026-06-06T10:00:00.000Z",
+      "endTime": "2026-06-06T15:00:00.000Z",
+      "actualEndTime": "2026-06-06T13:04:08.927Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 761,
+      "tokenCounts": {
+        "inputTokens": 928,
+        "outputTokens": 331613,
+        "cacheCreationInputTokens": 6544816,
+        "cacheReadInputTokens": 212641394
+      },
+      "totalTokens": 219518751,
+      "costUSD": 140.38651849999997,
+      "models": [
+        "claude-opus-4-7",
+        "claude-sonnet-4-6",
+        "<synthetic>"
+      ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-06-06T15:00:00.000Z",
+      "startTime": "2026-06-06T15:00:00.000Z",
+      "endTime": "2026-06-06T20:00:00.000Z",
+      "actualEndTime": "2026-06-06T18:46:00.153Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 448,
+      "tokenCounts": {
+        "inputTokens": 631,
+        "outputTokens": 186994,
+        "cacheCreationInputTokens": 9159869,
+        "cacheReadInputTokens": 154721624
+      },
+      "totalTokens": 164069118,
+      "costUSD": 126.67589574999997,
+      "models": [
+        "claude-opus-4-7",
+        "<synthetic>",
+        "claude-sonnet-4-6"
+      ],
+      "burnRate": {
+        "tokensPerMinute": 898238.0216721777,
+        "tokensPerMinuteForIndicator": 1027.2006753656244,
+        "costPerHour": 41.61116023992925
+      },
+      "projection": {
+        "totalTokens": 227079722,
+        "totalCost": 175.33,
+        "remainingMinutes": 70
+      }
     }
   ]
 }
