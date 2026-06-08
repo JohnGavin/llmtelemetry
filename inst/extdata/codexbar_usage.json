@@ -1,16 +1,16 @@
 [
   {
-    "provider": "codex",
     "version": "0.136.0",
+    "provider": "codex",
     "usage": {
+      "secondary": {},
+      "updatedAt": "2026-06-08T17:50:53Z",
       "primary": {
         "windowMinutes": 43200,
-        "resetsAt": "2026-07-08T05:19:05Z",
         "usedPercent": 5,
-        "resetDescription": "8 Jul 2026 at 6:19"
+        "resetsAt": "2026-07-08T17:50:53Z",
+        "resetDescription": "8 Jul 2026 at 18:50"
       },
-      "updatedAt": "2026-06-08T05:19:04Z",
-      "secondary": {},
       "tertiary": {}
     },
     "source": "oauth"
@@ -32,52 +32,52 @@
     "source": "auto"
   },
   {
-    "provider": "claude",
     "version": "2.1.168",
+    "provider": "claude",
     "usage": {
       "providerCost": {
-        "used": 0,
-        "limit": 0,
-        "currencyCode": "GBP",
         "period": "Monthly cap",
-        "updatedAt": "2026-06-08T05:19:06Z"
-      },
-      "primary": {
-        "windowMinutes": 300,
-        "resetsAt": "2026-06-08T06:40:00Z",
-        "usedPercent": 0,
-        "resetDescription": "Jun 8 at 7:40AM"
-      },
-      "updatedAt": "2026-06-08T05:19:06Z",
-      "extraRateWindows": [
-        {
-          "window": {
-            "windowMinutes": 10080,
-            "usedPercent": 0
-          },
-          "id": "claude-design",
-          "title": "Designs"
-        },
-        {
-          "window": {
-            "windowMinutes": 10080,
-            "usedPercent": 0
-          },
-          "id": "claude-routines",
-          "title": "Daily Routines"
-        }
-      ],
-      "tertiary": {
-        "windowMinutes": 10080,
-        "resetsAt": "2026-06-12T23:59:59Z",
-        "usedPercent": 23,
-        "resetDescription": "Jun 13 at 12:59AM"
+        "updatedAt": "2026-06-08T17:50:54Z",
+        "limit": 0,
+        "used": 0,
+        "currencyCode": "GBP"
       },
       "secondary": {
         "windowMinutes": 10080,
-        "resetsAt": "2026-06-12T23:59:59Z",
-        "usedPercent": 56,
-        "resetDescription": "Jun 13 at 12:59AM"
+        "usedPercent": 64,
+        "resetsAt": "2026-06-13T00:00:00Z",
+        "resetDescription": "Jun 13 at 1:00AM"
+      },
+      "extraRateWindows": [
+        {
+          "id": "claude-design",
+          "window": {
+            "usedPercent": 0,
+            "windowMinutes": 10080
+          },
+          "title": "Designs"
+        },
+        {
+          "id": "claude-routines",
+          "window": {
+            "usedPercent": 0,
+            "windowMinutes": 10080
+          },
+          "title": "Daily Routines"
+        }
+      ],
+      "updatedAt": "2026-06-08T17:50:54Z",
+      "primary": {
+        "windowMinutes": 300,
+        "usedPercent": 53,
+        "resetsAt": "2026-06-08T20:30:00Z",
+        "resetDescription": "Jun 8 at 9:30PM"
+      },
+      "tertiary": {
+        "windowMinutes": 10080,
+        "usedPercent": 26,
+        "resetsAt": "2026-06-13T00:00:00Z",
+        "resetDescription": "Jun 13 at 1:00AM"
       }
     },
     "source": "web"
@@ -131,28 +131,28 @@
     "source": "auto"
   },
   {
-    "provider": "gemini",
     "usage": {
-      "primary": {
-        "windowMinutes": 1440,
-        "resetsAt": "1970-01-01T00:00:00Z",
-        "usedPercent": 100,
-        "resetDescription": "Resets soon"
-      },
-      "updatedAt": "2026-06-08T05:19:09Z",
       "secondary": {
-        "windowMinutes": 1440,
-        "resetsAt": "2026-06-09T05:19:09Z",
         "usedPercent": 0,
+        "resetsAt": "2026-06-09T17:50:58Z",
+        "windowMinutes": 1440,
         "resetDescription": "Resets in 23h 59m"
       },
-      "tertiary": {
+      "updatedAt": "2026-06-08T17:50:58Z",
+      "primary": {
+        "usedPercent": 100,
+        "resetsAt": "1970-01-01T00:00:00Z",
         "windowMinutes": 1440,
-        "resetsAt": "2026-06-09T05:19:09Z",
+        "resetDescription": "Resets soon"
+      },
+      "tertiary": {
         "usedPercent": 0,
+        "resetsAt": "2026-06-09T17:50:58Z",
+        "windowMinutes": 1440,
         "resetDescription": "Resets in 23h 59m"
       }
     },
+    "provider": "gemini",
     "source": "oauth-api"
   },
   {
