@@ -397,9 +397,10 @@ jobs:
           sleep 30
           BASE="https://johngavin.github.io/llmtelemetry"
           FAIL=0
-          # Find the actual shinylive version path dynamically
-          WEBR_PATH=$(curl -s "${BASE}/" | grep -oP 'shinylive-[0-9.]+/shinylive/webr' | head -1)
-          WEBR_CHECK="/dashboard_shinylive_files/libs/quarto-contrib/${WEBR_PATH:-shinylive-0.10.8/shinylive/webr}/R.bin.data"
+          # Find the actual shinylive version dynamically; HTML has /shinylive/shinylive.css not /webr
+          SHINYLIVE_VER=$(curl -s "${BASE}/" | grep -oP 'shinylive-\K[0-9.]+(?=/shinylive/)' | head -1)
+          SHINYLIVE_VER="${SHINYLIVE_VER:-0.10.12}"
+          WEBR_CHECK="/dashboard_shinylive_files/libs/quarto-contrib/shinylive-${SHINYLIVE_VER}/shinylive/webr/R.bin.data"
           for path in "/" "/shinylive-sw.js" \
                       "$WEBR_CHECK" \
                       "/data/index.json" "/data/legacy_ccusage_daily.json" "/data/gemini_daily.json" \

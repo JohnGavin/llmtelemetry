@@ -151,6 +151,14 @@ if [ ! -f "$EXPORT_SCRIPT" ]; then
   exit 0
 fi
 
+# Refresh config_staleness view in unified.duckdb (llm#630) — non-fatal
+SKILL_ETL="$HOME/.claude/scripts/skill_usage_etl.R"
+if [ -f "$SKILL_ETL" ] && [ -f "$HOME/.claude/logs/unified.duckdb" ]; then
+  echo "TELEMETRY: refreshing config_staleness (skill_usage_etl.R --apply)..."
+  timeout 60 Rscript "$SKILL_ETL" --apply 2>&1 | tail -3 || \
+    echo "TELEMETRY: skill_usage_etl.R failed (non-fatal) — config_staleness may be stale"
+fi
+
 # Run export (from repo root so here::here() works). Sub-bug B fix:
 # wrap via nix-shell when Rscript is not on PATH (was silently degrading).
 echo "TELEMETRY: exporting dashboard data..."

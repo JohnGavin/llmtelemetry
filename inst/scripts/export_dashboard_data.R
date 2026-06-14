@@ -5299,6 +5299,68 @@ tryCatch({
   )
 })
 
+# --- 8aa. Export config_staleness.json (Config Health tab) --------------------
+# Source: config_staleness VIEW in ~/.claude/logs/unified.duckdb
+#   Created by ~/.claude/scripts/skill_usage_etl.R --apply (llm#630)
+# Contract columns: item_type, name, staleness_status, inv_last_30d, inv_last_90d,
+#   session_count, days_since_last_use, has_paths_scope, is_mandatory
+# Privacy: config item names/paths are ~/.claude/ internal metadata (not session data).
+# Codex pattern: regenerate from unified.duckdb when available, else copy committed
+#   inst/extdata/config_staleness.json.
+cat("Exporting config_staleness.json (Config Health)...\n")
+tryCatch({
+  cs_src <- file.path(extdata, "config_staleness.json")
+  cs_dst <- file.path(out_dir, "config_staleness.json")
+  unified_db_path_cs <- file.path(Sys.getenv("HOME"), ".claude/logs/unified.duckdb")
+
+  if (file.exists(unified_db_path_cs)) {
+    cscon <- dbConnect(duckdb(), dbdir = unified_db_path_cs, read_only = TRUE)
+    on.exit(tryCatch(dbDisconnect(cscon, shutdown = TRUE), error = function(e) NULL),
+            add = TRUE)
+    cs_tables <- dbListTables(cscon)
+    # The view may not exist if skill_usage_etl.R has never been run with --apply
+    if ("config_staleness" %in% cs_tables) {
+      cs_raw <- dbGetQuery(cscon,
+        "SELECT item_type, name, staleness_status,
+                inv_last_30d, inv_last_90d, session_count,
+                days_since_last_use, has_paths_scope, is_mandatory
+           FROM config_staleness
+          ORDER BY staleness_status, item_type, name")
+
+      write_json_atomic(cs_raw, cs_src, auto_unbox = TRUE)
+      file.copy(cs_src, cs_dst, overwrite = TRUE)
+      cat(sprintf("  -> config_staleness.json written: %d rows\n", nrow(cs_raw)))
+    } else {
+      cat("  -> config_staleness view not found; run: Rscript ~/.claude/scripts/skill_usage_etl.R --apply\n")
+      if (file.exists(cs_src)) {
+        file.copy(cs_src, cs_dst, overwrite = TRUE)
+        cat(sprintf("  -> copied committed config_staleness.json (%d bytes)\n",
+                    file.info(cs_src)$size))
+      } else {
+        write_json_atomic(list(), cs_dst, auto_unbox = TRUE)
+        cat("  -> wrote empty placeholder config_staleness.json\n")
+      }
+    }
+  } else {
+    cat("  -> unified.duckdb not found; skipping config_staleness regeneration\n")
+    if (file.exists(cs_src)) {
+      file.copy(cs_src, cs_dst, overwrite = TRUE)
+      cat(sprintf("  -> copied inst/extdata/config_staleness.json -> vignettes/data/ (%d bytes)\n",
+                  file.info(cs_src)$size))
+    } else {
+      write_json_atomic(list(), cs_dst, auto_unbox = TRUE)
+      cat("  -> no committed source; wrote empty config_staleness.json placeholder\n")
+    }
+  }
+}, error = function(e) {
+  cat(sprintf("  -> config_staleness.json export error: %s\n", conditionMessage(e)))
+  write_json_atomic(
+    list(),
+    file.path(out_dir, "config_staleness.json"),
+    auto_unbox = TRUE
+  )
+})
+
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
 # legacy_ccusage_blocks is intentionally excluded from critical_files: the CI
@@ -5350,7 +5412,7 @@ cat("QA passed: all critical data files have rows\n\n")
 # Schema-only validation for optional files: valid JSON array, length 0 allowed.
 # legacy_ccusage_blocks.json is written as [] by the CI fallback (no cmonitor-rs).
 # (#281 Phase 2): ccusage_blocks -> legacy_ccusage_blocks.
-optional_schema_files <- c("legacy_ccusage_blocks", "self_review_findings")
+optional_schema_files <- c("legacy_ccusage_blocks", "self_review_findings", "config_staleness")
 for (f in optional_schema_files) {
   path <- file.path(out_dir, paste0(f, ".json"))
   if (!file.exists(path)) {
