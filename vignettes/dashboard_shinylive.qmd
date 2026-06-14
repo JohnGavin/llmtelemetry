@@ -60,6 +60,7 @@ format:
       - data/roborev_session_agent_noise.json
       - data/roborev_session_findings.json
       - data/roborev_location_findings.json
+      - data/config_staleness.json
       - data/v1/sessions.parquet
       - data/v1/costs.parquet
       - data/v1/git_commits.parquet
@@ -415,6 +416,8 @@ file_churn_data <- load_json("file_churn.json")
 change_coupling_data <- load_json("change_coupling.json")
 # Phase B: canonical project master list (excludes agent-worktree/orphan rows)
 projects_master_raw <- load_json("projects_master.json")
+# Config-usage ETL data (skill_usage_etl.R → unified.duckdb → config_staleness view)
+config_staleness_raw <- load_json("config_staleness.json")
 
 # Normalize data: fromJSON("[]") returns list(), nested objects need extraction
 as_df <- function(x) if (is.data.frame(x)) x else NULL
@@ -429,6 +432,7 @@ has_rows <- function(x) is.data.frame(x) && nrow(x) > 0
 projects_master_raw <- as_df(projects_master_raw)
 projects_master_canonical <- if (has_rows(projects_master_raw) && "canonical_project" %in% names(projects_master_raw))
   sort(projects_master_raw$canonical_project) else character(0)
+config_staleness_df <- as_df(config_staleness_raw)
 
 # Shorten project path: keep last 2 meaningful segments
 # Also strip worktree suffixes to aggregate to project level
@@ -2629,6 +2633,37 @@ flowchart LR
           ),
           card_footer(class = "text-muted small",
             "Reference definitions for interpreting dashboard metrics. Links open in a new tab. Hover over charts for tooltips.")
+        )
+      ),
+      nav_panel("Config Health", value = "Config Health", icon = icon("gauge"),
+        layout_columns(col_widths = c(12),
+          card(
+            card_header(
+              "Config Item Staleness",
+              toolbar(
+                align = "right",
+                toolbar_input_select(
+                  "cfg_type_filter",
+                  label = NULL,
+                  choices = c("All types" = "all", "skill" = "skill",
+                              "rule" = "rule", "agent" = "agent",
+                              "memory" = "memory", "hook" = "hook",
+                              "script" = "script"),
+                  selected = "all"
+                )
+              )
+            ),
+            uiOutput("cfg_staleness_summary"),
+            DTOutput("cfg_staleness_table"),
+            card_footer(class = "text-muted small",
+              paste0(
+                "Data from ~/.claude/logs/unified.duckdb via skill_usage_etl.R. ",
+                "Staleness: never_used = no recorded invocation; ",
+                "stale_90d/30d/7d = days since last session use; ",
+                "active = used within the last 7 days; mandatory = always-loaded rules."
+              )
+            )
+          )
         )
       )
     )
@@ -6552,6 +6587,57 @@ server <- function(input, output, session) {
       n_fix, " closed with explicit fix link; ",
       n_cr, " closed via commit-reference convention."
     ))
+  })
+
+  # --- Config Health tab -------------------------------------------------------
+  cfg_filtered <- reactive({
+    if (!has_rows(config_staleness_df)) return(data.frame())
+    d <- config_staleness_df
+    if (!is.null(input$cfg_type_filter) && nzchar(input$cfg_type_filter) &&
+        input$cfg_type_filter != "all")
+      d <- d[d$item_type == input$cfg_type_filter, , drop = FALSE]
+    d
+  })
+
+  output$cfg_staleness_summary <- renderUI({
+    d <- cfg_filtered()
+    if (!has_rows(d))
+      return(tags$p(class = "text-muted p-2 small",
+        "No config health data — run: Rscript ~/.claude/scripts/skill_usage_etl.R --apply"))
+    counts <- sort(table(d$staleness_status), decreasing = TRUE)
+    tags$div(class = "p-2",
+      tags$table(
+        style = "width: auto; border-collapse: collapse; margin-bottom: 0.5rem;",
+        tags$thead(
+          tags$tr(lapply(names(counts), function(nm)
+            tags$th(style = "padding: 2px 10px; text-align: right; font-size: 13px;",
+              nm)))
+        ),
+        tags$tbody(
+          tags$tr(lapply(as.integer(counts), function(n)
+            tags$td(style = "padding: 2px 10px; text-align: right; font-size: 13px;",
+              n)))
+        )
+      )
+    )
+  })
+
+  output$cfg_staleness_table <- DT::renderDT({
+    d <- cfg_filtered()
+    if (!has_rows(d)) return(data.frame(message = "No config health data available"))
+    keep <- intersect(
+      c("item_type", "name", "staleness_status", "inv_last_30d", "inv_last_90d",
+        "session_count", "days_since_last_use", "has_paths_scope", "is_mandatory"),
+      names(d)
+    )
+    DT::datatable(
+      d[order(match(d$staleness_status,
+                    c("never_used", "stale_90d", "stale_30d", "stale_7d", "mandatory", "active")),
+              d$item_type, d$name), keep, drop = FALSE],
+      caption = paste0("Config items (", nrow(d), " shown) — sorted by staleness"),
+      options = list(pageLength = 25, dom = "tip"),
+      rownames = FALSE
+    )
   })
 }
 
