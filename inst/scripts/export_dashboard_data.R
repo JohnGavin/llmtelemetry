@@ -1417,32 +1417,36 @@ if (file.exists(unified_db)) {
   #               negative = ccusage reports more (anomaly worth investigating)
   u_costs <- tryCatch({
     cb_daily_path <- file.path(extdata, "codexbar_cost_per_day.json")
-    if (file.exists(cb_daily_path) && nrow(u_costs_raw) > 0L) {
+    if (file.exists(cb_daily_path)) {
       cb_day_df <- jsonlite::fromJSON(cb_daily_path, simplifyDataFrame = TRUE)
       if (is.data.frame(cb_day_df) && nrow(cb_day_df) > 0L &&
           "cost_usd" %in% names(cb_day_df) && "date" %in% names(cb_day_df)) {
         # Aggregate CodexBar to one row per date (sum over models)
         cb_totals <- aggregate(cost_usd ~ date, data = cb_day_df, FUN = sum, na.rm = TRUE)
         names(cb_totals)[2] <- "primary"
-        # Join with ccusage costs; non-matching dates get NA primary
-        merged <- merge(u_costs_raw, cb_totals, by = "date", all.x = TRUE)
-        # cross_check = total_cost from unified.duckdb (ccusage-sourced)
-        if ("total_cost" %in% names(merged)) {
-          merged$cross_check <- merged$total_cost
-          merged$deficit_pct <- ifelse(
-            !is.na(merged$cross_check) & merged$cross_check != 0 &
-              !is.na(merged$primary),
-            round((merged$primary - merged$cross_check) / merged$cross_check * 100, 1),
-            NA_real_
-          )
-        } else {
-          merged$cross_check <- NA_real_
-          merged$deficit_pct <- NA_real_
-        }
+        # Full outer join: CodexBar is primary where available; ccusage fills
+        # pre-CodexBar dates.  cross_check = ccusage where CodexBar is primary.
+        ccusage_xcheck <- u_costs_raw[, intersect(c("date", "total_cost"), names(u_costs_raw))]
+        merged <- merge(cb_totals, ccusage_xcheck, by = "date", all = TRUE)
+        # cb_is_primary TRUE for dates that appear in CodexBar
+        cb_is_primary <- !is.na(merged$primary)
+        # Coalesce: CodexBar total first, ccusage total_cost as fallback for old dates
+        merged$primary <- ifelse(cb_is_primary, merged$primary,
+          if ("total_cost" %in% names(merged)) merged$total_cost else NA_real_)
+        # cross_check = ccusage where CodexBar is primary (NA for ccusage-only dates)
+        merged$cross_check <- if ("total_cost" %in% names(merged))
+          ifelse(cb_is_primary, merged$total_cost, NA_real_) else NA_real_
+        merged$deficit_pct <- ifelse(
+          !is.na(merged$cross_check) & merged$cross_check != 0 &
+            !is.na(merged$primary),
+          round((merged$primary - merged$cross_check) / merged$cross_check * 100, 1),
+          NA_real_
+        )
+        merged$total_cost <- NULL
         # Round all numeric to 4dp except deficit_pct (1dp above)
         merged <- merged |>
           mutate(across(c(primary, cross_check), \(x) round(x, 4)))
-        merged
+        merged[order(merged$date), ]
       } else {
         # CodexBar file empty or wrong schema: add NA columns
         u_costs_raw$primary     <- NA_real_
