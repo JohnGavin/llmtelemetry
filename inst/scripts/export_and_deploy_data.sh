@@ -162,7 +162,7 @@ fi
 # Run export (from repo root so here::here() works). Sub-bug B fix:
 # wrap via nix-shell when Rscript is not on PATH (was silently degrading).
 echo "TELEMETRY: exporting dashboard data..."
-if ! run_rscript_with_nix "$TELEMETRY_REPO" "$EXPORT_SCRIPT" 120; then
+if ! run_rscript_with_nix "$TELEMETRY_REPO" "$EXPORT_SCRIPT" 600; then
   echo "TELEMETRY: export step failed — aborting; not pushing"
   exit 1
 fi
