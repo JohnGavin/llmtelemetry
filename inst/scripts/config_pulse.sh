@@ -176,3 +176,7 @@ if command -v duckdb >/dev/null 2>&1; then
 else
   echo "WARNING: duckdb CLI not found, keeping CSV at $OUTFILE"
 fi
+
+# Stamp for cron_catchup.sh catch-up detection
+mkdir -p "${HOME}/.claude/logs/stamps"
+date -u +%Y-%m-%dT%H:%M:%SZ > "${HOME}/.claude/logs/stamps/config-pulse.stamp"

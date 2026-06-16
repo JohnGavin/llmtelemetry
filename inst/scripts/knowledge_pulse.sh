@@ -186,4 +186,8 @@ else
   echo "WARNING: duckdb CLI not found, keeping CSV at $OUTFILE"
 fi
 
+# Stamp for cron_catchup.sh catch-up detection
+mkdir -p "${HOME}/.claude/logs/stamps"
+date -u +%Y-%m-%dT%H:%M:%SZ > "${HOME}/.claude/logs/stamps/knowledge-pulse.stamp"
+
 echo "Edge list written to $EDGEFILE (for network visualization)"
