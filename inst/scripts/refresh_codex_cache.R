@@ -639,7 +639,7 @@ join_roborev <- function(turns) {
       # roborev row, regardless of whether repo_id/repo_name are NA.
       source    = if_else(!is.na(.data$.roborev_matched), "roborev", "interactive"),
       repo_id   = if (has_rb_id)
-                    dplyr::coalesce(.data$repo_id.rb,   .data$repo_id)
+                    dplyr::coalesce(as.character(.data$repo_id.rb), .data$repo_id)
                   else .data$repo_id,
       repo_name = if (has_rb_name)
                     dplyr::coalesce(.data$repo_name.rb, .data$repo_name)

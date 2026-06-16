@@ -665,14 +665,14 @@ tryCatch({
     }
 
     # --- 2a-ii: codexbar_cost_per_project.json (placeholder) ---------------
-    # Per-project attribution requires a session→project metadata join.
-    # CodexBar does not expose session-level project context in its cost JSON.
-    # Placeholder committed as [] until Phase 3 adds the join.
+    # Per-project attribution uses unified_costs$primary × session-duration
+    # weights (same approach as cost_by_project_estimated.json).
+    # Populated in Section 9b (Phase 2d) after unified.duckdb sessions are loaded.
     write_json_atomic(list(), file.path(extdata, "codexbar_cost_per_project.json"),
                       auto_unbox = TRUE)
     write_json_atomic(list(), file.path(out_dir, "codexbar_cost_per_project.json"),
                       auto_unbox = TRUE)
-    cat("  -> codexbar_cost_per_project.json: [] placeholder (Phase 3 will add join)\n")
+    cat("  -> codexbar_cost_per_project.json: [] placeholder (Section 9b will populate)\n")
 
     # --- 2a-iii: codexbar_cost_per_session.json (placeholder) ---------------
     # No session-level CodexBar data in the sanitized source JSON.
@@ -1426,7 +1426,26 @@ if (file.exists(unified_db)) {
         names(cb_totals)[2] <- "primary"
         # Full outer join: CodexBar is primary where available; ccusage fills
         # pre-CodexBar dates.  cross_check = ccusage where CodexBar is primary.
-        ccusage_xcheck <- u_costs_raw[, intersect(c("date", "total_cost"), names(u_costs_raw))]
+        #
+        # cross_check source: prefer cmonitor-rs daily_rows (last 90d, overlaps
+        # CodexBar's date range) over unified.duckdb costs (stops 2026-04-21,
+        # no overlap with CodexBar which starts 2026-05-04).
+        ccusage_xcheck <- if (exists("daily_rows") && is.data.frame(daily_rows) &&
+                               nrow(daily_rows) > 0L &&
+                               "totalCost" %in% names(daily_rows)) {
+          setNames(daily_rows[, c("date", "totalCost")], c("date", "total_cost"))
+        } else {
+          # CI fallback: read committed legacy_ccusage_daily.json snapshot
+          fb <- file.path(extdata, "legacy_ccusage_daily.json")
+          if (file.exists(fb)) {
+            fb_df <- tryCatch(fromJSON(fb, simplifyDataFrame = TRUE),
+                              error = function(e) NULL)
+            if (is.data.frame(fb_df) && nrow(fb_df) > 0L &&
+                "totalCost" %in% names(fb_df))
+              setNames(fb_df[, c("date", "totalCost")], c("date", "total_cost"))
+            else data.frame(date = character(0), total_cost = numeric(0))
+          } else data.frame(date = character(0), total_cost = numeric(0))
+        }
         merged <- merge(cb_totals, ccusage_xcheck, by = "date", all = TRUE)
         # cb_is_primary TRUE for dates that appear in CodexBar
         cb_is_primary <- !is.na(merged$primary)
@@ -1579,6 +1598,69 @@ if (exists("u_sess") && nrow(u_sess) > 0 && exists("daily_rows") && nrow(daily_r
     if (file.exists(src)) { file.copy(src, dst, overwrite = TRUE)
     } else { write_json_atomic(list(), dst) }
   }
+}
+
+# --- 9b. CodexBar per-project cost (Phase 2d) ---------------------------------
+# Uses unified_costs$primary (CodexBar daily total) with the same session-
+# duration weighting as cost_by_project_estimated.json (Section 9 above).
+# Populates codexbar_cost_per_project.json (placeholder written in Section 4.6).
+cat("Exporting CodexBar per-project cost (Phase 2d)...\n")
+if (exists("u_sess") && is.data.frame(u_sess) && nrow(u_sess) > 0L) {
+  uc_src    <- file.path(extdata, "unified_costs.json")
+  cb_proj_ok <- FALSE
+  if (file.exists(uc_src)) {
+    uc_df <- tryCatch(
+      fromJSON(uc_src, simplifyDataFrame = TRUE),
+      error = function(e) NULL
+    )
+    if (is.data.frame(uc_df) && nrow(uc_df) > 0L && "primary" %in% names(uc_df)) {
+      uc_day <- uc_df[!is.na(uc_df$primary), c("date", "primary")]
+
+      u_sess_df2       <- u_sess
+      u_sess_df2$date  <- as.character(as.Date(u_sess_df2$started_at))
+      sess_daily2      <- aggregate(duration_min ~ date + project,
+                                    data = u_sess_df2, FUN = sum)
+      total_daily2     <- aggregate(duration_min ~ date, data = sess_daily2, FUN = sum)
+      names(total_daily2)[2] <- "total_min"
+
+      cost_proj_cb <- merge(sess_daily2, total_daily2, by = "date")
+      cost_proj_cb <- merge(cost_proj_cb, uc_day, by = "date")
+      cost_proj_cb <- cost_proj_cb[
+        cost_proj_cb$total_min > 0 & !is.na(cost_proj_cb$primary), ]
+
+      if (nrow(cost_proj_cb) > 0L) {
+        cost_proj_cb$share    <- cost_proj_cb$duration_min / cost_proj_cb$total_min
+        cost_proj_cb$est_cost <- round(cost_proj_cb$primary * cost_proj_cb$share, 4)
+
+        out_cb_proj <- cost_proj_cb[, c("date", "project", "est_cost",
+                                         "duration_min", "share")]
+        out_cb_proj$canonical_project <-
+          canonicalize_session_project(out_cb_proj$project)
+        out_cb_proj <- aggregate(
+          cbind(est_cost, duration_min, share) ~ date + canonical_project,
+          data = out_cb_proj[!is.na(out_cb_proj$canonical_project), ],
+          FUN  = sum
+        )
+        out_cb_proj$project <- out_cb_proj$canonical_project
+        out_cb_proj <- sanitize_for_public(out_cb_proj)
+        out_cb_proj <- clean_projects(out_cb_proj)
+
+        write_json_atomic(out_cb_proj,
+                          file.path(extdata, "codexbar_cost_per_project.json"),
+                          auto_unbox = TRUE)
+        write_json_atomic(out_cb_proj,
+                          file.path(out_dir, "codexbar_cost_per_project.json"),
+                          auto_unbox = TRUE)
+        cat(sprintf("  -> codexbar_cost_per_project.json: %d project-day rows\n",
+                    nrow(out_cb_proj)))
+        cb_proj_ok <- TRUE
+      }
+    }
+  }
+  if (!cb_proj_ok)
+    cat("  -> codexbar_cost_per_project.json: no overlap between sessions and CodexBar dates; keeping placeholder\n")
+} else {
+  cat("  -> codexbar_cost_per_project.json: u_sess not available (CI); keeping placeholder\n")
 }
 
 # --- 10. Export prediction calibration data -----------------------------------
