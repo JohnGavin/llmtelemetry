@@ -45,8 +45,8 @@ done
 # --- Check data JSON files directly ---
 DATA_URL="${URL%/}/data"
 declare -a CRITICAL_DATA=(
-  "legacy_ccusage_daily.json"
-  "legacy_ccusage_blocks.json"
+  # (#281 Phase 5a): legacy_ccusage_daily.json and legacy_ccusage_blocks.json removed —
+  # frozen extdata snapshots, no longer written at runtime.
   "unified_sessions.json"
   "git_commits.json"
   "git_velocity.json"
