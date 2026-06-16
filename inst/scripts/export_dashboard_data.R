@@ -412,43 +412,16 @@ if (has_cmonitor) {
     mutate(project = "all") |>
     arrange(date)
 
-  # (#281 Phase 2): renamed ccusage_daily.json -> legacy_ccusage_daily.json
-  write_json_atomic(daily_rows, file.path(out_dir, "legacy_ccusage_daily.json"), auto_unbox = TRUE)
-  # Also persist to inst/extdata so CI has a valid committed snapshot
-  write_json_atomic(daily_rows, file.path(extdata, "legacy_ccusage_daily.json"), auto_unbox = TRUE)
-  cat(sprintf("  -> %d daily rows (legacy_ccusage_daily.json)\n", nrow(daily_rows)))
+  # (#281 Phase 5a): legacy_ccusage_daily.json live writes removed — frozen as extdata snapshot.
+  # daily_rows is preserved in-memory for unified_costs.json cross_check (Section 9b).
 
   # --- 2. Sessions (not available from cmonitor-rs) ---------------------------
   cat("Exporting ccusage sessions (empty — cmonitor-rs has no session view)...\n")
   write_json_atomic(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
   cat("  -> 0 sessions (placeholder)\n")
 
-  # --- 3. Blocks from cmonitor-rs ---------------------------------------------
-  cat("Exporting ccusage blocks (via cmonitor-rs)...\n")
-  blk_rows <- lapply(blocks_all, function(b) {
-    if (isTRUE(b$is_gap)) return(NULL)
-    tok <- b$tokens
-    tibble(
-      startTime     = parse_cmonitor_time(b$start_time),
-      endTime       = parse_cmonitor_time(b$end_time),
-      actualEndTime = parse_cmonitor_time(b$actual_end_time),
-      entries       = b$message_count,
-      inputTokens   = tok$input_tokens,
-      outputTokens  = tok$output_tokens,
-      cacheCreation = tok$cache_creation_tokens,
-      cacheRead     = tok$cache_read_tokens,
-      totalTokens   = tok$input_tokens + tok$output_tokens +
-                      tok$cache_creation_tokens + tok$cache_read_tokens,
-      costUSD       = round(b$cost_usd, 4),
-      models        = paste(b$models, collapse = ", ")
-    )
-  }) |> bind_rows() |> arrange(startTime)
-
-  # (#281 Phase 2): renamed ccusage_blocks.json -> legacy_ccusage_blocks.json
-  write_json_atomic(blk_rows, file.path(out_dir, "legacy_ccusage_blocks.json"), auto_unbox = TRUE)
-  # Also persist to inst/extdata so CI has a committed snapshot to fall back to
-  write_json_atomic(blk_rows, file.path(extdata, "legacy_ccusage_blocks.json"), auto_unbox = TRUE)
-  cat(sprintf("  -> %d active blocks (legacy_ccusage_blocks.json)\n", nrow(blk_rows)))
+  # --- 3. Blocks (legacy_ccusage_blocks.json live write removed — #281 Phase 5a) --------
+  # blocks_all is preserved in-memory for model_daily.json (Section 3b below).
 
   # --- 3b. Per-model daily breakdown from model_stats -------------------------
   # NOTE (#1032): model_daily is a GLOBAL metric (cost/tokens by model, not by
@@ -484,38 +457,13 @@ if (has_cmonitor) {
 } else {
   # CI fallback: read existing ccusage JSON files from inst/extdata/
   blocks_all <- list()
-  # (#281 Phase 2): legacy_ccusage_daily.json (renamed from ccusage_daily.json).
-  # ccusage_daily_all.json is the old nested {projects, totals} format — NOT the same
-  # schema. Always use the flat version for CI fallback.
-  # CI fallback: legacy_ccusage_daily.json is already a public flat export (no paths).
-  # ccusage_session_all.json and ccusage_blocks_all.json contain raw sessionIds
-  # and MUST NOT be copied verbatim to the public vignettes/data/ directory.
-  # Write empty placeholders for the session/blocks public files instead.
-  # (privacy regression fix: Issue #1 in roborev audit)
-  fallback_daily_src <- file.path(extdata, "legacy_ccusage_daily.json")
-  fallback_daily_dst <- file.path(out_dir, "legacy_ccusage_daily.json")
-  if (file.exists(fallback_daily_src)) {
-    file.copy(fallback_daily_src, fallback_daily_dst, overwrite = TRUE)
-    cat("  -> copied legacy_ccusage_daily.json (CI fallback)\n")
-  } else if (!file.exists(fallback_daily_dst)) {
-    write_json_atomic(list(), fallback_daily_dst, auto_unbox = TRUE)
-    cat("  -> legacy_ccusage_daily.json not found, wrote empty (CI fallback)\n")
-  }
+  # (#281 Phase 5a): legacy_ccusage_daily.json CI fallback removed — file is a frozen
+  # extdata snapshot; no longer copied to out_dir at runtime.
   # Always write empty sessions (raw sessionIds must not appear in public output).
   write_json_atomic(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
   cat("  -> wrote empty ccusage_sessions.json (CI fallback; cmonitor-rs not available)\n")
-  # Blocks: use committed inst/extdata snapshot if present, else write empty array.
-  # This keeps the "Time Blocks" dashboard page populated in CI. (#141)
-  # (#281 Phase 2): renamed to legacy_ccusage_blocks.json
-  fallback_blocks_src <- file.path(extdata, "legacy_ccusage_blocks.json")
-  fallback_blocks_dst <- file.path(out_dir, "legacy_ccusage_blocks.json")
-  if (file.exists(fallback_blocks_src)) {
-    file.copy(fallback_blocks_src, fallback_blocks_dst, overwrite = TRUE)
-    cat("  -> copied legacy_ccusage_blocks.json from inst/extdata (CI fallback)\n")
-  } else {
-    write_json_atomic(list(), fallback_blocks_dst, auto_unbox = TRUE)
-    cat("  -> wrote empty legacy_ccusage_blocks.json (CI fallback; no committed snapshot)\n")
-  }
+  # (#281 Phase 5a): legacy_ccusage_blocks.json CI fallback removed — frozen extdata snapshot,
+  # no longer copied or written to out_dir at runtime.
 }
 
 # --- 4. Export Gemini from DuckDB (unchanged) ----------------------------------
@@ -1724,49 +1672,12 @@ api_index <- list(
       schema      = list()
     ),
     list(
-      path        = "/legacy_ccusage_daily.json",
-      description = "LEGACY: Daily Claude API usage from cmonitor-rs (renamed from ccusage_daily.json in #281 Phase 2)",
-      type        = "array",
-      source      = "cmonitor-rs CLI (--view daily --output json --since 90d)",
-      source_url  = "https://github.com/anthropics/cmonitor",
-      schema      = list(
-        date          = "string",
-        inputTokens   = "integer",
-        outputTokens  = "integer",
-        cacheCreation = "integer",
-        cacheRead     = "integer",
-        totalTokens   = "integer",
-        totalCost     = "number",
-        modelsUsed    = "string"
-      )
-    ),
-    list(
       path        = "/ccusage_sessions.json",
       description = "Claude API sessions (empty — cmonitor-rs has no session view)",
       type        = "array",
       source      = "cmonitor-rs CLI (no session data available)",
       source_url  = "https://github.com/anthropics/cmonitor",
       schema      = list()
-    ),
-    list(
-      path        = "/legacy_ccusage_blocks.json",
-      description = "LEGACY: Claude API usage time blocks from cmonitor-rs (renamed from ccusage_blocks.json in #281 Phase 2)",
-      type        = "array",
-      source      = "cmonitor-rs CLI (--view daily --output json --since 90d)",
-      source_url  = "https://github.com/anthropics/cmonitor",
-      schema      = list(
-        startTime     = "string",
-        endTime       = "string",
-        actualEndTime = "string",
-        entries       = "integer",
-        inputTokens   = "integer",
-        outputTokens  = "integer",
-        cacheCreation = "integer",
-        cacheRead     = "integer",
-        totalTokens   = "integer",
-        costUSD       = "number",
-        models        = "string"
-      )
     ),
     list(
       path        = "/gemini_daily.json",
@@ -5367,11 +5278,9 @@ tryCatch({
 
 # --- 9. QA validation — fail early on empty critical data ---------------------
 cat("\n=== Data QA Validation ===\n")
-# legacy_ccusage_blocks is intentionally excluded from critical_files: the CI
-# fallback writes an empty array [] when cmonitor-rs is unavailable (#141).
-# Schema validation for legacy_ccusage_blocks (valid JSON array, length 0 allowed)
-# runs separately below. (#281 Phase 2): ccusage_daily -> legacy_ccusage_daily.
-critical_files <- c("legacy_ccusage_daily", "git_commits",
+# (#281 Phase 5a): legacy_ccusage_daily and legacy_ccusage_blocks removed from QA checks —
+# both files are frozen extdata snapshots no longer written at runtime.
+critical_files <- c("git_commits",
                      "git_bus_factor", "git_velocity", "git_timing",
                      "git_churn", "git_bugs")
 qa_errors <- 0L
@@ -5414,9 +5323,8 @@ if (qa_errors > 0L) {
 cat("QA passed: all critical data files have rows\n\n")
 
 # Schema-only validation for optional files: valid JSON array, length 0 allowed.
-# legacy_ccusage_blocks.json is written as [] by the CI fallback (no cmonitor-rs).
-# (#281 Phase 2): ccusage_blocks -> legacy_ccusage_blocks.
-optional_schema_files <- c("legacy_ccusage_blocks", "self_review_findings", "config_staleness")
+# (#281 Phase 5a): legacy_ccusage_blocks removed — frozen snapshot, not validated at runtime.
+optional_schema_files <- c("self_review_findings", "config_staleness")
 for (f in optional_schema_files) {
   path <- file.path(out_dir, paste0(f, ".json"))
   if (!file.exists(path)) {
@@ -5455,10 +5363,8 @@ writeLines(
   c(
     format(Sys.time(), tz = "UTC", usetz = TRUE),
     sprintf("source_host=%s", Sys.info()[["nodename"]]),
-    sprintf("ccusage_present=%s", as.character(
-      file.exists(file.path(out_dir, "legacy_ccusage_blocks.json")) &&
-      file.info(file.path(out_dir, "legacy_ccusage_blocks.json"))$size > 50
-    )),
+    # (#281 Phase 5a): legacy_ccusage_blocks.json no longer written at runtime; always FALSE.
+    sprintf("ccusage_present=%s", "FALSE"),
     sprintf("predictions_n=%d", as.integer(n_predictions)),
     sprintf("sessions_n=%d",    as.integer(n_sessions))
   ),
