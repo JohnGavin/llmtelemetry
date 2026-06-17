@@ -457,8 +457,18 @@ if (has_cmonitor) {
 } else {
   # CI fallback: read existing ccusage JSON files from inst/extdata/
   blocks_all <- list()
-  # (#281 Phase 5a): legacy_ccusage_daily.json CI fallback removed — file is a frozen
-  # extdata snapshot; no longer copied to out_dir at runtime.
+  # (#281 Phase 5a): legacy_ccusage_daily.json is a frozen extdata snapshot (live write
+  # removed). Still copy it to out_dir so the dashboard's cross-check panels are not
+  # broken during the deprecation window (Phase 5b target: 2026-09-02).
+  fallback_daily_src <- file.path(extdata, "legacy_ccusage_daily.json")
+  fallback_daily_dst <- file.path(out_dir, "legacy_ccusage_daily.json")
+  if (file.exists(fallback_daily_src)) {
+    file.copy(fallback_daily_src, fallback_daily_dst, overwrite = TRUE)
+    cat("  -> copied legacy_ccusage_daily.json (frozen snapshot; Phase 5a)\n")
+  } else if (!file.exists(fallback_daily_dst)) {
+    write_json_atomic(list(), fallback_daily_dst, auto_unbox = TRUE)
+    cat("  -> legacy_ccusage_daily.json not found, wrote empty (Phase 5a frozen snapshot)\n")
+  }
   # Always write empty sessions (raw sessionIds must not appear in public output).
   write_json_atomic(list(), file.path(out_dir, "ccusage_sessions.json"), auto_unbox = TRUE)
   cat("  -> wrote empty ccusage_sessions.json (CI fallback; cmonitor-rs not available)\n")

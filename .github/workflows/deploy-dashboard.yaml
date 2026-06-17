@@ -77,14 +77,14 @@ jobs:
           python3 << 'PYEOF'
           import json, os, sys
           data_dir = "vignettes/data"
-          critical = ["legacy_ccusage_daily", "git_commits",
+          critical = ["git_commits",
                       "git_bus_factor", "git_velocity", "git_timing",
                       "git_churn", "git_bugs"]
-          # legacy_ccusage_blocks is produced by cmonitor-rs, which is unavailable in CI.
-          # The CI fallback writes a valid empty JSON array. Treat as optional so
-          # the deploy is not hard-failed when cmonitor-rs is absent. Fixes #141.
+          # legacy_ccusage_daily/blocks: frozen snapshots since Phase 5a (#281/#302).
+          # No longer live-written by cmonitor-rs; treat as optional for the deprecation
+          # window (Phase 5b target 2026-09-02). Fixes #141.
           # (Renamed from ccusage_daily/ccusage_blocks in #281 Phase 2 / #284.)
-          optional = ["legacy_ccusage_blocks", "gemini_daily", "gemini_sessions",
+          optional = ["legacy_ccusage_daily", "legacy_ccusage_blocks", "gemini_daily", "gemini_sessions",
                       "unified_sessions", "unified_costs", "git_tags",
                       "git_crisis", "git_todo", "predictions", "calibration_buckets"]
           def count_rows(d):
@@ -405,8 +405,8 @@ jobs:
           WEBR_CHECK="/dashboard_shinylive_files/libs/quarto-contrib/shinylive-${SHINYLIVE_VER}/shinylive/webr/R.bin.data"
           for path in "/" "/shinylive-sw.js" \
                       "$WEBR_CHECK" \
-                      "/data/index.json" "/data/legacy_ccusage_daily.json" "/data/gemini_daily.json" \
-                      "/data/ccusage_sessions.json" "/data/legacy_ccusage_blocks.json" \
+                      "/data/index.json" "/data/gemini_daily.json" \
+                      "/data/ccusage_sessions.json" \
                       "/data/gemini_sessions.json" "/data/cmonitor_summary.json" \
                       "/data/git_commits.json" \
                       "/data/unified_sessions.json" "/data/unified_costs.json"; do
@@ -418,29 +418,24 @@ jobs:
               echo "OK: ${path}"
             fi
           done
-          for f in legacy_ccusage_daily gemini_daily; do
-            curl -sf "${BASE}/data/${f}.json" | python3 -m json.tool > /dev/null 2>&1 || {
-              echo "FAIL: ${f}.json is not valid JSON"
-              FAIL=1
-            }
-          done
-          # Content QA: legacy_ccusage_daily must have rows (cmonitor-rs data, always present
-          # via committed extdata snapshot). legacy_ccusage_blocks is cmonitor-rs-only and
-          # legitimately empty in CI — validate schema (must be a JSON array) instead
-          # of row count. Fixes #141. (#281 Phase 2: renamed from ccusage_daily/blocks)
+          # (#281 Phase 5a): legacy_ccusage_daily is a frozen snapshot — validate JSON if
+          # present, but do not FAIL if absent or empty (deprecated, removal target 2026-09-02).
+          curl -sf "${BASE}/data/gemini_daily.json" | python3 -m json.tool > /dev/null 2>&1 || {
+            echo "FAIL: gemini_daily.json is not valid JSON"
+            FAIL=1
+          }
           ROWS=$(curl -sf "${BASE}/data/legacy_ccusage_daily.json" | python3 -c \
             "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
           if [ "$ROWS" = "0" ]; then
-            echo "::warning::legacy_ccusage_daily.json has 0 rows"
-            FAIL=1
+            echo "::warning::legacy_ccusage_daily.json absent or empty (deprecated Phase 5a)"
           else
-            echo "OK: legacy_ccusage_daily.json ($ROWS rows)"
+            echo "OK: legacy_ccusage_daily.json ($ROWS rows, frozen snapshot)"
           fi
-          # legacy_ccusage_blocks: validate it is a JSON array (may be empty when cmonitor-rs unavailable)
+          # legacy_ccusage_blocks: deprecated Phase 5a — warning only if invalid JSON
           curl -sf "${BASE}/data/legacy_ccusage_blocks.json" | python3 -c \
             "import sys,json; d=json.load(sys.stdin); assert isinstance(d,list), 'not an array'" 2>/dev/null \
             && echo "OK: legacy_ccusage_blocks.json (valid JSON array)" \
-            || { echo "::warning::legacy_ccusage_blocks.json is not a valid JSON array"; FAIL=1; }
+            || echo "::warning::legacy_ccusage_blocks.json absent or not a valid JSON array (deprecated Phase 5a)"
           # Check for "no data available" in critical JSON files
           echo "=== Checking for empty data files ==="
           for f in unified_sessions unified_costs git_commits git_velocity; do
