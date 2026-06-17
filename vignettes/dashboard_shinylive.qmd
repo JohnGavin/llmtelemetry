@@ -1704,6 +1704,12 @@ ui <- page_navbar(
         )
       ),
       nav_panel("Reviews", value = "Reviews",
+        # 18 cards across 5 sub-tabs — grouped semantically. The
+        # shown.bs.tab handler at L741 already re-renders mermaid + echarts
+        # when sub-tabs come into view, so the cost of stacking is paid
+        # only when the reader actually navigates to that group.
+        navset_tab(
+        nav_panel("Pulse",
         layout_columns(col_widths = c(12),
           card(
             card_header("Roborev — Automated Code Review Health"),
@@ -1761,7 +1767,9 @@ ui <- page_navbar(
           card(card_header("Active Loops"), DTOutput("rv_loops_table"),
             card_footer(class = "text-muted small",
               "Recurring review loops. Row colour: red=escalate, orange=block, yellow=watch. Sorted by cycles descending."))
-        ),
+        )
+        ),  # close Pulse nav_panel
+        nav_panel("Quality",
         layout_columns(col_widths = c(12),
           card(
             card_header("Resolution Rate (#146 Q5)"),
@@ -1826,19 +1834,39 @@ ui <- page_navbar(
         layout_columns(col_widths = c(12),
           card(
             card_header("Signal-to-Noise by Repo (#146 Q3)"),
+            tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
+              tags$p(
+                "One row per repository. ",
+                tags$strong("Signal % "),
+                "= passed reviews ÷ created reviews (higher is better). ",
+                tags$strong("Noise % "),
+                "= failed reviews ÷ created reviews (lower is better). ",
+                "Signal + Noise + autoclosed-share = 100% for each repo. ",
+                "The Cleveland dot chart ranks repos by Signal %; the table beneath gives exact counts."
+              )
+            ),
             uiOutput("rv_repo_signal_chart"),
             tags$table(class = "table table-sm table-dark mt-2 mb-0",
               tags$thead(tags$tr(
-                tags$th("Repo"), tags$th("Signal"), tags$th("Noise"),
-                tags$th("Created"), tags$th("Passed"), tags$th("Failed"),
-                tags$th("Autoclosed")
+                tags$th(title = "Repository name (canonical_project)", "Repo"),
+                tags$th(title = "Signal % = n Passed / n Created — higher is better",
+                        "Signal %"),
+                tags$th(title = "Noise % = n Failed / n Created — lower is better",
+                        "Noise %"),
+                tags$th(title = "Total reviews opened for this repo in the window",
+                        "n Created"),
+                tags$th(title = "Reviews that produced an actionable fix (close_reason = 'manual')",
+                        "n Passed"),
+                tags$th(title = "Reviews closed without action (autoclosed or rejected)",
+                        "n Failed"),
+                tags$th(title = "Reviews suppressed by pipeline thresholds before reaching a human reviewer",
+                        "n Autoclosed")
               )),
               uiOutput("rv_repo_signal_table")
             ),
             card_footer(class = "text-muted small",
-              "Signal ratio (signal-to-noise ratio, or SNR) = reviews_passed / reviews_created per repo. ",
-              "A high signal ratio means the roborev pipeline surfaces real, actionable findings ",
-              "for that repository. A high noise ratio means most reviews fail without producing fixes. ",
+              "Compared against the other repos shown — no absolute target rate. ",
+              "A repo with Signal=24% and 538 created is producing ~131 actionable findings but generating ~382 noise reviews — large absolute volume but high false-positive cost. ",
               "Autoclosed = reviews suppressed by the pipeline (age/severity thresholds) before human review. ",
               "Source: roborev_daily_metrics table in unified.duckdb, aggregated across all dates. ",
               "Confidential repos (mycare, crypto, swarms) are excluded via clean_projects(). ",
@@ -1866,7 +1894,9 @@ ui <- page_navbar(
               "Confidential repos excluded via clean_projects(). ",
               "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
           )
-        ),
+        )
+        ),  # close Quality nav_panel
+        nav_panel("Operations",
         layout_columns(col_widths = c(12),
           card(
             card_header("Medium-Threshold Suppression (#146 Q7)"),
@@ -1953,7 +1983,9 @@ ui <- page_navbar(
               "Source: roborev_threshold_history.json from unified.duckdb. ",
               "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
           )
-        ),
+        )
+        ),  # close Operations nav_panel
+        nav_panel("Cost",
         layout_columns(col_widths = c(12),
           card(
             card_header("Cost per Finding Resolved (#146 Q1)"),
@@ -1998,7 +2030,9 @@ ui <- page_navbar(
               "Source: roborev_cost_per_agent.json from unified.duckdb. ",
               "PALETTE: codex=#4ea8de, claude-code=#69d4a0, gemini=#ffd93d.")
           )
-        ),
+        )
+        ),  # close Cost nav_panel
+        nav_panel("Detail",
         layout_columns(col_widths = c(12),
           card(
             card_header("Top Commits by Finding Count (#146 Q16)"),
@@ -2188,6 +2222,8 @@ ui <- page_navbar(
               "Data refreshed on each local export run and committed to inst/extdata/ for CI serving.")
           )
         )
+        )  # close Detail nav_panel
+        )  # close Reviews navset_tab
       )
     )
   ),
@@ -2213,6 +2249,12 @@ ui <- page_navbar(
         )
       ),
       nav_panel("Glossary", value = "Glossary", icon = icon("book"),
+        # Split into a navset_tab so the four sections no longer stack and
+        # overlap (#176 follow-up). The shown.bs.tab handler at L741 already
+        # re-renders the mermaid diagrams whenever any tab (including these
+        # nested ones) becomes visible — nested tab events bubble up.
+        navset_tab(
+        nav_panel("Architecture",
         # Architecture card — issue #176 increment 1
         # Approach: Mermaid flowchart TB (top-to-bottom) with clickable nodes (securityLevel loose)
         # + definition list with Tippy hover popups (body-size, >=2 sentences, >=1 link)
@@ -2339,7 +2381,9 @@ flowchart TB
           card_footer(class = "text-muted small",
             "Architecture of the llmtelemetry refresh pipeline. ",
             "Click nodes in the diagram to open the relevant GitHub source or dataset.")
-        ),
+        )
+        ),  # close Architecture nav_panel
+        nav_panel("Workflow",
         # Workflow card — issue #176 increment 2
         # Shows the end-to-end refresh lifecycle: cron triggers -> data pipeline -> CI -> publish
         card(card_header("Workflow — Refresh Lifecycle"),
@@ -2347,21 +2391,21 @@ flowchart TB
             tags$div(class = "mermaid", "
 flowchart TB
     classDef default fill:#999999,stroke:#CC0000,stroke-width:1px,color:#000000;
+    classDef cluster fill:#1a1a1a,stroke:#666666,stroke-width:1px,color:#e0e0e0;
     Cron12h[\"Cron (every 12h) —<br/>refresh_and_preserve.sh\"]
-    FetchCC[\"ccusage fetch —<br/>Claude session logs\"]
-    FetchGem[\"Gemini API fetch —<br/>token usage\"]
-    FetchCodex[\"Codex export —<br/>OpenAI usage\"]
     Sanitize[\"Sanitize & redact (privacy)\"]
     Commit[\"git commit + push —<br/>inst/extdata\"]
     CI[\"GitHub Actions —<br/>deploy-dashboard.yaml\"]
     Pages[\"GitHub Pages —<br/>static Shinylive site\"]
     Email[\"send_daily_email.R<br/>(08:00 UTC)\"]
-    Cron12h --> FetchCC
-    Cron12h --> FetchGem
-    Cron12h --> FetchCodex
-    FetchCC --> Sanitize
-    FetchGem --> Sanitize
-    FetchCodex --> Sanitize
+    subgraph fetch [\"Parallel fetch (3 providers)\"]
+        direction TB
+        FetchCC[\"ccusage fetch —<br/>Claude session logs\"]
+        FetchGem[\"Gemini API fetch —<br/>token usage\"]
+        FetchCodex[\"Codex export —<br/>OpenAI usage\"]
+    end
+    Cron12h --> fetch
+    fetch --> Sanitize
     Sanitize --> Commit
     Commit --> CI
     CI --> Pages
@@ -2445,7 +2489,9 @@ flowchart TB
           card_footer(class = "text-muted small",
             "End-to-end refresh lifecycle for llmtelemetry. ",
             "Click nodes in the diagram to open the relevant source or workflow.")
-        ),
+        )
+        ),  # close Workflow nav_panel
+        nav_panel("Datasets",
         # Datasets card — issue #176 increment 2
         # Shows the committed data files in inst/extdata and what each holds
         card(card_header("Datasets — Committed Data Files"),
@@ -2557,7 +2603,9 @@ flowchart LR
           card_footer(class = "text-muted small",
             "All data files committed to inst/extdata/ on every 12-hour refresh. ",
             "Click nodes to browse on GitHub.")
-        ),
+        )
+        ),  # close Datasets nav_panel
+        nav_panel("Metric Definitions",
         card(card_header("Metric Definitions"),
           tags$div(class = "p-3", style = "color: #e0e0e0; font-size: 0.9em;",
             navset_tab(
@@ -2634,6 +2682,8 @@ flowchart LR
           card_footer(class = "text-muted small",
             "Reference definitions for interpreting dashboard metrics. Links open in a new tab. Hover over charts for tooltips.")
         )
+        )  # close Metric Definitions nav_panel
+        )  # close navset_tab
       ),
       nav_panel("Config Health", value = "Config Health", icon = icon("gauge"),
         layout_columns(col_widths = c(12),
