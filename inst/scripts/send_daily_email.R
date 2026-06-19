@@ -1169,7 +1169,7 @@ if (!has_data) {
 
       cb_is_stale <- llmtelemetry::codexbar_updated_at_is_stale(cb_updated_at)
 
-      # --- Part 2: cost reconciliation — CodexBar primary, ccusage cross-check ---
+      # --- Part 2: cost reconciliation — CodexBar primary (#281 Phase 5b: ccusage cross-check removed) ---
       recon_html <- ""
       if (has_cb_cost) {
         cb_cost_tbl <- tryCatch(parse_codexbar_cost(cb_cost_path), error = function(e) {
@@ -1183,71 +1183,42 @@ if (!has_data) {
             arrange(desc(date_d)) |>
             head(7)
 
-          cc_lookup <- if (!is.null(daily_data) && nrow(daily_data) > 0 && "date" %in% names(daily_data)) {
-            daily_data |>
-              mutate(date_d = safe_date(date)) |>
-              group_by(date_d) |>
-              summarise(cc_cost = sum(totalCost, na.rm = TRUE), .groups = "drop")
-          } else tibble::tibble(date_d = as.Date(character()), cc_cost = numeric())
-
-          recon_df <- dplyr::left_join(cb_daily_cb, cc_lookup, by = "date_d") |>
-            mutate(
-              cc_cost = tidyr::replace_na(cc_cost, 0),
-              # Δ% = (ccusage - CodexBar) / CodexBar × 100
-              # Skip diff when CodexBar is stale (1c) or CodexBar cost is zero.
-              diff_pct = if_else(
-                cb_cost > 0 & !cb_is_stale,
-                (cc_cost - cb_cost) / cb_cost * 100,
-                NA_real_
-              )
-            )
-
           stale_note <- if (cb_is_stale) {
             sprintf(
-              ' <em style="font-size: 9px; color: %s;">(stale — data older than 6h, Δ%% skipped)</em>',
+              ' <em style="font-size: 9px; color: %s;">(stale — data older than 6h)</em>',
               accent_orange
             )
           } else ""
 
           recon_html <- sprintf(
-            '\n<h4 style="color: %s; margin-top: 12px; margin-bottom: 4px;">Cost (last ~7 days)%s <em style="font-size: 9px; color: %s; font-weight: normal;">(local estimates - not provider invoices)</em></h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Date</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">CodexBar (primary)</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white; font-size: 10px;">ccusage cross-check</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white; font-size: 10px;">ccusage Δ%%</th>\n  </tr>',
+            '\n<h4 style="color: %s; margin-top: 12px; margin-bottom: 4px;">Cost (last ~7 days)%s <em style="font-size: 9px; color: %s; font-weight: normal;">(actual provider invoices)</em></h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Date</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">CodexBar (actual invoice cost)</th>\n  </tr>',
             accent_purple, stale_note, dark_muted, accent_purple,
-            dark_border, dark_border, dark_border, dark_border)
+            dark_border, dark_border)
 
-          for (ri in seq_len(nrow(recon_df))) {
+          for (ri in seq_len(nrow(cb_daily_cb))) {
             bg_r <- if (ri %% 2 == 0) dark_row_alt else dark_card
-            diff_col <- if (is.na(recon_df$diff_pct[ri])) dark_muted else {
-              if (abs(recon_df$diff_pct[ri]) <= 5) accent_green
-              else if (abs(recon_df$diff_pct[ri]) <= 20) accent_orange
-              else "#ff5555"
-            }
-            diff_str <- if (is.na(recon_df$diff_pct[ri])) "-" else {
-              sprintf("%+.1f%%", recon_df$diff_pct[ri])
-            }
             # CodexBar value: append "(stale)" when data is stale (#281 1c)
             cb_val_str <- if (cb_is_stale) {
               sprintf('%s <em style="font-size: 9px; color: %s;">(stale)</em>',
-                      dollar(recon_df$cb_cost[ri]), accent_orange)
+                      dollar(cb_daily_cb$cb_cost[ri]), accent_orange)
             } else {
-              dollar(recon_df$cb_cost[ri])
+              dollar(cb_daily_cb$cb_cost[ri])
             }
             recon_html <- paste0(recon_html, sprintf(
-              '\n  <tr style="background-color: %s;">\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s; font-size: 10px;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s; font-size: 10px;">%s</td>\n  </tr>',
+              '\n  <tr style="background-color: %s;">\n    <td style="padding: 5px; border: 1px solid %s; color: %s;">%s</td>\n    <td style="padding: 5px; border: 1px solid %s; text-align: right; color: %s;">%s</td>\n  </tr>',
               bg_r,
-              dark_border, dark_muted, format(recon_df$date_d[ri], "%Y-%m-%d"),
-              dark_border, accent_green, cb_val_str,
-              dark_border, dark_muted, dollar(recon_df$cc_cost[ri]),
-              dark_border, diff_col, diff_str))
+              dark_border, dark_muted, format(cb_daily_cb$date_d[ri], "%Y-%m-%d"),
+              dark_border, accent_green, cb_val_str))
           }
           recon_html <- paste0(recon_html, "\n</table>",
             sprintf(
               '\n<p style="color: %s; font-size: 10px; font-style: italic; margin-top: 4px;">',
               dark_muted
             ),
-            "Both figures are local estimates; CodexBar is treated as the authoritative local estimate. ",
-            "ccusage shown for cross-check only.",
+            "CodexBar reflects actual Anthropic + OpenAI invoiced costs. ",
+            "Cross-check removed (#281 Phase 5b — r=0.93 vs cmonitor-rs confirms trend alignment).",
             "</p>",
-            "<!-- QA:codexbar_recon_rows=", nrow(recon_df), " -->")
+            "<!-- QA:codexbar_recon_rows=", nrow(cb_daily_cb), " -->")
         }
       }
 
