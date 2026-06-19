@@ -12,7 +12,11 @@ full refresh history.
 
 ## [Unreleased]
 
-> **Session 2026-06-19 (#281 Phase 5b — remove ccusage cross-check from email; PR #308 opened):**
+> **Session 2026-06-19 (#281 Phase 5b/5c/5d — MAPE root cause + PR #308 merged):**
+> **Phase 5c:** No code changes needed — ccusage was never in `default.nix`/`default.R`/`DESCRIPTION` (it called `npx ccusage` as a system CLI tool; no Nix or R package declaration required). Trivially satisfied.
+> **Phase 5d:** llm#307 acceptance criteria not yet met (validation window ongoing, per-tool deprecation decision pending). Posted correction to Phase 0 finding: CodexBar IS tracking actual Anthropic + OpenAI invoiced costs, not a local estimate. Target closure 2026-09-02.
+>
+> **Session 2026-06-19 (#281 Phase 5b — remove ccusage cross-check from email; PR #308 merged):**
 > Phase 5b MAPE analysis found the original ±10% MAPE gate was structurally unachievable: cmonitor-rs systematically overestimates actual API costs by 2.24× because (a) 97% of Claude tokens are cache-reads billed at 10% by Anthropic — cmonitor-rs does not fully discount these; (b) cmonitor-rs does not track GPT-5.5 costs, which CodexBar includes. Trend correlation r=0.93 (log-space r=0.95) confirms both tools track the same underlying usage signal. Accepted revised gate: r ≥ 0.85 → passes. **PR #308** removes the `ccusage cross-check` and `ccusage Δ%` columns from the CodexBar daily cost reconciliation table in `send_daily_email.R`; fixes label "(local estimates - not provider invoices)" → "(actual provider invoices)". The main ccusage and cmonitor rows in the summary stats table are unchanged (token tracking, different purpose). Finding posted to issue #281.
 
 > **Session 2026-06-18–19 (stale PR harvest — #280/#295 rebased and merged; issues #277/#298 closed):**
