@@ -12,6 +12,10 @@ full refresh history.
 
 ## [Unreleased]
 
+> **Session 2026-06-19 (#281 Phase 5b/5c/5d):**
+>
+> **Known Limitation discovered:** `tests/testthat/_snaps/refresh-codex-cache.new.md` was created by a test run — `canonicalize_project` returns `NA NA NA NA` for paths where `canonicalize_project_cwd` returned project names. Likely a function rename without updating test snapshot. Requires Nix shell + `devtools::test(filter="refresh-codex")` to investigate.
+>
 > **Session 2026-06-19 (#281 Phase 5b/5c/5d — MAPE root cause + PR #308 merged):**
 > **Phase 5c:** No code changes needed — ccusage was never in `default.nix`/`default.R`/`DESCRIPTION` (it called `npx ccusage` as a system CLI tool; no Nix or R package declaration required). Trivially satisfied.
 > **Phase 5d:** llm#307 acceptance criteria not yet met (validation window ongoing, per-tool deprecation decision pending). Posted correction to Phase 0 finding: CodexBar IS tracking actual Anthropic + OpenAI invoiced costs, not a local estimate. Target closure 2026-09-02.
