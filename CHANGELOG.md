@@ -12,6 +12,11 @@ full refresh history.
 
 ## [Unreleased]
 
+> **Session 2026-06-18–19 (stale PR harvest — #280/#295 rebased and merged; issues #277/#298 closed):**
+> Harvested two stale open PRs. **PR #280** (daily-email semantics, 247 commits behind main): cherry-picked `5ab11c4` onto fresh branch `feat/fix-daily-email-semantics`; **PR #307** merged. Fixes: Roborev `<small>` caption defining New findings/Resolved/Open total/loop-monitor tiers; CodexBar "Window (length)" rename + human-readable durations (5h/24h/7d) + dropped dead "Credits left" column; Gemini 100% QA HTML comment. **PR #295** (Group D dashboard UX, closed 9 days prior, 50 commits behind): cherry-picked `bdefdfe` with one conflict (Config Health panel added since PR closed); resolved by inserting Group D closing comments before it; **PR #306** merged. Adds: Glossary split into 4 navset sub-tabs, Reviews split into 5 sub-tabs, Signal-to-Noise column tooltips. Also: **worktree cleanup** — 12 worktrees → 1 (main checkout on main); removed 3 locked stale agent worktrees, 3 merged-via-squash feature worktrees. **Issues closed:** #277 (daily-email clarification — addressed by #307), #298 (roborev ETL lag — self-resolved, ETL current as of 2026-06-18 13:44).
+>
+> **Pattern noted:** rebasing stale PRs (50–247 commits behind) via cherry-pick onto a fresh branch is cleaner than `git rebase` when the original worktree is long-gone and conflicts are localized to one file.
+
 > **Session 2026-06-17 (CI hotfix #305 — Phase 5a broke deploy QA):**
 > Dashboard deploy failed (run 27659245189) with "1 critical data files empty" — `legacy_ccusage_daily.json` was in the `critical` list in `deploy-dashboard.yaml` but Phase 5a (#302) had removed the CI-path copy to `vignettes/data/`. Two-file fix: (1) `export_dashboard_data.R` — restored the `inst/extdata/ → vignettes/data/` copy in the CI else-branch (frozen snapshot only; live cmonitor-rs write stays removed); (2) `deploy-dashboard.yaml` — moved `legacy_ccusage_daily` from `critical → optional`, removed it from the hard-fail HTTP check list, downgraded content QA to `::warning::` only; same for `legacy_ccusage_blocks`. **PR #305** merged; all three post-fix CI runs green (deploy, daily report, HF archive). **Issue #303** closed.
 >
