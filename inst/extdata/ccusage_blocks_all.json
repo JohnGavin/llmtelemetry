@@ -2590,7 +2590,7 @@
       "startTime": "2026-06-18T19:00:00.000Z",
       "endTime": "2026-06-19T00:00:00.000Z",
       "actualEndTime": "2026-06-18T20:09:40.178Z",
-      "isActive": true,
+      "isActive": false,
       "isGap": false,
       "entries": 43,
       "tokenCounts": {
@@ -2606,16 +2606,8 @@
         "claude-sonnet-4-6",
         "<synthetic>"
       ],
-      "burnRate": {
-        "tokensPerMinute": 629694.4351895467,
-        "tokensPerMinuteForIndicator": 3222.7724099370794,
-        "costPerHour": 31.293328661205642
-      },
-      "projection": {
-        "totalTokens": 117978647,
-        "totalCost": 97.72,
-        "remainingMinutes": 174
-      }
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
