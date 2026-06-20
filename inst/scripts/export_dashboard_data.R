@@ -412,6 +412,13 @@ if (has_cmonitor) {
     mutate(project = "all") |>
     arrange(date)
 
+  # (#311) Persist cmonitor cross-check snapshot to extdata so CI runs (which have
+  # no cmonitor-rs binary) can still populate unified_costs.json cross_check/deficit_pct
+  # via the Phase 2c fallback below.
+  xcheck_snapshot <- daily_rows[, c("date", "totalCost")]
+  write_json_atomic(xcheck_snapshot, file.path(extdata, "cmonitor_xcheck_daily.json"), auto_unbox = TRUE)
+  cat(sprintf("  -> cmonitor_xcheck_daily.json snapshot written (%d rows)\n", nrow(xcheck_snapshot)))
+
   # (#281 Phase 5a): legacy_ccusage_daily.json live writes removed — frozen as extdata snapshot.
   # daily_rows is preserved in-memory for unified_costs.json cross_check (Section 9b).
 
@@ -1385,24 +1392,41 @@ if (file.exists(unified_db)) {
         # Full outer join: CodexBar is primary where available; ccusage fills
         # pre-CodexBar dates.  cross_check = ccusage where CodexBar is primary.
         #
-        # cross_check source: prefer cmonitor-rs daily_rows (last 90d, overlaps
-        # CodexBar's date range) over unified.duckdb costs (stops 2026-04-21,
-        # no overlap with CodexBar which starts 2026-05-04).
+        # cross_check source preference (#311):
+        # 1. Live cmonitor-rs daily_rows (local runs only — has cmonitor-rs binary)
+        # 2. cmonitor_xcheck_daily.json snapshot (written by Part 1 above; CI uses this)
+        # 3. legacy_ccusage_daily.json (stale last-resort fallback)
         ccusage_xcheck <- if (exists("daily_rows") && is.data.frame(daily_rows) &&
                                nrow(daily_rows) > 0L &&
                                "totalCost" %in% names(daily_rows)) {
           setNames(daily_rows[, c("date", "totalCost")], c("date", "total_cost"))
         } else {
-          # CI fallback: read committed legacy_ccusage_daily.json snapshot
-          fb <- file.path(extdata, "legacy_ccusage_daily.json")
-          if (file.exists(fb)) {
-            fb_df <- tryCatch(fromJSON(fb, simplifyDataFrame = TRUE),
-                              error = function(e) NULL)
-            if (is.data.frame(fb_df) && nrow(fb_df) > 0L &&
-                "totalCost" %in% names(fb_df))
-              setNames(fb_df[, c("date", "totalCost")], c("date", "total_cost"))
-            else data.frame(date = character(0), total_cost = numeric(0))
-          } else data.frame(date = character(0), total_cost = numeric(0))
+          # CI fallback 1: cmonitor_xcheck_daily.json committed snapshot (#311)
+          xcheck_path <- file.path(extdata, "cmonitor_xcheck_daily.json")
+          xcheck_result <- NULL
+          if (file.exists(xcheck_path)) {
+            xcheck_df <- tryCatch(jsonlite::fromJSON(xcheck_path, simplifyDataFrame = TRUE),
+                                  error = function(e) NULL)
+            if (is.data.frame(xcheck_df) && nrow(xcheck_df) > 0L &&
+                "totalCost" %in% names(xcheck_df)) {
+              cat("  -> Phase 2c cross_check: using cmonitor_xcheck_daily.json snapshot\n")
+              xcheck_result <- setNames(xcheck_df[, c("date", "totalCost")], c("date", "total_cost"))
+            }
+          }
+          if (!is.null(xcheck_result)) {
+            xcheck_result
+          } else {
+            # CI fallback 2: read committed legacy_ccusage_daily.json snapshot
+            fb <- file.path(extdata, "legacy_ccusage_daily.json")
+            if (file.exists(fb)) {
+              fb_df <- tryCatch(fromJSON(fb, simplifyDataFrame = TRUE),
+                                error = function(e) NULL)
+              if (is.data.frame(fb_df) && nrow(fb_df) > 0L &&
+                  "totalCost" %in% names(fb_df))
+                setNames(fb_df[, c("date", "totalCost")], c("date", "total_cost"))
+              else data.frame(date = character(0), total_cost = numeric(0))
+            } else data.frame(date = character(0), total_cost = numeric(0))
+          }
         }
         merged <- merge(cb_totals, ccusage_xcheck, by = "date", all = TRUE)
         # cb_is_primary TRUE for dates that appear in CodexBar
