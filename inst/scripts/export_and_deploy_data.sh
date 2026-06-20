@@ -217,7 +217,10 @@ if ! git -C "$TELEMETRY_REPO" pull --rebase --autostash origin main 2>&1 | tail 
 fi
 
 # Commit data-only changes
-git -C "$TELEMETRY_REPO" add vignettes/data/*.json
+# Single-quote pathspecs so the shell does NOT pre-expand them; git resolves globs
+# relative to $TELEMETRY_REPO, not the caller's cwd (fixes cwd-relative glob bug).
+# Also stage inst/extdata/*.json (e.g. cmonitor_xcheck_daily.json from PR #312).
+git -C "$TELEMETRY_REPO" add -- 'vignettes/data/*.json' 'inst/extdata/*.json'
 git -C "$TELEMETRY_REPO" commit -m "data: update telemetry data $(date +%Y-%m-%d)
 
 Auto-exported from local sources (predictions, unified.duckdb, cmonitor-rs).
