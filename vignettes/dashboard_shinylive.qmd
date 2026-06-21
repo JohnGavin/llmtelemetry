@@ -4325,7 +4325,7 @@ server <- function(input, output, session) {
     uc <- u_costs
     if (!has_rows(uc) || !"deficit_pct" %in% names(uc))
       return(tags$div(class = "p-3 text-muted small",
-        "deficit_pct not available — run export_dashboard_data.R with Phase 2c to populate."))
+        "deficit_pct unavailable — cross-check requires the cmonitor-rs secondary snapshot (refreshed by local export; see #311)."))
     # Filter to time horizon
     if (!is.null(cutoff()) && "date" %in% names(uc))
       uc <- uc[uc$date >= cutoff(), ]
