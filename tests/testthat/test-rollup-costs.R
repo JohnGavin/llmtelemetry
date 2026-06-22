@@ -171,3 +171,94 @@ test_that("running rollup_costs() twice yields same row count", {
   expect_equal(nrow(r1), nrow(r2))
   expect_equal(r1$cost_id, r2$cost_id)
 })
+
+# --- #309 Freshness: rollup must cover up to latest input date ----------------
+# Regression guard: after a rollup run the output parquet max(date) MUST equal
+# the max(date) in the source JSON.  A rollup that silently stops short
+# (e.g. due to a date-window filter, a canonicalization drop, or a silent
+# dedup collision) would fail this check — catching the class of bug described
+# in llmtelemetry#309 / llm#647.
+
+test_that("#309 rollup_costs() parquet max(date) equals source JSON max(date)", {
+  # Build a fixture with a clear "today-ish" upper bound
+  n       <- 10L
+  base_d  <- as.Date("2026-06-18")  # intentional: the 06-18 boundary from #309
+  df <- data.frame(
+    date              = format(base_d + seq_len(n) - 1L),
+    project           = paste0("proj_", seq_len(n)),
+    est_cost          = seq_len(n) * 5.0,
+    duration_min      = seq_len(n) * 30.0,
+    share             = rep(1.0, n),
+    canonical_project = paste0("proj_", seq_len(n)),
+    stringsAsFactors  = FALSE
+  )
+  fixture <- withr::local_tempfile(fileext = ".json")
+  jsonlite::write_json(df, fixture, auto_unbox = FALSE)
+
+  out_f   <- withr::local_tempfile(fileext = ".parquet")
+  fixed_t <- as.POSIXct("2026-06-28 00:00:00", tz = "UTC")
+
+  result <- rollup_costs(input_path = fixture, output_path = out_f, now = fixed_t)
+
+  # Max date in result must match max date in fixture
+  src_max  <- max(as.Date(df$date))
+  out_max  <- max(result$date)
+  expect_equal(out_max, src_max,
+    info = paste0("Rollup stopped at ", out_max, " but source goes to ", src_max,
+                  " — silent stall detected (#309)"))
+
+  # Also verify via the written parquet (round-trip)
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  withr::defer(DBI::dbDisconnect(con, shutdown = TRUE))
+  back <- DBI::dbGetQuery(con, sprintf("SELECT MAX(date) AS max_date FROM '%s'", out_f))
+  expect_equal(as.Date(back$max_date), src_max,
+    info = "Parquet max(date) does not match source JSON max(date)")
+})
+
+test_that("#309 append_costs_from_staging() parquet max(date) covers all staged events", {
+  # Create staged cost_emitted events spanning a date range that includes the
+  # 06-18 boundary.  After the append, max(date) in the parquet must equal the
+  # latest event date — no silent stall.
+  event_dates <- c("2026-06-17", "2026-06-18", "2026-06-19")
+  now_t <- as.POSIXct("2026-06-22 12:00:00", tz = "UTC")
+
+  staging_dir <- withr::local_tempdir()
+  events <- lapply(seq_along(event_dates), function(i) {
+    list(
+      ts      = paste0(event_dates[[i]], "T10:00:00Z"),
+      host    = "testhost",
+      pid     = "1",
+      payload = list(
+        event_type     = "cost_emitted",
+        project        = paste0("proj_", i),
+        date           = event_dates[[i]],
+        source         = "ccusage",
+        daily_cost_usd = i * 2.5,
+        n_sessions     = i,
+        duration_min   = i * 15.0
+      )
+    )
+  })
+  jsonl <- paste(vapply(events, jsonlite::toJSON, character(1L), auto_unbox = TRUE),
+                 collapse = "\n")
+  writeLines(jsonl, file.path(staging_dir, "events-2026-06.jsonl"))
+
+  parquet_path <- withr::local_tempfile(fileext = ".parquet")
+
+  n_new <- append_costs_from_staging(
+    staging_dir  = staging_dir,
+    parquet_path = parquet_path,
+    now          = now_t
+  )
+
+  expect_equal(n_new, length(event_dates))
+
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  withr::defer(DBI::dbDisconnect(con, shutdown = TRUE))
+  back <- DBI::dbGetQuery(
+    con,
+    sprintf("SELECT MAX(date) AS max_d FROM read_parquet('%s')", parquet_path)
+  )
+  expect_equal(as.Date(back$max_d), as.Date("2026-06-19"),
+    info = "append_costs_from_staging() silent stall: latest staged date not written (#309)")
+})
