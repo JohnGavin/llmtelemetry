@@ -12,6 +12,22 @@ full refresh history.
 
 ## [Unreleased]
 
+> **Session 2026-06-22 (roborev backlog clear + #311 Validation Health card re-point + dashboard deploy):**
+> **Roborev backlog cleared:** closed the 1 unaddressed failing verdict (#6962, commit `b818680b`). Its freshness concern was already fixed; the missing `cross_check`/`deficit_pct` was traced to the #281 Phase 5 ccusage deprecation, not a regression. Verdict backlog now **0 unaddressed**. (The separate `overview.failed` count is codex-CLI execution crashes — infra noise, not findings.)
+> **#311 implemented — Option B (re-point `cross_check` to the live cmonitor-rs secondary):**
+> - **PR #312** — exporter writes a committed `inst/extdata/cmonitor_xcheck_daily.json` snapshot when cmonitor-rs is present (local); Phase 2c reads it as a CI-safe fallback so `unified_costs.json` gains `cross_check`/`deficit_pct` even in CI (which has no cmonitor-rs binary). Card fallback message corrected.
+> - **PR #314** — corrected the export git-add. `vignettes/data/` is **gitignored** (CI-regenerated), so the prior pathspec aborted the whole `git add` (exit 128) before `inst/extdata` staged — freezing the committed snapshot. Now adds only `inst/extdata/*.json`.
+> - **Verified end-to-end:** clean export staged 34 files with no pathspec error; both deploys green (runs 27958892166, 27959663636); **live** `unified_costs.json` has 24 cross-checked rows through 2026-06-22 (e.g. 06-14 primary 72.63 vs cross_check 72.26 → deficit_pct 0.5%). Issue #311 closed.
+> **Filed llm#652** (canonical_projects audit: bucket runtime-ephemeral tokens + alias ~12 real projects). The session-start `UNKNOWN=437` is by-design consumer-filter cardinality in the llm-side `unified.duckdb sessions.project` column — an llm-repo task, NOT llmtelemetry (dashboard already clean via `canonicalize_project()`).
+>
+> **Failed approaches (so future sessions don't repeat):**
+> - **Deploy-script git-add fix attempted wrongly twice before #314 landed it.** (a) **llm#655** converted the canonical symlink `.claude/scripts/export_and_deploy_data.sh` (→ `llmtelemetry/inst/scripts/...`) into a divergent real file in the wrong repo — closed, worktree/branch removed. (b) **PR #313** added the gitignored `vignettes/data/*.json` pathspec, which makes `git add` abort before `inst/extdata` stages, so it never committed fresh data. **Lesson:** the canonical script lives in `llmtelemetry/inst/scripts/` (llm/.claude symlinks to it — never convert); only `inst/extdata/*.json` is committable (vignettes/data is gitignored, CI-regenerated).
+> - **`deficit_pct` +164% anomaly** seen in an intermediate fixer-worktree run (2026-05-19) did NOT reproduce in the regenerated/deployed data (06-14 = 0.5%) — a transient coalesced-ccusage-vs-cmonitor artifact in that worktree's state, not a real issue.
+>
+> **Known limitations:**
+> - `cross_check` is populated through ~2026-06-14 (24 rows); recent days have `primary` but not `cross_check` (cmonitor/CodexBar date-overlap). Card reports median/mean so it's functional; worth a glance once live.
+> - **llm#652** (canonical audit B+A) remains open — llm-side follow-up, not llmtelemetry.
+
 > **Session 2026-06-20 (maintenance — branch GC, stale-PR triage, privacy + canonical-projects audit; no llmtelemetry code changes):**
 > **Resolved the prior session's flagged `canonicalize_project` snapshot "regression" as a false alarm.** The `tests/testthat/_snaps/refresh-codex-cache.new.md` was a stale testthat artifact from 2026-05-27, predating the #242 alias fix (2026-05-28). The current test calls `canonicalize_project_cwd()` (the script-sourced cwd-sanitiser, aliased to avoid the package export shadowing it) and matches the committed snapshot; verified live `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 57 ]`. Removed the orphaned `.new.md`.
 > **Branch GC:** deleted 171 stale/merged/ephemeral local branches (102 `agent-worktree-*`, 22 `publish-roborev-*`, 12 round/refresh intermediates, plus all merged feat/fix/phase branches) and 47 remote branches on origin. Local 174→3 (`main`, `data`, session branch); kept `origin/main` + `origin/data`. Recoverable via reflog (~90d).
