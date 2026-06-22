@@ -274,11 +274,36 @@ cache_time <- if (!is.null(session_raw$generatedAt) &&
   "Unknown"
 }
 
-# Check for stale data
+# Check for stale data and build a visible HTML banner if age > STALE_THRESHOLD_H.
+# The banner is prepended to email_body regardless of has_data, so it appears at
+# the top of every email when data is stale.  The message() log entry is kept so
+# CI logs also capture the warning (#309).
+STALE_THRESHOLD_H <- 26  # 26h = daily cadence + 2h grace
+
+stale_banner_html <- ""  # empty unless stale
+
 if (cache_time != "Unknown") {
   cache_ts <- tryCatch(as.POSIXct(cache_time), error = function(e) NA)
-  if (!is.na(cache_ts) && difftime(Sys.time(), cache_ts, units = "hours") > 24) {
-    message(sprintf("WARNING: Cached data is stale (generated at %s). Report may be outdated.", cache_time))
+  if (!is.na(cache_ts)) {
+    age_h <- as.numeric(difftime(Sys.time(), cache_ts, units = "hours"))
+    if (age_h > STALE_THRESHOLD_H) {
+      message(sprintf(
+        "WARNING: Data is stale — latest data is %.0fh old (generated at %s). ETL may be broken.",
+        age_h, cache_time
+      ))
+      stale_banner_html <- sprintf(
+        '\n<div style="background-color: #5c1a00; border: 2px solid #ff6600; padding: 14px 18px; margin-bottom: 16px; border-radius: 4px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
+  <strong style="color: #ff9933; font-size: 14px;">&#9888; STALE DATA</strong>
+  <span style="color: #ffcc99; font-size: 13px; margin-left: 8px;">
+    Latest data is <strong>%.0fh old</strong> (last seen: %s). ETL rollup may be broken
+    &#8212; check <code style="background:#3a1000; padding:1px 4px; border-radius:2px;">run_rollup.R</code>
+    and <code style="background:#3a1000; padding:1px 4px; border-radius:2px;">export_and_deploy_data.sh</code>
+    logs. See <a href="https://github.com/JohnGavin/llmtelemetry/issues/309" style="color:#4fc3f7;">llmtelemetry#309</a>.
+  </span>
+</div>',
+        age_h, cache_time
+      )
+    }
   }
 }
 
@@ -1261,6 +1286,13 @@ if (!has_data) {
 </div>
 </div>
 ', dark_border, dark_muted, accent_blue, accent_blue, dark_card, dark_text, dark_border, dark_muted))
+}
+
+# --- Freshness guard: prepend stale-data banner if data is old (#309) ---
+# Prepended AFTER email_body is fully assembled so the banner appears at the top
+# of the email regardless of which branch built the body (has_data / !has_data).
+if (nzchar(stale_banner_html)) {
+  email_body <- paste0(stale_banner_html, email_body)
 }
 
 # --- QA: Validate email before sending ---

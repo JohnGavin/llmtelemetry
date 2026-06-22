@@ -70,3 +70,23 @@ cat(sprintf(
   "rollup: sessions=%d (+%d) costs=%d (+%d) git_commits=%d (+%d)\n",
   n_sess, n_new_sess, n_costs, n_new_costs, n_git, n_new_git
 ))
+
+# --- Refresh costs in unified.duckdb (Phase #309) ----------------------------
+# The costs table in unified.duckdb (opus/sonnet/haiku daily breakdown produced
+# by cmonitor-rs) stopped updating 2026-04-21 because refresh_costs_from_jsonl.R
+# (in the llm repo) had no scheduled job.  run_refresh_costs_unified.R is the
+# llmtelemetry-side replacement: it calls cmonitor-rs directly and upserts
+# fresh rows.  Fail-open: exits 0 when cmonitor-rs is absent so this does not
+# break CI or non-macOS environments.  See llmtelemetry#309.
+refresh_costs_script <- file.path(dirname(script_path), "run_refresh_costs_unified.R")
+if (file.exists(refresh_costs_script)) {
+  cat("Refreshing unified.duckdb costs table via cmonitor-rs (#309)...\n")
+  rc <- tryCatch({
+    sys.source(refresh_costs_script, envir = new.env(parent = baseenv()))
+    0L
+  }, error = function(e) {
+    message("run_rollup: costs refresh failed (non-fatal): ", e$message)
+    1L
+  })
+  if (rc == 0L) cat("run_rollup: unified.duckdb costs refresh complete\n")
+}
