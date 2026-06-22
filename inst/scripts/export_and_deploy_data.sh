@@ -217,10 +217,12 @@ if ! git -C "$TELEMETRY_REPO" pull --rebase --autostash origin main 2>&1 | tail 
 fi
 
 # Commit data-only changes
-# Single-quote pathspecs so the shell does NOT pre-expand them; git resolves globs
-# relative to $TELEMETRY_REPO, not the caller's cwd (fixes cwd-relative glob bug).
-# Also stage inst/extdata/*.json (e.g. cmonitor_xcheck_daily.json from PR #312).
-git -C "$TELEMETRY_REPO" add -- 'vignettes/data/*.json' 'inst/extdata/*.json'
+# inst/extdata/*.json is the committed source data CI reads (incl. cmonitor_xcheck_daily.json,
+# unified_costs.json). vignettes/data/ is gitignored (CI-regenerated) — do NOT add it.
+# PR #313 wrongly included 'vignettes/data/*.json' which caused git to abort with
+# "pathspec did not match any files" (exit 128) before staging inst/extdata/*.json.
+# Single-quote pathspec so the shell does NOT pre-expand it; git resolves relative to $TELEMETRY_REPO.
+git -C "$TELEMETRY_REPO" add -- 'inst/extdata/*.json'
 git -C "$TELEMETRY_REPO" commit -m "data: update telemetry data $(date +%Y-%m-%d)
 
 Auto-exported from local sources (predictions, unified.duckdb, cmonitor-rs).
