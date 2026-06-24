@@ -2,51 +2,84 @@
   "sessions": [
     {
       "sessionId": "sanitized@worktrees@he739287dbb84",
-      "inputTokens": 52965,
-      "outputTokens": 606796,
-      "cacheCreationTokens": 5963472,
-      "cacheReadTokens": 167700502,
-      "totalTokens": 174323735,
-      "totalCost": 136.5567,
-      "lastActivity": "2026-06-23",
+      "inputTokens": 75551,
+      "outputTokens": 765880,
+      "cacheCreationTokens": 6868495,
+      "cacheReadTokens": 185245164,
+      "totalTokens": 192955090,
+      "totalCost": 155.0754,
+      "lastActivity": "2026-06-24",
       "modelsUsed": [
         "claude-opus-4-8"
       ],
       "modelBreakdowns": [
         {
           "modelName": "claude-opus-4-8",
-          "inputTokens": 52965,
-          "outputTokens": 606796,
-          "cacheCreationTokens": 5963472,
-          "cacheReadTokens": 167700502,
-          "cost": 136.5567
+          "inputTokens": 75551,
+          "outputTokens": 765880,
+          "cacheCreationTokens": 6868495,
+          "cacheReadTokens": 185245164,
+          "cost": 155.0754
         }
       ],
       "projectPath": "Unknown Project"
     },
     {
       "sessionId": "subagents",
-      "inputTokens": 816,
-      "outputTokens": 48560,
-      "cacheCreationTokens": 1358705,
-      "cacheReadTokens": 52873095,
-      "totalTokens": 54281176,
-      "totalCost": 21.6879,
-      "lastActivity": "2026-06-23",
+      "inputTokens": 70850,
+      "outputTokens": 93178,
+      "cacheCreationTokens": 2704475,
+      "cacheReadTokens": 80627966,
+      "totalTokens": 83496469,
+      "totalCost": 38.2437,
+      "lastActivity": "2026-06-24",
       "modelsUsed": [
-        "claude-sonnet-4-6"
+        "claude-sonnet-4-6",
+        "claude-opus-4-8"
       ],
       "modelBreakdowns": [
         {
           "modelName": "claude-sonnet-4-6",
-          "inputTokens": 816,
-          "outputTokens": 48560,
-          "cacheCreationTokens": 1358705,
-          "cacheReadTokens": 52873095,
-          "cost": 21.6879
+          "inputTokens": 1222,
+          "outputTokens": 83113,
+          "cacheCreationTokens": 2103276,
+          "cacheReadTokens": 77825863,
+          "cost": 32.4854
+        },
+        {
+          "modelName": "claude-opus-4-8",
+          "inputTokens": 69628,
+          "outputTokens": 10065,
+          "cacheCreationTokens": 601199,
+          "cacheReadTokens": 2802103,
+          "cost": 5.7583
         }
       ],
       "projectPath": "sanitized@worktrees@he739287dbb84"
+    },
+    {
+      "sessionId": "sanitized@worktrees@he684fb4bdcab",
+      "inputTokens": 32998,
+      "outputTokens": 201071,
+      "cacheCreationTokens": 854776,
+      "cacheReadTokens": 33540789,
+      "totalTokens": 34629634,
+      "totalCost": 27.3045,
+      "lastActivity": "2026-06-24",
+      "modelsUsed": [
+        "claude-opus-4-8"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-8",
+          "inputTokens": 32998,
+          "outputTokens": 201071,
+          "cacheCreationTokens": 854776,
+          "cacheReadTokens": 33540789,
+          "cost": 27.3045
+        }
+      ],
+      "projectPath": "Unknown Project"
     },
     {
       "sessionId": "sanitized@worktrees@h19be56c434a7",
@@ -92,30 +125,6 @@
           "cacheCreationTokens": 438699,
           "cacheReadTokens": 7855123,
           "cost": 8.5935
-        }
-      ],
-      "projectPath": "Unknown Project"
-    },
-    {
-      "sessionId": "sanitized@worktrees@he684fb4bdcab",
-      "inputTokens": 19553,
-      "outputTokens": 53362,
-      "cacheCreationTokens": 287270,
-      "cacheReadTokens": 6859546,
-      "totalTokens": 7219731,
-      "totalCost": 6.657,
-      "lastActivity": "2026-06-23",
-      "modelsUsed": [
-        "claude-opus-4-8"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-opus-4-8",
-          "inputTokens": 19553,
-          "outputTokens": 53362,
-          "cacheCreationTokens": 287270,
-          "cacheReadTokens": 6859546,
-          "cost": 6.657
         }
       ],
       "projectPath": "Unknown Project"
@@ -6051,11 +6060,11 @@
     }
   ],
   "totals": {
-    "inputTokens": 2868867,
-    "outputTokens": 17437316,
-    "cacheCreationTokens": 251039341,
-    "cacheReadTokens": 7678700252,
-    "totalCost": 5221.3141,
-    "totalTokens": 7950045776
+    "inputTokens": 2974932,
+    "outputTokens": 17788727,
+    "cacheCreationTokens": 253857640,
+    "cacheReadTokens": 7750681028,
+    "totalCost": 5277.0362,
+    "totalTokens": 8025302327
   }
 }
