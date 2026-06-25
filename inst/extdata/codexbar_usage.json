@@ -26,43 +26,40 @@
   {
     "provider": "claude",
     "source": "web",
-    "version": "2.1.187",
     "usage": {
-      "updatedAt": "2026-06-24T04:32:22Z",
-      "tertiary": {
-        "windowMinutes": 10080,
+      "updatedAt": "2026-06-25T08:44:27Z",
+      "tertiary": {},
+      "secondary": {
         "resetsAt": "2026-06-26T23:59:59Z",
+        "usedPercent": 20,
         "resetDescription": "Jun 27 at 12:59AM",
-        "usedPercent": 5
+        "windowMinutes": 10080
+      },
+      "providerCost": {
+        "used": 0,
+        "period": "Monthly cap",
+        "limit": 0,
+        "updatedAt": "2026-06-25T08:44:27Z",
+        "currencyCode": "GBP"
+      },
+      "primary": {
+        "resetsAt": "2026-06-25T10:29:59Z",
+        "usedPercent": 0,
+        "resetDescription": "Jun 25 at 11:29AM",
+        "windowMinutes": 300
       },
       "extraRateWindows": [
         {
+          "title": "Daily Routines",
           "window": {
-            "usedPercent": 0,
-            "windowMinutes": 10080
+            "windowMinutes": 10080,
+            "usedPercent": 0
           },
-          "id": "claude-routines",
-          "title": "Daily Routines"
+          "id": "claude-routines"
         }
-      ],
-      "providerCost": {
-        "currencyCode": "GBP",
-        "limit": 0,
-        "updatedAt": "2026-06-24T04:32:22Z",
-        "used": 0,
-        "period": "Monthly cap"
-      },
-      "primary": {
-        "windowMinutes": 300,
-        "usedPercent": 0
-      },
-      "secondary": {
-        "windowMinutes": 10080,
-        "resetsAt": "2026-06-26T23:59:59Z",
-        "resetDescription": "Jun 27 at 12:59AM",
-        "usedPercent": 15
-      }
-    }
+      ]
+    },
+    "version": "2.1.191"
   },
   {
     "provider": "cursor",
@@ -116,24 +113,24 @@
     "provider": "gemini",
     "source": "oauth-api",
     "usage": {
-      "updatedAt": "2026-06-24T04:32:26Z",
+      "updatedAt": "2026-06-25T08:44:32Z",
       "tertiary": {
-        "windowMinutes": 1440,
-        "resetsAt": "2026-06-25T04:32:26Z",
+        "resetsAt": "2026-06-26T08:44:31Z",
+        "usedPercent": 0,
         "resetDescription": "Resets in 23h 59m",
-        "usedPercent": 0
-      },
-      "primary": {
-        "windowMinutes": 1440,
-        "resetsAt": "1970-01-01T00:00:00Z",
-        "resetDescription": "Resets soon",
-        "usedPercent": 100
+        "windowMinutes": 1440
       },
       "secondary": {
-        "windowMinutes": 1440,
-        "resetsAt": "2026-06-25T04:32:26Z",
+        "resetsAt": "2026-06-26T08:44:31Z",
+        "usedPercent": 0,
         "resetDescription": "Resets in 23h 59m",
-        "usedPercent": 0
+        "windowMinutes": 1440
+      },
+      "primary": {
+        "resetsAt": "1970-01-01T00:00:00Z",
+        "usedPercent": 100,
+        "resetDescription": "Resets soon",
+        "windowMinutes": 1440
       }
     }
   },
