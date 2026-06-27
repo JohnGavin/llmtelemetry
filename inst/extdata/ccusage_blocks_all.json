@@ -2754,33 +2754,49 @@
       "id": "2026-06-26T12:00:00.000Z",
       "startTime": "2026-06-26T12:00:00.000Z",
       "endTime": "2026-06-26T17:00:00.000Z",
-      "actualEndTime": "2026-06-26T12:56:38.260Z",
-      "isActive": true,
+      "actualEndTime": "2026-06-26T16:59:58.039Z",
+      "isActive": false,
       "isGap": false,
-      "entries": 220,
+      "entries": 336,
       "tokenCounts": {
-        "inputTokens": 398809,
-        "outputTokens": 83246,
-        "cacheCreationInputTokens": 1653093,
-        "cacheReadInputTokens": 22317035
+        "inputTokens": 452332,
+        "outputTokens": 160587,
+        "cacheCreationInputTokens": 4179199,
+        "cacheReadInputTokens": 40407414
       },
-      "totalTokens": 24452183,
-      "costUSD": 25.16793365000002,
+      "totalTokens": 45199532,
+      "costUSD": 50.47385785000004,
       "models": [
         "claude-opus-4-8",
         "claude-sonnet-4-6",
         "<synthetic>"
       ],
-      "burnRate": {
-        "tokensPerMinute": 432012.2790073144,
-        "tokensPerMinuteForIndicator": 8516.772476178137,
-        "costPerHour": 26.679474075688177
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-06-26T17:00:00.000Z",
+      "startTime": "2026-06-26T17:00:00.000Z",
+      "endTime": "2026-06-26T22:00:00.000Z",
+      "actualEndTime": "2026-06-26T19:06:39.352Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 455,
+      "tokenCounts": {
+        "inputTokens": 399465,
+        "outputTokens": 284786,
+        "cacheCreationInputTokens": 3473908,
+        "cacheReadInputTokens": 82746281
       },
-      "projection": {
-        "totalTokens": 94214491,
-        "totalCost": 96.97,
-        "remainingMinutes": 161
-      }
+      "totalTokens": 86904440,
+      "costUSD": 66.15687650000001,
+      "models": [
+        "claude-sonnet-4-6",
+        "claude-opus-4-8",
+        "<synthetic>"
+      ],
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
