@@ -38,6 +38,13 @@ if [ -f "$CONFIG_DIR/AGENTS.md" ]; then
   echo "$TODAY,agents,AGENTS.md,agent_count,$n_agents" >> "$OUTFILE"
 fi
 
+# --- Agents metrics ---
+# Count agent definition files directly (AGENTS.md was removed 2026-03-09; agents/ dir is canonical)
+if [ -d "$CONFIG_DIR/agents" ]; then
+  n_agents=$(find -L "$CONFIG_DIR/agents" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+  echo "$TODAY,agents,all,count,$n_agents" >> "$OUTFILE"
+fi
+
 # --- Global CLAUDE.md metrics ---
 if [ -f "$CONFIG_DIR/CLAUDE.md" ]; then
   lines=$(wc -l < "$CONFIG_DIR/CLAUDE.md" | tr -d ' ')
@@ -83,8 +90,8 @@ fi
 
 # --- Skills metrics ---
 if [ -d "$CONFIG_DIR/skills" ]; then
-  # Count skill directories (each skill is a directory)
-  n_skills=$(find -L "$CONFIG_DIR/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+  # Count SKILL.md manifests (covers namespaced/nested skills missed by top-level dir count)
+  n_skills=$(find -L "$CONFIG_DIR/skills" -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
   echo "$TODAY,skills,all,count,$n_skills" >> "$OUTFILE"
 
   # Total lines across all SKILL.md files
