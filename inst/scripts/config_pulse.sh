@@ -18,6 +18,19 @@ OUTFILE="$LOG_DIR/$TODAY.csv"
 PARQUET="$LOG_DIR/$TODAY.parquet"
 CONFIG_DIR="$HOME/.claude"
 
+# Resolve REPO_ROOT: CONFIG_DIR may be a symlink into the git repo
+# (e.g. ~/.claude -> ~/docs_gh/llm/.claude).  All git calls MUST use
+# git -C "${REPO_ROOT}" — launchd sets cwd=/ which is not a git repo.
+_resolved="$(readlink "${CONFIG_DIR}" 2>/dev/null || true)"
+if [[ -n "${_resolved}" && "${_resolved}" = /* ]]; then
+  REPO_ROOT="$(dirname "${_resolved}")"
+elif [[ -n "${_resolved}" ]]; then
+  REPO_ROOT="$(cd "$(dirname "${CONFIG_DIR}")/${_resolved}/.." 2>/dev/null && pwd -P || true)"
+else
+  REPO_ROOT="$(cd "${CONFIG_DIR}/.." 2>/dev/null && pwd -P || true)"
+fi
+REPO_ROOT="${REPO_ROOT:-${HOME}/docs_gh/llm}"
+
 mkdir -p "$LOG_DIR"
 
 # CSV header
@@ -170,6 +183,17 @@ echo "$TODAY,total,all,sh_files,$total_sh_files" >> "$OUTFILE"
 total_bytes=$(find -L "$CONFIG_DIR" \( -name "*.md" -o -name "*.sh" \) -not -path "*/logs/*" -exec cat {} + 2>/dev/null | wc -c | tr -d ' ')
 echo "$TODAY,total,all,bytes,$total_bytes" >> "$OUTFILE"
 echo "$TODAY,total,all,tokens_estimate,$((total_bytes / 4))" >> "$OUTFILE"
+
+# --- Git-based config commit metrics ----------------------------------------
+# Use git -C "${REPO_ROOT}" so these calls work when cwd is not a git repo
+# (e.g. when invoked from launchd with cwd=/). Guard with rev-parse first.
+if git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
+  _commits_7d=$(git -C "${REPO_ROOT}" log --oneline --since="7 days ago" -- ".claude/" 2>/dev/null | wc -l | tr -d ' ')
+  echo "$TODAY,git,config,commits_7d,${_commits_7d}" >> "$OUTFILE"
+
+  _commits_30d=$(git -C "${REPO_ROOT}" log --oneline --since="30 days ago" -- ".claude/" 2>/dev/null | wc -l | tr -d ' ')
+  echo "$TODAY,git,config,commits_30d,${_commits_30d}" >> "$OUTFILE"
+fi
 
 # Convert CSV to Parquet via DuckDB CLI
 if command -v duckdb >/dev/null 2>&1; then
