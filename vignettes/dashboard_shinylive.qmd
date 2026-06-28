@@ -616,6 +616,8 @@ if (has_rows(u_sessions) && "canonical_project" %in% names(u_sessions)) {
 }
 # Prefer projects_master canonical list over session-derived list
 all_projects <- if (length(projects_master_canonical) > 0) projects_master_canonical else base_projs
+# Defensive guard: remove empty/NA project names so they never reach selectInput labels
+all_projects <- all_projects[!is.na(all_projects) & nzchar(all_projects)]
 # Propagate canonical names to derived datasets using Phase-A column when present
 if (has_rows(cost_proj)) {
   if ("canonical_project" %in% names(cost_proj)) {
@@ -2694,7 +2696,7 @@ flowchart LR
                 align = "right",
                 toolbar_input_select(
                   "cfg_type_filter",
-                  label = NULL,
+                  label = "Type:",
                   choices = c("All types" = "all", "skill" = "skill",
                               "rule" = "rule", "agent" = "agent",
                               "memory" = "memory", "hook" = "hook",
@@ -3800,6 +3802,7 @@ server <- function(input, output, session) {
   observe({
     if (!has_rows(git_commits_proj)) return()
     projs <- sort(unique(git_commits_proj$project))
+    projs <- projs[!is.na(projs) & nzchar(projs)]  # guard: no empty names in selectInput
     updateSelectInput(session, "commit_project",
       choices = c("All repos" = "all", setNames(projs, projs)),
       selected = "all")
