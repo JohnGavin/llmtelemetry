@@ -2979,32 +2979,66 @@
       "id": "2026-06-28T18:00:00.000Z",
       "startTime": "2026-06-28T18:00:00.000Z",
       "endTime": "2026-06-28T23:00:00.000Z",
-      "actualEndTime": "2026-06-28T18:46:24.989Z",
-      "isActive": true,
+      "actualEndTime": "2026-06-28T21:38:42.364Z",
+      "isActive": false,
       "isGap": false,
-      "entries": 338,
+      "entries": 339,
       "tokenCounts": {
-        "inputTokens": 347723,
-        "outputTokens": 135980,
-        "cacheCreationInputTokens": 1582318,
-        "cacheReadInputTokens": 58944048
+        "inputTokens": 361821,
+        "outputTokens": 136225,
+        "cacheCreationInputTokens": 1641394,
+        "cacheReadInputTokens": 58959767
       },
-      "totalTokens": 61010069,
-      "costUSD": 41.12748540000001,
+      "totalTokens": 61099207,
+      "costUSD": 41.58118490000001,
       "models": [
         "claude-opus-4-8",
         "claude-sonnet-4-6"
       ],
-      "burnRate": {
-        "tokensPerMinute": 1316216.7602248848,
-        "tokensPerMinuteForIndicator": 10435.293813076289,
-        "costPerHour": 53.23647700452619
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "gap-2026-06-29T02:38:42.364Z",
+      "startTime": "2026-06-29T02:38:42.364Z",
+      "endTime": "2026-06-29T07:00:44.475Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
       },
-      "projection": {
-        "totalTokens": 176768942,
-        "totalCost": 119.16,
-        "remainingMinutes": 88
-      }
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-06-29T07:00:00.000Z",
+      "startTime": "2026-06-29T07:00:00.000Z",
+      "endTime": "2026-06-29T12:00:00.000Z",
+      "actualEndTime": "2026-06-29T07:00:44.475Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 1,
+      "tokenCounts": {
+        "inputTokens": 13362,
+        "outputTokens": 856,
+        "cacheCreationInputTokens": 121040,
+        "cacheReadInputTokens": 15719
+      },
+      "totalTokens": 150977,
+      "costUSD": 0.8525695000000001,
+      "models": [
+        "claude-opus-4-8"
+      ],
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
