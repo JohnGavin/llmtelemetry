@@ -12,6 +12,16 @@ full refresh history.
 
 ## [Unreleased]
 
+> **feat/#322 Phase 1 — time-window block trigger classifier (2026-07-01):**
+> Added `classify_block_trigger()` (exported) and `default_automation_windows()` (internal) to `R/ccusage.R`.
+> A whole 5-hour billing block is classified `"scheduled"` iff its `[block_start_hour, block_end_hour]` interval falls entirely inside the overnight window `[0, 7]`.  All other blocks are `"interactive"`.
+> The 00:00–05:00 billing block (overnight digest, config_pulse, launchd routines) is the only "scheduled" block under the current window config.
+> Mixed blocks (e.g. 05:00–10:00, containing the 09:00 roborev poller alongside interactive morning work) are classified `"interactive"` and their cost is attributed accordingly — a documented Phase 1 approximation, superseded by Phase 2 per-session provenance (#322).
+> Modified `inst/scripts/send_daily_email.R`: local `classify_block_trigger_local()` added; Time Block Activity table now shows a Phase 1 heuristic note and a per-day Scheduled-automated vs Interactive cost+token breakdown row beneath each day header.
+> 22 new tests in `tests/testthat/test-ccusage-block-trigger.R` (RED→GREEN verified).
+
+
+
 > **Session 2026-06-20 (maintenance — branch GC, stale-PR triage, privacy + canonical-projects audit; no llmtelemetry code changes):**
 > **Resolved the prior session's flagged `canonicalize_project` snapshot "regression" as a false alarm.** The `tests/testthat/_snaps/refresh-codex-cache.new.md` was a stale testthat artifact from 2026-05-27, predating the #242 alias fix (2026-05-28). The current test calls `canonicalize_project_cwd()` (the script-sourced cwd-sanitiser, aliased to avoid the package export shadowing it) and matches the committed snapshot; verified live `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 57 ]`. Removed the orphaned `.new.md`.
 > **Branch GC:** deleted 171 stale/merged/ephemeral local branches (102 `agent-worktree-*`, 22 `publish-roborev-*`, 12 round/refresh intermediates, plus all merged feat/fix/phase branches) and 47 remote branches on origin. Local 174→3 (`main`, `data`, session branch); kept `origin/main` + `origin/data`. Recoverable via reflog (~90d).

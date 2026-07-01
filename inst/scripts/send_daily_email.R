@@ -146,6 +146,29 @@ normalize_to_char_vec <- function(x) {
   ) |> (\(v) if (length(v) == 0) character(0) else v)()
 }
 
+# ---------------------------------------------------------------------------
+# Phase 1 block trigger classifier (local copy — no package dependency needed)
+# Edit .automation_windows to add/remove known automation schedules.
+# A block is "scheduled" iff its [start_hour, end_hour] is fully inside a window.
+# ---------------------------------------------------------------------------
+.automation_windows <- list(
+  # Overnight maintenance band: covers the 00:00-05:00 billing block (block_hour=0).
+  # Jobs: overnight digest, config_pulse, launchd nightly routines.
+  # The 05:00-10:00 block straddles the 07:00 boundary -> interactive.
+  # roborev pollers (09:00/13:00/17:00) fire inside mixed blocks -> interactive.
+  overnight = list(start = 0L, end = 7L)
+)
+classify_block_trigger_local <- function(block_start_hour, block_end_hour,
+                                         windows = .automation_windows) {
+  vapply(seq_along(block_start_hour), function(i) {
+    h_s <- block_start_hour[[i]]
+    h_e <- block_end_hour[[i]]
+    is_sched <- length(windows) > 0L &&
+      any(vapply(windows, function(w) h_s >= w$start && h_e <= w$end, logical(1L)))
+    if (is_sched) "scheduled" else "interactive"
+  }, character(1L))
+}
+
 # Parse daily data
 parse_daily <- function(json) {
   if (is.null(json$projects)) return(NULL)
@@ -450,7 +473,12 @@ if (!has_data) {
         date = as.Date(start),
         cost_per_hr = ifelse(duration_hrs > 0, costUSD / duration_hrs, 0),
         tokens_per_hr = ifelse(duration_hrs > 0, totalTokens / duration_hrs, 0),
-        models_list = map(models, normalize_to_char_vec)
+        models_list = map(models, normalize_to_char_vec),
+        # Phase 1: derive billing-block hour from activity start, classify trigger.
+        # block_start_hour is one of: 0, 5, 10, 15, 20 (5-hour billing windows).
+        block_start_hour = floor(as.integer(format(start, "%H")) / 5L) * 5L,
+        block_end_hr = block_start_hour + 5L,
+        trigger = classify_block_trigger_local(block_start_hour, block_end_hr)
       ) |>
       filter(!is.na(end), costUSD > 0)
 
@@ -463,6 +491,7 @@ if (!has_data) {
 
       if (nrow(activity_df) > 0) {
         blocks_html <- sprintf('\n<h3 style="color: %s;">Time Block Activity (Last 5 Days)</h3>
+<p style="color: #808080; font-size: 10px; margin: 2px 0 6px 0;">&#9888; <strong>Phase 1 heuristic</strong>: whole 5h billing blocks are classified by time-window. Mixed business-hours blocks (e.g. 05:00&#8211;10:00 containing the 09:00 roborev poller) are approximate and attributed entirely to Interactive. Accurate split pending per-session provenance (<a href="https://github.com/JohnGavin/llmtelemetry/issues/322" style="color:#4fc3f7;">#322 Phase&#160;2</a>). &#9889;&nbsp;=&nbsp;Scheduled &nbsp; &#128100;&nbsp;=&nbsp;Interactive</p>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
     <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Start</th>
@@ -504,8 +533,32 @@ if (!has_data) {
             dark_border, accent_blue, comma(d_tokens), dark_border))
 
           day_blocks <- activity_df |> filter(date == d) |> arrange(desc(end))
+          # --- Phase 1 trigger summary sub-row (Scheduled vs Interactive) ---
+          trig_sched <- day_blocks[day_blocks$trigger == "scheduled", , drop = FALSE]
+          trig_inter <- day_blocks[day_blocks$trigger == "interactive", , drop = FALSE]
+          sched_cost <- sum(trig_sched$costUSD, na.rm = TRUE)
+          inter_cost <- sum(trig_inter$costUSD, na.rm = TRUE)
+          sched_tok  <- sum(trig_sched$totalTokens, na.rm = TRUE)
+          inter_tok  <- sum(trig_inter$totalTokens, na.rm = TRUE)
+          blocks_html <- paste0(blocks_html, sprintf(
+            '\n  <tr style="background-color: #0e2030;">
+    <td colspan="7" style="padding: 3px 8px; border: 1px solid %s; font-size: 10px;">
+      <span style="color: #80b4e0;">&#9889;&nbsp;Sched-auto: %s (%s&nbsp;tok)</span>
+      &nbsp;&bull;&nbsp;
+      <span style="color: #909090;">&#128100;&nbsp;Interactive: %s (%s&nbsp;tok)</span>
+    </td>
+  </tr>',
+            dark_border,
+            dollar(sched_cost), comma(sched_tok),
+            dollar(inter_cost), comma(inter_tok)))
+          # --- Per-block detail rows (tagged with trigger indicator) ---
           for (i in seq_len(nrow(day_blocks))) {
             bg <- if (i %% 2 == 0) dark_row_alt else dark_card
+            trig_icon <- if (identical(day_blocks$trigger[i], "scheduled"))
+              "<span style='color:#80b4e0;font-size:8px;'>&#9889;</span>&nbsp;"
+            else
+              "<span style='color:#606060;font-size:8px;'>&#128100;</span>&nbsp;"
+            start_label <- paste0(trig_icon, format(day_blocks$start[i], "%H:%M"))
             blocks_html <- paste0(blocks_html, sprintf('\n  <tr style="background-color: %s;">
     <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s; padding-left: 20px;">%s</td>
     <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s;">%s</td>
@@ -516,7 +569,7 @@ if (!has_data) {
     <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
   </tr>',
               bg,
-              dark_border, dark_muted, format(day_blocks$start[i], "%H:%M"),
+              dark_border, dark_muted, start_label,
               dark_border, dark_muted, format(day_blocks$end[i], "%H:%M"),
               dark_border, dark_text, format_hhmm(day_blocks$duration_mins[i]),
               dark_border, accent_green, dollar(day_blocks$costUSD[i]),
