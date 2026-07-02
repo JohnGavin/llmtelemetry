@@ -65,7 +65,8 @@ rollup_sessions <- function(
       agent             = NA_character_,       # not present in unified_sessions
       source            = "unified_duckdb",
       working_dir       = NA_character_,
-      valid_from        = valid_from_ts
+      valid_from        = valid_from_ts,
+      trigger           = "unknown"            # unified_sessions has no trigger (#322)
     ) |>
     dplyr::collect()
 
@@ -209,6 +210,11 @@ append_sessions_from_staging <- function(
   source_col   <- chr_field(session_events$payload, "source")
   source_col   <- ifelse(is.na(source_col), "claude-code-hook", source_col)
   working_dir  <- chr_field(session_events$payload, "working_dir")
+  # Phase 2 (#322): extract trigger provenance from payload.
+  # Absent trigger (legacy/unstamped payloads) → "unknown", NOT "interactive".
+  # "unknown" is the safe default: we must not silently mislabel legacy rows.
+  trigger_col  <- chr_field(session_events$payload, "trigger")
+  trigger_col  <- ifelse(is.na(trigger_col), "unknown", trigger_col)
 
   valid_from_ts <- as.POSIXct(now, tz = "UTC")
 
@@ -225,6 +231,7 @@ append_sessions_from_staging <- function(
     source            = source_col,
     working_dir       = working_dir,
     valid_from        = valid_from_ts,
+    trigger           = trigger_col,
     stringsAsFactors  = FALSE
   )
 
@@ -303,6 +310,12 @@ append_sessions_from_staging <- function(
                                       tz = "UTC")
       }
     }
+    # Phase 2 migration (#322): existing parquet written before Phase 2 has no
+    # trigger column. Add it as "unknown" so the schema is consistent before
+    # rbind(). This is idempotent: running the drain a second time is stable.
+    if (!"trigger" %in% names(existing)) {
+      existing$trigger <- "unknown"
+    }
     rbind(existing, new_rows)
   } else {
     new_rows
@@ -339,3 +352,137 @@ append_sessions_from_staging <- function(
 #
 # DONE(#210): export_and_deploy_data.sh now invokes run_rollup.R after the
 # JSON export, draining staging and committing fresh parquets every session.
+#
+# DONE(#322 Phase 2): trigger column added; migration handles legacy parquet.
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (#322): aggregate sessions by trigger
+# ---------------------------------------------------------------------------
+
+#' Aggregate sessions.parquet rows by trigger provenance
+#'
+#' Reads `sessions.parquet` (or accepts a pre-loaded data frame) and returns a
+#' tidy summary of session counts and total duration per trigger value.
+#'
+#' **Joinability note (Phase 2):** ccusage `type="session"` session IDs use the
+#' format `"sanitized@{project}@h{12hex}"` (3-component, no timestamp), while
+#' our `sessions.parquet` uses either raw UUIDs from staging hook events or the
+#' 4-component `"sanitized@{project}@{iso8601}@h{hash12}"` format.  These
+#' schemes are incompatible; a clean key-join is NOT possible.  ccusage also
+#' only provides `lastActivity` (date only, no time), ruling out time-overlap
+#' joins at session granularity.
+#'
+#' As a result, **cost attribution** remains the Phase 1 block-window
+#' heuristic (`classify_block_trigger()`).  This function provides the
+#' complementary *accurate* split: session count and duration by trigger for
+#' rows where provenance is stamped.
+#'
+#' @param parquet_path Path to `sessions.parquet`.  Defaults to
+#'   `inst/extdata/telemetry/v1/sessions.parquet` relative to the project root.
+#'   Ignored when `sessions_df` is supplied.
+#' @param sessions_df Optional pre-loaded data frame of sessions (for tests or
+#'   in-memory use).  When supplied, `parquet_path` is ignored.
+#' @param window_start Optional `Date` or `POSIXct`. Filter sessions with
+#'   `started_at >= window_start`.  `NULL` means no lower bound.
+#' @param window_end Optional `Date` or `POSIXct`. Filter sessions with
+#'   `started_at <= window_end`.  `NULL` means no upper bound.
+#'
+#' @return A data frame with columns:
+#'   \describe{
+#'     \item{trigger}{Character. One of `"scheduled"`, `"interactive"`, `"unknown"`.}
+#'     \item{n_sessions}{Integer. Number of sessions with this trigger.}
+#'     \item{total_duration_min}{Numeric. Sum of `duration_min` (NA treated as 0).}
+#'   }
+#'   Rows are ordered by `trigger` alphabetically so the output is deterministic.
+#'   Returns a zero-row data frame with the correct column types if no sessions
+#'   match the window.
+#'
+#' @export
+aggregate_sessions_by_trigger <- function(
+  parquet_path = NULL,
+  sessions_df  = NULL,
+  window_start = NULL,
+  window_end   = NULL
+) {
+  # --- 1. Load data -----------------------------------------------------------
+  if (!is.null(sessions_df)) {
+    df <- as.data.frame(sessions_df, stringsAsFactors = FALSE)
+  } else {
+    if (is.null(parquet_path)) {
+      parquet_path <- here::here("inst", "extdata", "telemetry", "v1",
+                                 "sessions.parquet")
+    }
+    if (!file.exists(parquet_path)) {
+      return(data.frame(
+        trigger           = character(0L),
+        n_sessions        = integer(0L),
+        total_duration_min = numeric(0L),
+        stringsAsFactors  = FALSE
+      ))
+    }
+    con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+    on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+    df <- DBI::dbGetQuery(
+      con,
+      sprintf("SELECT started_at, duration_min, trigger FROM read_parquet('%s')",
+              gsub("'", "\\'", parquet_path, fixed = TRUE))
+    )
+    # Coerce timestamps back to POSIXct when DuckDB returns as numeric
+    if (!inherits(df$started_at, "POSIXct") && !is.null(df$started_at)) {
+      df$started_at <- as.POSIXct(df$started_at, origin = "1970-01-01", tz = "UTC")
+    }
+    # Migration: parquet written before Phase 2 has no trigger column
+    if (!"trigger" %in% names(df)) {
+      df$trigger <- "unknown"
+    }
+  }
+
+  if (nrow(df) == 0L) {
+    return(data.frame(
+      trigger            = character(0L),
+      n_sessions         = integer(0L),
+      total_duration_min = numeric(0L),
+      stringsAsFactors   = FALSE
+    ))
+  }
+
+  # Coerce trigger NA (shouldn't exist, but defensive) to "unknown"
+  df$trigger <- ifelse(is.na(df$trigger), "unknown", as.character(df$trigger))
+
+  # --- 2. Optional time window filter ----------------------------------------
+  if (!is.null(window_start) && "started_at" %in% names(df)) {
+    ws <- as.POSIXct(window_start, tz = "UTC")
+    df <- df[!is.na(df$started_at) & df$started_at >= ws, , drop = FALSE]
+  }
+  if (!is.null(window_end) && "started_at" %in% names(df)) {
+    we <- as.POSIXct(window_end, tz = "UTC")
+    df <- df[!is.na(df$started_at) & df$started_at <= we, , drop = FALSE]
+  }
+
+  if (nrow(df) == 0L) {
+    return(data.frame(
+      trigger            = character(0L),
+      n_sessions         = integer(0L),
+      total_duration_min = numeric(0L),
+      stringsAsFactors   = FALSE
+    ))
+  }
+
+  # --- 3. Aggregate by trigger -----------------------------------------------
+  result <- do.call(
+    rbind,
+    lapply(sort(unique(df$trigger)), function(trig) {
+      rows <- df[df$trigger == trig, , drop = FALSE]
+      dur  <- if ("duration_min" %in% names(rows)) rows$duration_min else NULL
+      data.frame(
+        trigger            = trig,
+        n_sessions         = nrow(rows),
+        total_duration_min = if (is.null(dur)) 0 else sum(dur, na.rm = TRUE),
+        stringsAsFactors   = FALSE
+      )
+    })
+  )
+
+  result
+}

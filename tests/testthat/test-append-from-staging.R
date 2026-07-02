@@ -57,8 +57,9 @@ read_parquet_via_duckdb <- function(path) {
   DBI::dbGetQuery(con, sprintf("SELECT * FROM read_parquet('%s')", path))
 }
 
-# Write a minimal pre-existing parquet (simulating a JSON backfill session)
-write_seed_parquet <- function(session_ids, parquet_path) {
+# Write a minimal pre-existing parquet (simulating a JSON backfill session).
+# include_trigger=FALSE simulates a legacy parquet written before Phase 2 (#322).
+write_seed_parquet <- function(session_ids, parquet_path, include_trigger = TRUE) {
   rows <- data.frame(
     session_id        = session_ids,
     project           = rep("docs-gh-llm", length(session_ids)),
@@ -72,6 +73,9 @@ write_seed_parquet <- function(session_ids, parquet_path) {
     valid_from        = as.POSIXct("2026-01-02 00:00:00", tz = "UTC"),
     stringsAsFactors  = FALSE
   )
+  if (include_trigger) {
+    rows$trigger <- "unknown"
+  }
   con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
@@ -125,7 +129,8 @@ test_that("single session_stop event appends one row with all v1 columns", {
 
   expected_cols <- c(
     "session_id", "project", "canonical_project", "started_at", "ended_at",
-    "duration_min", "agent", "source", "working_dir", "valid_from"
+    "duration_min", "agent", "source", "working_dir", "valid_from",
+    "trigger"   # Phase 2 (#322): per-session provenance tag
   )
   expect_equal(sort(names(back)), sort(expected_cols))
 

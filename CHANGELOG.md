@@ -12,6 +12,18 @@ full refresh history.
 
 ## [Unreleased]
 
+> **Session 2026-07-02 (#322 Phase 2 Part B — trigger column + ccusage joinability):**
+>
+> **Schema:** `inst/schema/v1/sessions.sql` — added `trigger VARCHAR DEFAULT 'unknown'` column carrying per-session provenance (`scheduled`/`interactive`/`unknown`). `unknown` is the safe default; legacy rows are never relabelled `interactive`.
+>
+> **`rollup_sessions.R`:** `rollup_sessions()` writes `trigger = "unknown"` for JSON-backfill rows (unified_sessions.json has no trigger). `append_sessions_from_staging()` extracts `trigger` from staging payload; absent → `"unknown"`. Phase 2 migration: existing parquet without trigger column receives `"unknown"` before rbind (idempotent). New `aggregate_sessions_by_trigger()` exported — returns session counts and total duration by trigger, with optional time-window filter.
+>
+> **Joinability verdict (ccusage session IDs):** ccusage `type="session"` IDs use the 3-component form `sanitized@{project}@h{12hex}` (no timestamp), incompatible with our 4-component `sanitized@{project}@{iso8601}@h{12hex}` IDs and raw UUIDs. `lastActivity` is date-only, ruling out time-overlap joins. Cost attribution remains the Phase 1 block-window heuristic. See `aggregate_sessions_by_trigger()` docstring for the documented finding.
+>
+> **`send_daily_email.R`:** Added "Session Provenance (#322 Phase 2)" section showing accurate session counts and duration by trigger from sessions.parquet. Added provenance note below Time Block Activity table explaining the non-joinability. Updated footnote 3 to reference trigger-based provenance. Graceful degradation when parquet absent or pre-Phase-2.
+>
+> **Tests:** 32 new tests in `test-trigger-column.R` (all GREEN). Existing test suites unaffected (178 pass in rollup/append/schema filter).
+
 > **feat/#322 Phase 1 — time-window block trigger classifier (2026-07-01):**
 > Added `classify_block_trigger()` (exported) and `default_automation_windows()` (internal) to `R/ccusage.R`.
 > A whole 5-hour billing block is classified `"scheduled"` iff its `[block_start_hour, block_end_hour]` interval falls entirely inside the overnight window `[0, 7]`.  All other blocks are `"interactive"`.
@@ -19,8 +31,6 @@ full refresh history.
 > Mixed blocks (e.g. 05:00–10:00, containing the 09:00 roborev poller alongside interactive morning work) are classified `"interactive"` and their cost is attributed accordingly — a documented Phase 1 approximation, superseded by Phase 2 per-session provenance (#322).
 > Modified `inst/scripts/send_daily_email.R`: local `classify_block_trigger_local()` added; Time Block Activity table now shows a Phase 1 heuristic note and a per-day Scheduled-automated vs Interactive cost+token breakdown row beneath each day header.
 > 22 new tests in `tests/testthat/test-ccusage-block-trigger.R` (RED→GREEN verified).
-
-
 
 > **Session 2026-06-20 (maintenance — branch GC, stale-PR triage, privacy + canonical-projects audit; no llmtelemetry code changes):**
 > **Resolved the prior session's flagged `canonicalize_project` snapshot "regression" as a false alarm.** The `tests/testthat/_snaps/refresh-codex-cache.new.md` was a stale testthat artifact from 2026-05-27, predating the #242 alias fix (2026-05-28). The current test calls `canonicalize_project_cwd()` (the script-sourced cwd-sanitiser, aliased to avoid the package export shadowing it) and matches the committed snapshot; verified live `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 57 ]`. Removed the orphaned `.new.md`.

@@ -579,6 +579,12 @@ if (!has_data) {
           }
         }
         blocks_html <- paste0(blocks_html, "</table>",
+          sprintf('\n<p style="color: %s; font-size: 10px; font-style: italic; margin-top: 6px;">
+Cost attribution by trigger type is not available: ccusage block IDs use format
+<code>sanitized@{project}@h{hash}</code> (3 components, no timestamp) — incompatible
+with our 4-component session IDs.
+For trigger-stamped session counts and duration, see the Session Provenance section below.
+</p>', dark_muted),
           sprintf("<!-- QA:blocks_grouped_by_day=%d -->", length(sorted_dates)),
           sprintf("<!-- QA:blocks_total=%d -->", nrow(activity_df)))
 
@@ -1321,6 +1327,116 @@ if (!has_data) {
   })
   email_body <- paste0(email_body, codexbar_html)
 
+  # --- Session Provenance (#322 Phase 2): trigger-based session split ---
+  # Joinability verdict: ccusage "session" type IDs use the 3-component form
+  # "sanitized@{project}@h{12hex}" (no timestamp), while sessions.parquet uses
+  # 4-component "sanitized@{project}@{iso8601}@h{12hex}" or raw UUIDs.
+  # These formats are INCOMPATIBLE for a direct key-join.  ccusage also only
+  # provides lastActivity (date only, no time), ruling out time-overlap joins.
+  # RESULT: cost attribution remains the Phase 1 block-window heuristic.
+  # This section shows the ACCURATE trigger split from stamped session rows.
+  tryCatch({
+    sp_parquet <- here::here("inst", "extdata", "telemetry", "v1",
+                             "sessions.parquet")
+    if (file.exists(sp_parquet)) {
+      sp_con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+      on.exit(DBI::dbDisconnect(sp_con, shutdown = TRUE), add = TRUE)
+
+      # Check if trigger column exists (handle legacy parquet gracefully)
+      sp_schema <- tryCatch(
+        DBI::dbGetQuery(sp_con, sprintf(
+          "DESCRIBE SELECT * FROM read_parquet('%s') LIMIT 0",
+          gsub("'", "\\'", sp_parquet, fixed = TRUE)
+        )),
+        error = function(e) NULL
+      )
+      has_trig_col <- !is.null(sp_schema) &&
+                      "column_name" %in% names(sp_schema) &&
+                      "trigger" %in% sp_schema$column_name
+
+      if (has_trig_col) {
+        sp_df <- DBI::dbGetQuery(
+          sp_con,
+          sprintf(
+            "SELECT COALESCE(trigger, 'unknown') AS trigger,
+                    COUNT(*)                     AS n_sessions,
+                    ROUND(SUM(COALESCE(duration_min, 0)), 1) AS total_min
+             FROM read_parquet('%s')
+             GROUP BY COALESCE(trigger, 'unknown')
+             ORDER BY trigger",
+            gsub("'", "\\'", sp_parquet, fixed = TRUE)
+          )
+        )
+      } else {
+        # Legacy parquet without trigger column
+        cnt <- DBI::dbGetQuery(
+          sp_con,
+          sprintf("SELECT COUNT(*) AS n FROM read_parquet('%s')",
+                  gsub("'", "\\'", sp_parquet, fixed = TRUE))
+        )$n
+        sp_df <- data.frame(trigger = "unknown", n_sessions = cnt,
+                            total_min = NA_real_, stringsAsFactors = FALSE)
+      }
+
+      # Labels for display
+      trig_labels <- c(
+        "scheduled"   = "Scheduled (automated)",
+        "interactive" = "Interactive (human)",
+        "unknown"     = "Unknown (legacy/unstamped)"
+      )
+
+      n_stamped <- sum(
+        sp_df$n_sessions[sp_df$trigger %in% c("scheduled", "interactive")],
+        na.rm = TRUE
+      )
+      n_total <- sum(sp_df$n_sessions, na.rm = TRUE)
+
+      prov_rows_html <- ""
+      for (ti in seq_len(nrow(sp_df))) {
+        trig  <- sp_df$trigger[ti]
+        label <- if (trig %in% names(trig_labels)) trig_labels[[trig]] else trig
+        dur   <- if (is.na(sp_df$total_min[ti])) "-" else format_hhmm(sp_df$total_min[ti])
+        bg    <- if (ti %% 2 == 0) dark_row_alt else dark_card
+        prov_rows_html <- paste0(prov_rows_html, sprintf(
+          '\n  <tr style="background-color: %s;">
+    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
+  </tr>',
+          bg,
+          dark_border, dark_text, label,
+          dark_border, accent_blue, comma(sp_df$n_sessions[ti]),
+          dark_border, dark_text, dur
+        ))
+      }
+
+      email_body <- paste0(email_body, sprintf(
+        '\n<h3 style="color: %s; margin-top: 20px;">Session Provenance (#322 Phase 2)</h3>
+<table style="border-collapse: collapse; max-width: 520px;">
+  <tr style="background-color: %s;">
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Trigger</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Sessions</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Duration (HH:MM)</th>
+  </tr>%s
+</table>
+<p style="color: %s; font-size: 10px; font-style: italic; margin-top: 6px;">
+  %d/%d sessions carry provenance stamps (<em>scheduled</em> or <em>interactive</em>).<br>
+  <strong>Cost attribution by trigger is approximate</strong> (Phase 1 block-window
+  heuristic from ccusage blocks) — a direct key-join is not possible because ccusage
+  session IDs omit the timestamp component present in our 4-component IDs.
+  Rows labelled <em>unknown</em> are legacy or unstamped sessions written before Phase 2.
+</p>
+<!-- QA:session_provenance_rows=%d -->',
+        accent_orange, accent_orange,
+        dark_border, dark_border, dark_border,
+        prov_rows_html,
+        dark_muted, n_stamped, n_total, nrow(sp_df)
+      ))
+    }
+  }, error = function(e) {
+    message("Session Provenance section failed: ", e$message)
+  })
+
   email_body <- paste0(email_body, sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
 <p style="color: %s; font-size: 12px;">
   <a href="https://github.com/JohnGavin/llmtelemetry" style="color: %s;">llmtelemetry project</a> |
@@ -1333,7 +1449,7 @@ if (!has_data) {
   <strong>Definitions:</strong><br>
   <sup>1</sup> <strong>Cost:</strong> Total cost in USD. Codex figures are estimates from <code>codex_pricing.json</code> and marked <em>(est)</em>.<br>
   <sup>2</sup> <strong>Days:</strong> Number of days in the reporting period.<br>
-  <sup>3</sup> <strong>Sessions:</strong> Number of distinct interactive sessions recorded.<br>
+  <sup>3</sup> <strong>Sessions:</strong> Number of distinct sessions recorded via ccusage (all trigger types). For trigger-based provenance (scheduled/interactive/unknown), see the Session Provenance section (#322 Phase 2).<br>
   <sup>4</sup> <strong>Entries:</strong> Total number of logged interactions/blocks.<br>
   <strong>Source:</strong> <em>ccusage/Gemini</em> (this R package) vs <em>cmonitor</em> (Rust-based system monitor) vs <em>Codex</em> (OpenAI Codex OTEL logs).
 </div>
