@@ -24,42 +24,40 @@
     }
   },
   {
+    "source": "web",
+    "provider": "claude",
     "usage": {
+      "secondary": {
+        "resetDescription": "Jul 4 at 1:00AM",
+        "windowMinutes": 10080,
+        "resetsAt": "2026-07-04T00:00:00Z",
+        "usedPercent": 11
+      },
       "tertiary": {},
-      "updatedAt": "2026-07-02T08:01:10Z",
       "extraRateWindows": [
         {
-          "window": {
-            "windowMinutes": 10080,
-            "usedPercent": 0
-          },
+          "title": "Daily Routines",
           "id": "claude-routines",
-          "title": "Daily Routines"
+          "window": {
+            "usedPercent": 0,
+            "windowMinutes": 10080
+          }
         }
       ],
-      "secondary": {
-        "usedPercent": 3,
-        "resetsAt": "2026-07-03T23:59:59Z",
-        "windowMinutes": 10080,
-        "resetDescription": "Jul 4 at 12:59AM"
-      },
       "primary": {
-        "usedPercent": 2,
-        "resetsAt": "2026-07-02T11:29:59Z",
         "windowMinutes": 300,
-        "resetDescription": "Jul 2 at 12:29PM"
+        "usedPercent": 0
       },
       "providerCost": {
-        "updatedAt": "2026-07-02T08:01:10Z",
-        "currencyCode": "GBP",
         "period": "Monthly cap",
+        "limit": 0,
         "used": 0,
-        "limit": 0
-      }
+        "updatedAt": "2026-07-03T01:33:18Z",
+        "currencyCode": "GBP"
+      },
+      "updatedAt": "2026-07-03T01:33:18Z"
     },
-    "version": "2.1.197",
-    "source": "web",
-    "provider": "claude"
+    "version": "2.1.198"
   },
   {
     "source": "auto",
@@ -110,29 +108,29 @@
     }
   },
   {
+    "source": "oauth-api",
+    "provider": "gemini",
     "usage": {
-      "tertiary": {
-        "usedPercent": 0,
-        "resetsAt": "2026-07-03T08:01:15Z",
-        "windowMinutes": 1440,
-        "resetDescription": "Resets in 23h 59m"
-      },
-      "updatedAt": "2026-07-02T08:01:15Z",
       "secondary": {
-        "usedPercent": 0,
-        "resetsAt": "2026-07-03T08:01:15Z",
+        "resetDescription": "Resets in 23h 59m",
         "windowMinutes": 1440,
-        "resetDescription": "Resets in 23h 59m"
+        "resetsAt": "2026-07-04T01:33:22Z",
+        "usedPercent": 0
+      },
+      "tertiary": {
+        "resetDescription": "Resets in 23h 59m",
+        "windowMinutes": 1440,
+        "resetsAt": "2026-07-04T01:33:22Z",
+        "usedPercent": 0
       },
       "primary": {
-        "usedPercent": 100,
-        "resetsAt": "1970-01-01T00:00:00Z",
+        "resetDescription": "Resets soon",
         "windowMinutes": 1440,
-        "resetDescription": "Resets soon"
-      }
-    },
-    "source": "oauth-api",
-    "provider": "gemini"
+        "resetsAt": "1970-01-01T00:00:00Z",
+        "usedPercent": 100
+      },
+      "updatedAt": "2026-07-03T01:33:22Z"
+    }
   },
   {
     "source": "auto",
