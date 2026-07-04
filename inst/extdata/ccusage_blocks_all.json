@@ -49,7 +49,7 @@
       "actualEndTime": "2026-06-03T12:56:02.167Z",
       "isActive": false,
       "isGap": false,
-      "entries": 935,
+      "entries": 933,
       "tokenCounts": {
         "inputTokens": 1153,
         "outputTokens": 399332,
@@ -74,18 +74,17 @@
       "actualEndTime": "2026-06-03T17:20:43.567Z",
       "isActive": false,
       "isGap": false,
-      "entries": 173,
+      "entries": 165,
       "tokenCounts": {
-        "inputTokens": 73111,
-        "outputTokens": 127314,
-        "cacheCreationInputTokens": 3024386,
-        "cacheReadInputTokens": 89695443
+        "inputTokens": 204,
+        "outputTokens": 118003,
+        "cacheCreationInputTokens": 2537703,
+        "cacheReadInputTokens": 89093520
       },
-      "totalTokens": 92920254,
-      "costUSD": 67.29853899999996,
+      "totalTokens": 91749430,
+      "costUSD": 63.358498749999995,
       "models": [
         "claude-opus-4-7",
-        "claude-opus-4-8",
         "<synthetic>"
       ],
       "burnRate": null,
@@ -2704,7 +2703,7 @@
       "startTime": "2026-07-03T12:00:00.000Z",
       "endTime": "2026-07-03T17:00:00.000Z",
       "actualEndTime": "2026-07-03T16:11:53.116Z",
-      "isActive": true,
+      "isActive": false,
       "isGap": false,
       "entries": 285,
       "tokenCounts": {
@@ -2721,16 +2720,34 @@
         "<synthetic>",
         "claude-fable-5"
       ],
-      "burnRate": {
-        "tokensPerMinute": 229886.50267502066,
-        "tokensPerMinuteForIndicator": 2209.7548919753617,
-        "costPerHour": 13.867772934358753
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-07-03T17:00:00.000Z",
+      "startTime": "2026-07-03T17:00:00.000Z",
+      "endTime": "2026-07-03T22:00:00.000Z",
+      "actualEndTime": "2026-07-03T20:14:03.509Z",
+      "isActive": false,
+      "isGap": false,
+      "entries": 291,
+      "tokenCounts": {
+        "inputTokens": 325879,
+        "outputTokens": 177325,
+        "cacheCreationInputTokens": 3385419,
+        "cacheReadInputTokens": 52654402
       },
-      "projection": {
-        "totalTokens": 59606118,
-        "totalCost": 59.93,
-        "remainingMinutes": 8
-      }
+      "totalTokens": 56543025,
+      "costUSD": 66.35979739999999,
+      "models": [
+        "claude-fable-5",
+        "claude-opus-4-8",
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        "<synthetic>"
+      ],
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
