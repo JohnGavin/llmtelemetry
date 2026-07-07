@@ -49,7 +49,7 @@ if (send_only) {
   message("--send-only: using pre-validated HTML from ", qa_file)
 
   london_time <- format(Sys.time(), tz = "Europe/London", "%Y-%m-%d %H:%M")
-  dark_muted  <- "#a0a0a0"  # needed for footer only
+  dark_muted  <- "#ffffff"  # needed for footer only
   gmail_user  <- Sys.getenv("GMAIL_USERNAME")
   gmail_pass  <- Sys.getenv("GMAIL_APP_PASSWORD")
 
@@ -260,7 +260,7 @@ dark_bg <- "#1a1a2e"
 dark_card <- "#16213e"
 dark_row_alt <- "#0f3460"
 dark_text <- "#e8e8e8"
-dark_muted <- "#a0a0a0"
+dark_muted <- "#ffffff"
 dark_border <- "#2a2a4a"
 accent_green <- "#00d26a"
 accent_blue <- "#4fc3f7"
@@ -491,7 +491,7 @@ if (!has_data) {
 
       if (nrow(activity_df) > 0) {
         blocks_html <- sprintf('\n<h3 style="color: %s;">Time Block Activity (Last 5 Days)</h3>
-<p style="color: #808080; font-size: 10px; margin: 2px 0 6px 0;">&#9888; <strong>Phase 1 heuristic</strong>: whole 5h billing blocks are classified by time-window. Mixed business-hours blocks (e.g. 05:00&#8211;10:00 containing the 09:00 roborev poller) are approximate and attributed entirely to Interactive. Accurate split pending per-session provenance (<a href="https://github.com/JohnGavin/llmtelemetry/issues/322" style="color:#4fc3f7;">#322 Phase&#160;2</a>). &#9889;&nbsp;=&nbsp;Scheduled &nbsp; &#128100;&nbsp;=&nbsp;Interactive</p>
+<p style="color: #ffffff; font-size: 10px; margin: 2px 0 6px 0;">&#9888; <strong>Phase 1 heuristic</strong>: whole 5h billing blocks are classified by time-window. Mixed business-hours blocks (e.g. 05:00&#8211;10:00 containing the 09:00 roborev poller) are approximate and attributed entirely to Interactive. Accurate split pending per-session provenance (<a href="https://github.com/JohnGavin/llmtelemetry/issues/322" style="color:#4fc3f7;">#322 Phase&#160;2</a>). &#9889;&nbsp;=&nbsp;Scheduled &nbsp; &#128100;&nbsp;=&nbsp;Interactive</p>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
     <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Start</th>
@@ -545,7 +545,7 @@ if (!has_data) {
     <td colspan="7" style="padding: 3px 8px; border: 1px solid %s; font-size: 10px;">
       <span style="color: #80b4e0;">&#9889;&nbsp;Sched-auto: %s (%s&nbsp;tok)</span>
       &nbsp;&bull;&nbsp;
-      <span style="color: #909090;">&#128100;&nbsp;Interactive: %s (%s&nbsp;tok)</span>
+      <span style="color: #ffffff;">&#128100;&nbsp;Interactive: %s (%s&nbsp;tok)</span>
     </td>
   </tr>',
             dark_border,
@@ -557,7 +557,7 @@ if (!has_data) {
             trig_icon <- if (identical(day_blocks$trigger[i], "scheduled"))
               "<span style='color:#80b4e0;font-size:8px;'>&#9889;</span>&nbsp;"
             else
-              "<span style='color:#606060;font-size:8px;'>&#128100;</span>&nbsp;"
+              "<span style='color:#ffffff;font-size:8px;'>&#128100;</span>&nbsp;"
             start_label <- paste0(trig_icon, format(day_blocks$start[i], "%H:%M"))
             blocks_html <- paste0(blocks_html, sprintf('\n  <tr style="background-color: %s;">
     <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s; padding-left: 20px;">%s</td>
