@@ -25,27 +25,23 @@
   },
   {
     "provider": "claude",
+    "version": "2.1.204",
+    "source": "web",
     "usage": {
-      "primary": {
-        "windowMinutes": 300,
-        "resetDescription": "Jul 8 at 1:39PM",
-        "usedPercent": 8,
-        "resetsAt": "2026-07-08T12:39:59Z"
-      },
-      "providerCost": {
-        "currencyCode": "GBP",
-        "period": "Monthly cap",
-        "updatedAt": "2026-07-08T08:57:33Z",
-        "limit": 0,
-        "used": 0
-      },
-      "updatedAt": "2026-07-08T08:57:33Z",
+      "updatedAt": "2026-07-08T22:40:37Z",
       "secondary": {
-        "windowMinutes": 10080,
-        "resetDescription": "Jul 11 at 12:59AM",
-        "usedPercent": 77,
-        "resetsAt": "2026-07-10T23:59:59Z"
+        "usedPercent": 85,
+        "resetsAt": "2026-07-11T00:00:00Z",
+        "resetDescription": "Jul 11 at 1:00AM",
+        "windowMinutes": 10080
       },
+      "primary": {
+        "usedPercent": 6,
+        "resetsAt": "2026-07-09T03:10:00Z",
+        "resetDescription": "Jul 9 at 4:10AM",
+        "windowMinutes": 300
+      },
+      "tertiary": {},
       "extraRateWindows": [
         {
           "window": {
@@ -56,10 +52,14 @@
           "id": "claude-routines"
         }
       ],
-      "tertiary": {}
-    },
-    "source": "web",
-    "version": "2.1.203"
+      "providerCost": {
+        "updatedAt": "2026-07-08T22:40:36Z",
+        "used": 0,
+        "limit": 0,
+        "currencyCode": "GBP",
+        "period": "Monthly cap"
+      }
+    }
   },
   {
     "provider": "cursor",
@@ -111,28 +111,28 @@
   },
   {
     "provider": "gemini",
+    "source": "oauth-api",
     "usage": {
-      "primary": {
-        "windowMinutes": 1440,
-        "resetDescription": "Resets soon",
-        "usedPercent": 100,
-        "resetsAt": "1970-01-01T00:00:00Z"
-      },
-      "updatedAt": "2026-07-08T08:57:39Z",
+      "updatedAt": "2026-07-08T22:40:43Z",
       "secondary": {
-        "windowMinutes": 1440,
-        "resetDescription": "Resets in 23h 59m",
         "usedPercent": 0,
-        "resetsAt": "2026-07-09T08:57:39Z"
+        "resetsAt": "2026-07-09T22:40:43Z",
+        "resetDescription": "Resets in 23h 59m",
+        "windowMinutes": 1440
+      },
+      "primary": {
+        "usedPercent": 100,
+        "resetsAt": "1970-01-01T00:00:00Z",
+        "resetDescription": "Resets soon",
+        "windowMinutes": 1440
       },
       "tertiary": {
-        "windowMinutes": 1440,
-        "resetDescription": "Resets in 23h 59m",
         "usedPercent": 0,
-        "resetsAt": "2026-07-09T08:57:39Z"
+        "resetsAt": "2026-07-09T22:40:43Z",
+        "resetDescription": "Resets in 23h 59m",
+        "windowMinutes": 1440
       }
-    },
-    "source": "oauth-api"
+    }
   },
   {
     "provider": "antigravity",
@@ -144,6 +144,14 @@
   },
   {
     "provider": "copilot",
+    "error": {
+      "kind": "provider",
+      "code": 1
+    },
+    "source": "auto"
+  },
+  {
+    "provider": "devin",
     "error": {
       "kind": "provider",
       "code": 1
