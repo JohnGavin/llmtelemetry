@@ -6,7 +6,7 @@ rix(
     "scales", "tibble", "lubridate",
     "checkmate", "cli", "DBI", "purrr",
     "pkgload", "devtools", "testthat",
-    "otel", "shinylive"
+    "otel", "shinylive", "httr2"
   ),
   system_pkgs = c("cmake", "protobuf_21", "pkg-config", "curl", "zlib"),
   ide = "none",
