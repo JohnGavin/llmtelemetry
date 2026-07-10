@@ -12,6 +12,33 @@ full refresh history.
 
 ## [Unreleased]
 
+> **feat/runiverse-helper (llm#761 — R-Universe API helper for CI-minute conservation, 2026-07-10):**
+> Added `R/runiverse.R` with two exported functions querying the R-Universe API
+> (`https://<universe>.r-universe.dev/api/packages`), re-implemented against the
+> live API rather than copied from any third-party helper (external-code-zero-trust):
+> `runiverse_packages(universe, package = NULL)` returns one tibble row per
+> package (package, version, title, maintainer(_email), owner, status,
+> registered, published, stars, downloads, usedby, devurl, pkgdown, upstream,
+> and a `jobs` list-column holding the raw `_jobs` build matrix); `runiverse_checks()`
+> unnests `jobs` into one row per package x build config with `check` as an
+> ordered factor (`OK < NOTE < WARNING < ERROR < FAIL`) and a derived `os` label.
+> Responses are cached on disk via `httr2::req_cache()`, matching the API's own
+> `Cache-Control: max-age=60` header. `httr2` moved from Suggests to Imports
+> (added to `default.R`/`default.nix` — cwd-safe regeneration, diff confined to
+> the httr2 addition). 35 new tests in `test-runiverse.R`, mocked via
+> `httr2::local_mocked_responses()` against a trimmed recorded fixture of
+> `https://johngavin.r-universe.dev/api/packages` (6 packages) — no live network
+> in the default test run. One live smoke test is opt-in only
+> (`LLMTELEMETRY_RUN_LIVE_TESTS=true`), additionally guarded by `skip_on_ci()` and
+> `skip_if_offline()`. Confirmed against the live fixture: `irishbuoys` shows
+> `check = "ERROR"` on `linux-devel-x86_64` (and on 6 of 9 build configs) while
+> `_status` at the package level reports `"success"` — the two fields track
+> different things (registration success vs. per-config R CMD check result).
+> Full test suite: `[ FAIL 8 | WARN 0 | SKIP 19 | PASS 2395 ]` — the 8 failures
+> are pre-existing on the branch tip (unrelated `johngavin`-PII-pattern and
+> `hf-push`/`export-dashboard-data` assertions), confirmed identical via a
+> `git stash` A/B baseline run before this change.
+
 > **Session 2026-07-02 (#322 Phase 2 Part B — trigger column + ccusage joinability):**
 >
 > **Schema:** `inst/schema/v1/sessions.sql` — added `trigger VARCHAR DEFAULT 'unknown'` column carrying per-session provenance (`scheduled`/`interactive`/`unknown`). `unknown` is the safe default; legacy rows are never relabelled `interactive`.
