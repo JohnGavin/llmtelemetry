@@ -3420,7 +3420,7 @@
       "startTime": "2026-07-10T18:00:00.000Z",
       "endTime": "2026-07-10T23:00:00.000Z",
       "actualEndTime": "2026-07-10T20:01:00.583Z",
-      "isActive": true,
+      "isActive": false,
       "isGap": false,
       "entries": 214,
       "tokenCounts": {
@@ -3434,15 +3434,57 @@
       "models": [
         "claude-opus-4-8"
       ],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "gap-2026-07-11T01:01:00.583Z",
+      "startTime": "2026-07-11T01:01:00.583Z",
+      "endTime": "2026-07-11T08:54:11.089Z",
+      "actualEndTime": null,
+      "isActive": false,
+      "isGap": true,
+      "entries": 0,
+      "tokenCounts": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0
+      },
+      "totalTokens": 0,
+      "costUSD": 0,
+      "models": [],
+      "burnRate": null,
+      "projection": null
+    },
+    {
+      "id": "2026-07-11T08:00:00.000Z",
+      "startTime": "2026-07-11T08:00:00.000Z",
+      "endTime": "2026-07-11T13:00:00.000Z",
+      "actualEndTime": "2026-07-11T10:32:37.217Z",
+      "isActive": true,
+      "isGap": false,
+      "entries": 57,
+      "tokenCounts": {
+        "inputTokens": 81593,
+        "outputTokens": 71193,
+        "cacheCreationInputTokens": 847016,
+        "cacheReadInputTokens": 9814001
+      },
+      "totalTokens": 10813803,
+      "costUSD": 12.388640499999996,
+      "models": [
+        "claude-opus-4-8"
+      ],
       "burnRate": {
-        "tokensPerMinute": 273141.6208198508,
-        "tokensPerMinuteForIndicator": 6003.791351601168,
-        "costPerHour": 20.50207120133767
+        "tokensPerMinute": 109856.77587752923,
+        "tokensPerMinuteForIndicator": 1552.143807245627,
+        "costPerHour": 7.551327333237611
       },
       "projection": {
-        "totalTokens": 38319320,
-        "totalCost": 47.94,
-        "remainingMinutes": 67
+        "totalTokens": 26079609,
+        "totalCost": 29.88,
+        "remainingMinutes": 139
       }
     }
   ]
