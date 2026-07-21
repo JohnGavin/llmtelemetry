@@ -1,441 +1,439 @@
 [
   {
-    "source": "auto",
     "error": {
       "code": 1,
       "kind": "provider"
     },
-    "provider": "codex"
+    "provider": "codex",
+    "source": "auto"
   },
   {
-    "source": "auto",
     "error": {
-      "kind": "provider",
-      "code": 1
+      "code": 1,
+      "kind": "provider"
     },
-    "provider": "openai"
+    "provider": "openai",
+    "source": "auto"
   },
   {
-    "source": "auto",
     "error": {
-      "kind": "provider",
-      "code": 1
+      "code": 1,
+      "kind": "provider"
     },
-    "provider": "azureopenai"
+    "provider": "azureopenai",
+    "source": "auto"
   },
   {
-    "version": "2.1.215",
-    "source": "web",
+    "version": "2.1.216",
     "usage": {
-      "providerCost": {
-        "limit": 0,
-        "period": "Monthly cap",
-        "updatedAt": "2026-07-20T19:49:16Z",
-        "used": 0,
-        "currencyCode": "GBP"
-      },
-      "primary": {
-        "resetDescription": "Jul 21 at 12:39AM",
-        "windowMinutes": 300,
-        "resetsAt": "2026-07-20T23:39:59Z",
-        "usedPercent": 73
-      },
       "secondary": {
-        "resetDescription": "Jul 25 at 12:59AM",
+        "resetDescription": "Jul 25 at 1:00AM",
         "windowMinutes": 10080,
-        "resetsAt": "2026-07-24T23:59:59Z",
-        "usedPercent": 32
+        "usedPercent": 34,
+        "resetsAt": "2026-07-25T00:00:00Z"
       },
       "tertiary": {},
+      "providerCost": {
+        "period": "Monthly cap",
+        "used": 0,
+        "updatedAt": "2026-07-21T07:50:15Z",
+        "currencyCode": "GBP",
+        "limit": 0
+      },
       "extraRateWindows": [
         {
           "title": "Daily Routines",
-          "id": "claude-routines",
           "window": {
             "usedPercent": 0,
             "windowMinutes": 10080
-          }
+          },
+          "id": "claude-routines"
         }
       ],
-      "updatedAt": "2026-07-20T19:49:16Z"
-    },
-    "provider": "claude"
-  },
-  {
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    },
-    "provider": "cursor"
-  },
-  {
-    "source": "auto",
-    "error": {
-      "code": 1,
-      "kind": "provider"
-    },
-    "provider": "opencode"
-  },
-  {
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    },
-    "provider": "opencodego"
-  },
-  {
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    },
-    "provider": "alibaba"
-  },
-  {
-    "source": "auto",
-    "error": {
-      "code": 1,
-      "kind": "provider"
-    },
-    "provider": "alibabatokenplan"
-  },
-  {
-    "source": "auto",
-    "error": {
-      "code": 1,
-      "kind": "provider"
-    },
-    "provider": "factory"
-  },
-  {
-    "source": "oauth-api",
-    "usage": {
+      "updatedAt": "2026-07-21T07:50:16Z",
       "primary": {
-        "usedPercent": 100,
-        "windowMinutes": 1440,
-        "resetDescription": "Resets soon",
-        "resetsAt": "1970-01-01T00:00:00Z"
-      },
+        "windowMinutes": 300,
+        "usedPercent": 0
+      }
+    },
+    "provider": "claude",
+    "source": "web"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
+    "provider": "cursor",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
+    "provider": "opencode",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
+    "provider": "opencodego",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
+    "provider": "alibaba",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
+    "provider": "alibabatokenplan",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
+    "provider": "factory",
+    "source": "auto"
+  },
+  {
+    "usage": {
       "secondary": {
-        "usedPercent": 0,
-        "windowMinutes": 1440,
         "resetDescription": "Resets in 23h 59m",
-        "resetsAt": "2026-07-21T19:49:21Z"
+        "windowMinutes": 1440,
+        "usedPercent": 0,
+        "resetsAt": "2026-07-22T07:50:22Z"
       },
       "tertiary": {
-        "usedPercent": 0,
-        "windowMinutes": 1440,
         "resetDescription": "Resets in 23h 59m",
-        "resetsAt": "2026-07-21T19:49:21Z"
+        "windowMinutes": 1440,
+        "usedPercent": 0,
+        "resetsAt": "2026-07-22T07:50:22Z"
       },
-      "updatedAt": "2026-07-20T19:49:21Z"
+      "updatedAt": "2026-07-21T07:50:22Z",
+      "primary": {
+        "resetDescription": "Resets soon",
+        "windowMinutes": 1440,
+        "usedPercent": 100,
+        "resetsAt": "1970-01-01T00:00:00Z"
+      }
     },
-    "provider": "gemini"
+    "provider": "gemini",
+    "source": "oauth-api"
   },
   {
-    "source": "auto",
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "antigravity",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
-    "source": "auto",
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "copilot",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
-    "source": "auto",
+    },
     "provider": "devin",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
-    "source": "auto",
+    },
     "provider": "zai",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
-    "source": "auto",
+    },
     "provider": "minimax",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
-    "source": "auto",
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "manus",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
-    "source": "auto",
+    },
     "provider": "kimi",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
-    "source": "auto",
+    },
     "provider": "kilo",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
-    "source": "auto",
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "kiro",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
-    "source": "auto",
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "vertexai",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
-    "source": "auto",
+    },
     "provider": "augment",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
-    "source": "auto",
+    },
     "provider": "jetbrains",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
-    "source": "auto",
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "kimik2",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
-    "source": "auto",
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "moonshot",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
-    "source": "auto",
+    },
     "provider": "amp",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
-    "source": "auto",
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "t3chat",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
-    "source": "auto",
+    },
     "provider": "ollama",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
+    },
     "provider": "synthetic",
-    "source": "auto",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
+    },
     "provider": "warp",
-    "source": "auto",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
+    },
     "provider": "openrouter",
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "elevenlabs",
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "windsurf",
-    "source": "auto",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
+    },
     "provider": "perplexity",
-    "source": "auto",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
+    },
     "provider": "mimo",
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "doubao",
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "abacus",
-    "source": "auto",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
+    },
     "provider": "mistral",
-    "source": "auto",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
+    },
     "provider": "deepseek",
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "codebuff",
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "crof",
-    "source": "auto",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
+    },
     "provider": "venice",
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "commandcode",
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    }
+    "source": "auto"
   },
   {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
     "provider": "stepfun",
-    "source": "auto",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
+    },
     "provider": "bedrock",
-    "source": "auto",
+    "source": "auto"
+  },
+  {
     "error": {
       "code": 1,
       "kind": "provider"
-    }
-  },
-  {
+    },
     "provider": "grok",
-    "source": "auto",
-    "error": {
-      "code": 1,
-      "kind": "provider"
-    }
+    "source": "auto"
   },
   {
-    "source": "auto",
     "error": {
       "code": 1,
       "kind": "provider"
     },
-    "provider": "groq"
+    "provider": "groq",
+    "source": "auto"
   },
   {
-    "source": "auto",
-    "error": {
-      "kind": "provider",
-      "code": 1
-    },
-    "provider": "llmproxy"
-  },
-  {
-    "source": "auto",
     "error": {
       "code": 1,
       "kind": "provider"
     },
-    "provider": "deepgram"
+    "provider": "llmproxy",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider"
+    },
+    "provider": "deepgram",
+    "source": "auto"
   }
 ]
