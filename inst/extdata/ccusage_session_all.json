@@ -1,14 +1,14 @@
 {
   "sessions": [
     {
-      "sessionId": "sanitized@llmtelemetry@h144d1e77657b",
-      "inputTokens": 15936300,
-      "outputTokens": 3719869,
-      "cacheCreationTokens": 92083363,
-      "cacheReadTokens": 793770592,
-      "totalTokens": 905510124,
-      "totalCost": 1155.5931,
-      "lastActivity": "2026-07-22",
+      "sessionId": "sanitized@premortem@h6c27471c49ae",
+      "inputTokens": 1258905,
+      "outputTokens": 175831,
+      "cacheCreationTokens": 4200092,
+      "cacheReadTokens": 10939524,
+      "totalTokens": 16574352,
+      "totalCost": 43.1704,
+      "lastActivity": "2026-07-23",
       "modelsUsed": [
         "claude-opus-4-8",
         "claude-fable-5"
@@ -16,11 +16,44 @@
       "modelBreakdowns": [
         {
           "modelName": "claude-opus-4-8",
-          "inputTokens": 15755369,
-          "outputTokens": 3673417,
-          "cacheCreationTokens": 91344663,
-          "cacheReadTokens": 786119144,
-          "cost": 1134.576
+          "inputTokens": 1237931,
+          "outputTokens": 170489,
+          "cacheCreationTokens": 4130283,
+          "cacheReadTokens": 10769422,
+          "cost": 41.6509
+        },
+        {
+          "modelName": "claude-fable-5",
+          "inputTokens": 20974,
+          "outputTokens": 5342,
+          "cacheCreationTokens": 69809,
+          "cacheReadTokens": 170102,
+          "cost": 1.5196
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@llmtelemetry@h144d1e77657b",
+      "inputTokens": 15936614,
+      "outputTokens": 3733722,
+      "cacheCreationTokens": 100604453,
+      "cacheReadTokens": 796396841,
+      "totalTokens": 916671630,
+      "totalCost": 1210.5109,
+      "lastActivity": "2026-07-23",
+      "modelsUsed": [
+        "claude-opus-4-8",
+        "claude-fable-5"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-8",
+          "inputTokens": 15755683,
+          "outputTokens": 3687270,
+          "cacheCreationTokens": 99865753,
+          "cacheReadTokens": 788745393,
+          "cost": 1189.4938
         },
         {
           "modelName": "claude-fable-5",
@@ -35,13 +68,13 @@
     },
     {
       "sessionId": "sanitized@worktrees@h92686bc66d70",
-      "inputTokens": 4629,
-      "outputTokens": 992348,
-      "cacheCreationTokens": 9127208,
-      "cacheReadTokens": 212284725,
-      "totalTokens": 222408910,
-      "totalCost": 187.2351,
-      "lastActivity": "2026-07-22",
+      "inputTokens": 4719,
+      "outputTokens": 1100204,
+      "cacheCreationTokens": 9477934,
+      "cacheReadTokens": 220352917,
+      "totalTokens": 230935774,
+      "totalCost": 196.1581,
+      "lastActivity": "2026-07-23",
       "modelsUsed": [
         "claude-opus-4-8",
         "claude-sonnet-5"
@@ -49,11 +82,11 @@
       "modelBreakdowns": [
         {
           "modelName": "claude-opus-4-8",
-          "inputTokens": 4619,
-          "outputTokens": 979230,
-          "cacheCreationTokens": 9014307,
-          "cacheReadTokens": 211738166,
-          "cost": 186.7123
+          "inputTokens": 4709,
+          "outputTokens": 1087086,
+          "cacheCreationTokens": 9365033,
+          "cacheReadTokens": 219806358,
+          "cost": 195.6353
         },
         {
           "modelName": "claude-sonnet-5",
@@ -68,72 +101,168 @@
     },
     {
       "sessionId": "sanitized@worktrees@h3f445a0a1127",
-      "inputTokens": 1691,
-      "outputTokens": 869562,
-      "cacheCreationTokens": 10614647,
-      "cacheReadTokens": 255188496,
-      "totalTokens": 266674396,
-      "totalCost": 215.6833,
-      "lastActivity": "2026-07-22",
+      "inputTokens": 1887,
+      "outputTokens": 1011507,
+      "cacheCreationTokens": 11151069,
+      "cacheReadTokens": 274518392,
+      "totalTokens": 286682855,
+      "totalCost": 232.2505,
+      "lastActivity": "2026-07-23",
       "modelsUsed": [
         "claude-opus-4-8"
       ],
       "modelBreakdowns": [
         {
           "modelName": "claude-opus-4-8",
-          "inputTokens": 1691,
-          "outputTokens": 869562,
-          "cacheCreationTokens": 10614647,
-          "cacheReadTokens": 255188496,
-          "cost": 215.6833
+          "inputTokens": 1887,
+          "outputTokens": 1011507,
+          "cacheCreationTokens": 11151069,
+          "cacheReadTokens": 274518392,
+          "cost": 232.2505
         }
       ],
       "projectPath": "Unknown Project"
     },
     {
       "sessionId": "sanitized@worktrees@hc8e750a6d401",
-      "inputTokens": 713,
-      "outputTokens": 360587,
-      "cacheCreationTokens": 5134643,
-      "cacheReadTokens": 144210353,
-      "totalTokens": 149706296,
-      "totalCost": 113.2149,
-      "lastActivity": "2026-07-22",
+      "inputTokens": 719,
+      "outputTokens": 362091,
+      "cacheCreationTokens": 5337692,
+      "cacheReadTokens": 144675931,
+      "totalTokens": 150376433,
+      "totalCost": 114.7544,
+      "lastActivity": "2026-07-23",
       "modelsUsed": [
         "claude-opus-4-8"
       ],
       "modelBreakdowns": [
         {
           "modelName": "claude-opus-4-8",
-          "inputTokens": 713,
-          "outputTokens": 360587,
-          "cacheCreationTokens": 5134643,
-          "cacheReadTokens": 144210353,
-          "cost": 113.2149
+          "inputTokens": 719,
+          "outputTokens": 362091,
+          "cacheCreationTokens": 5337692,
+          "cacheReadTokens": 144675931,
+          "cost": 114.7544
         }
       ],
       "projectPath": "Unknown Project"
     },
     {
       "sessionId": "sanitized@worktrees@h0ea9e46a7538",
-      "inputTokens": 200,
-      "outputTokens": 65060,
-      "cacheCreationTokens": 644676,
-      "cacheReadTokens": 15974540,
-      "totalTokens": 16684476,
-      "totalCost": 13.644,
-      "lastActivity": "2026-07-22",
+      "inputTokens": 411,
+      "outputTokens": 201510,
+      "cacheCreationTokens": 1144451,
+      "cacheReadTokens": 49525421,
+      "totalTokens": 50871793,
+      "totalCost": 36.9553,
+      "lastActivity": "2026-07-23",
       "modelsUsed": [
         "claude-opus-4-8"
       ],
       "modelBreakdowns": [
         {
           "modelName": "claude-opus-4-8",
-          "inputTokens": 200,
-          "outputTokens": 65060,
-          "cacheCreationTokens": 644676,
-          "cacheReadTokens": 15974540,
-          "cost": 13.644
+          "inputTokens": 411,
+          "outputTokens": 201510,
+          "cacheCreationTokens": 1144451,
+          "cacheReadTokens": 49525421,
+          "cost": 36.9553
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@worktrees@h768af78dff61",
+      "inputTokens": 80,
+      "outputTokens": 55222,
+      "cacheCreationTokens": 334436,
+      "cacheReadTokens": 4576609,
+      "totalTokens": 4966347,
+      "totalCost": 5.7595,
+      "lastActivity": "2026-07-23",
+      "modelsUsed": [
+        "claude-opus-4-8"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-4-8",
+          "inputTokens": 80,
+          "outputTokens": 55222,
+          "cacheCreationTokens": 334436,
+          "cacheReadTokens": 4576609,
+          "cost": 5.7595
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "subagents",
+      "inputTokens": 2269,
+      "outputTokens": 20162,
+      "cacheCreationTokens": 1189972,
+      "cacheReadTokens": 35889400,
+      "totalTokens": 37101803,
+      "totalCost": 10.359,
+      "lastActivity": "2026-07-23",
+      "modelsUsed": [
+        "claude-sonnet-5"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-sonnet-5",
+          "inputTokens": 2269,
+          "outputTokens": 20162,
+          "cacheCreationTokens": 1189972,
+          "cacheReadTokens": 35889400,
+          "cost": 10.359
+        }
+      ],
+      "projectPath": "sanitized@worktrees@h92686bc66d70"
+    },
+    {
+      "sessionId": "sanitized@worktrees@h570226df8a02",
+      "inputTokens": 10,
+      "outputTokens": 900,
+      "cacheCreationTokens": 114428,
+      "cacheReadTokens": 503343,
+      "totalTokens": 618681,
+      "totalCost": 0.3958,
+      "lastActivity": "2026-07-23",
+      "modelsUsed": [
+        "claude-sonnet-5"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-sonnet-5",
+          "inputTokens": 10,
+          "outputTokens": 900,
+          "cacheCreationTokens": 114428,
+          "cacheReadTokens": 503343,
+          "cost": 0.3958
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
+      "sessionId": "sanitized@worktrees@h13a6097933ea",
+      "inputTokens": 3505,
+      "outputTokens": 27657,
+      "cacheCreationTokens": 715089,
+      "cacheReadTokens": 3964325,
+      "totalTokens": 4710576,
+      "totalCost": 2.8642,
+      "lastActivity": "2026-07-23",
+      "modelsUsed": [
+        "claude-sonnet-5"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-sonnet-5",
+          "inputTokens": 3505,
+          "outputTokens": 27657,
+          "cacheCreationTokens": 715089,
+          "cacheReadTokens": 3964325,
+          "cost": 2.8642
         }
       ],
       "projectPath": "Unknown Project"
@@ -329,39 +458,6 @@
           "cacheCreationTokens": 117734,
           "cacheReadTokens": 188397,
           "cost": 0.9518
-        }
-      ],
-      "projectPath": "Unknown Project"
-    },
-    {
-      "sessionId": "sanitized@premortem@h6c27471c49ae",
-      "inputTokens": 1258888,
-      "outputTokens": 169017,
-      "cacheCreationTokens": 4059505,
-      "cacheReadTokens": 10330028,
-      "totalTokens": 15817438,
-      "totalCost": 41.8166,
-      "lastActivity": "2026-07-20",
-      "modelsUsed": [
-        "claude-opus-4-8",
-        "claude-fable-5"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-opus-4-8",
-          "inputTokens": 1237914,
-          "outputTokens": 163675,
-          "cacheCreationTokens": 3989696,
-          "cacheReadTokens": 10159926,
-          "cost": 40.297
-        },
-        {
-          "modelName": "claude-fable-5",
-          "inputTokens": 20974,
-          "outputTokens": 5342,
-          "cacheCreationTokens": 69809,
-          "cacheReadTokens": 170102,
-          "cost": 1.5196
         }
       ],
       "projectPath": "Unknown Project"
@@ -5107,11 +5203,11 @@
     }
   ],
   "totals": {
-    "inputTokens": 24282965,
-    "outputTokens": 16785548,
-    "cacheCreationTokens": 267678414,
-    "cacheReadTokens": 4962135023,
-    "totalCost": 4255.6097,
-    "totalTokens": 5270881950
+    "inputTokens": 24289663,
+    "outputTokens": 17297911,
+    "cacheCreationTokens": 280283988,
+    "cacheReadTokens": 5071718992,
+    "totalCost": 4381.6007,
+    "totalTokens": 5393590554
   }
 }
