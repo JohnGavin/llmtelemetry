@@ -829,9 +829,30 @@ if (length(proj_commits_list) > 0) {
   cat(sprintf("  -> %d commits across %d projects\n",
               nrow(proj_commits_df), length(unique(proj_commits_df$project))))
 } else {
-  cat("  -> no repos found, writing empty array\n")
-  write_json_atomic(list(), file.path(out_dir, "git_commits_by_project.json"))
-  write_json_atomic(list(), file.path(extdata, "git_commits_by_project.json"))
+  # CI fallback: sibling repos aren't checked out in GitHub Actions, so the
+  # fresh multi-repo scan is empty. Fall back to the committed inst/extdata/
+  # copy (produced by a prior local run) instead of shipping an empty array.
+  fb_src <- file.path(extdata, "git_commits_by_project.json")
+  if (file.exists(fb_src)) {
+    fb_df <- fromJSON(fb_src, simplifyDataFrame = TRUE)
+    if (is.data.frame(fb_df) && nrow(fb_df) > 0) {
+      proj_commits_df <- as_tibble(fb_df)
+      if (!"canonical_project" %in% names(proj_commits_df)) {
+        proj_commits_df$canonical_project <- canonicalize_project(proj_commits_df$project)
+      }
+      write_json_atomic(proj_commits_df, file.path(out_dir, "git_commits_by_project.json"), auto_unbox = TRUE)
+      cat(sprintf("  -> %d commits across %d projects (CI fallback)\n",
+                  nrow(proj_commits_df), length(unique(proj_commits_df$project))))
+    } else {
+      cat("  -> no repos found, writing empty array\n")
+      write_json_atomic(list(), file.path(out_dir, "git_commits_by_project.json"))
+      write_json_atomic(list(), file.path(extdata, "git_commits_by_project.json"))
+    }
+  } else {
+    cat("  -> no repos found, writing empty array\n")
+    write_json_atomic(list(), file.path(out_dir, "git_commits_by_project.json"))
+    write_json_atomic(list(), file.path(extdata, "git_commits_by_project.json"))
+  }
 }
 
 # --- 6d. Weekly commits by project -------------------------------------------

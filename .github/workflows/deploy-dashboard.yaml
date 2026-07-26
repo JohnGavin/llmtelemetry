@@ -80,7 +80,7 @@ jobs:
           python3 << 'PYEOF'
           import json, os, sys
           data_dir = "vignettes/data"
-          critical = ["git_commits",
+          critical = ["git_commits", "git_commits_by_project",
                       "git_bus_factor", "git_velocity", "git_timing",
                       "git_churn", "git_bugs"]
           # legacy_ccusage_daily/blocks: frozen snapshots since Phase 5a (#281/#302).
