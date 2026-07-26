@@ -1062,15 +1062,15 @@ ui <- page_navbar(
         // git_commits.parquet: canonical_project, date (one row per commit)
         let periodExprCost, periodExprGit, groupExprCost, groupExprGit;
         if (gran === "monthly") {
-          periodExprCost = "strftime(date, \'%Y-%m\')";
-          periodExprGit  = "strftime(date, \'%Y-%m\')";
-          groupExprCost  = "strftime(date, \'%Y-%m\')";
-          groupExprGit   = "strftime(date, \'%Y-%m\')";
+          periodExprCost = "strftime(date::TIMESTAMP, \'%Y-%m\')";
+          periodExprGit  = "strftime(date::TIMESTAMP, \'%Y-%m\')";
+          groupExprCost  = "strftime(date::TIMESTAMP, \'%Y-%m\')";
+          groupExprGit   = "strftime(date::TIMESTAMP, \'%Y-%m\')";
         } else if (gran === "weekly") {
-          periodExprCost = "strftime(date, \'%Y-W%W\')";
-          periodExprGit  = "strftime(date, \'%Y-W%W\')";
-          groupExprCost  = "strftime(date, \'%Y-W%W\')";
-          groupExprGit   = "strftime(date, \'%Y-W%W\')";
+          periodExprCost = "strftime(date::TIMESTAMP, \'%Y-W%W\')";
+          periodExprGit  = "strftime(date::TIMESTAMP, \'%Y-W%W\')";
+          groupExprCost  = "strftime(date::TIMESTAMP, \'%Y-W%W\')";
+          groupExprGit   = "strftime(date::TIMESTAMP, \'%Y-W%W\')";
         } else {
           periodExprCost = "date::TEXT";
           periodExprGit  = "date::TEXT";
