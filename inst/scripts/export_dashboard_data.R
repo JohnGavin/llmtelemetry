@@ -2377,10 +2377,18 @@ if (!is.null(pm_all) && nrow(pm_all) > 0L) {
 # committed source at inst/extdata/roborev_summary.json.  Always copy the
 # committed source to vignettes/data/ so CI serves real data even without the DB.
 #
-# Contract (from dashboard_shinylive.qmd, rv_* reactives):
-#   pulse: {n_open, n_critical, n_high, n_resolved, n_loops, n_escalate, wasted_usd}
+# Contract (from dashboard_shinylive.qmd, rv_* reactives; also read by
+# send_daily_email.R for the "Roborev (last 24h)" section):
+#   pulse: {n_open, n_critical, n_high, n_resolved, n_loops, n_escalate,
+#           wasted_usd, n_new_24h, n_resolved_24h, n_closed_24h}
 #   loops: [{tier, cycles, severity, primary_file, summary,
 #             first_seen, last_seen, estimated_wasted_usd}]
+#
+# 24h window definition (report generation time = Sys.time() at export):
+#   n_new_24h      = rows where created_at is within the last 24h
+#   n_resolved_24h = rows with a non-empty fix_commit_sha AND
+#                    fix_commit_at within the last 24h
+#   n_closed_24h   = rows where closed_at is within the last 24h (autocloses)
 cat("Exporting roborev_summary.json...\n")
 tryCatch({
   # Committed source (checked in; regenerated locally, copied by CI)
@@ -2392,7 +2400,8 @@ tryCatch({
   empty_roborev <- list(
     pulse = list(n_open = 0L, n_critical = 0L, n_high = 0L,
                  n_resolved = 0L, n_loops = 0L, n_escalate = 0L,
-                 wasted_usd = 0),
+                 wasted_usd = 0, n_new_24h = 0L, n_resolved_24h = 0L,
+                 n_closed_24h = 0L),
     loops = list()
   )
 
@@ -2418,8 +2427,36 @@ tryCatch({
       # Map: High -> critical KPI, Medium -> high KPI for dashboard display
       n_high     <- sum(!is.na(rl$severity_max) & rl$severity_max == "High"   & is_open)
       n_critical <- sum(!is.na(rl$severity_max) & rl$severity_max == "Medium" & is_open)
+
+      # --- 24h pulse metrics (window anchored to report generation time) ---
+      # Guard for missing columns/rows: dbReadTable returns TIMESTAMP cols as
+      # POSIXct already, but coerce defensively so a schema drift degrades to
+      # "0 in window" rather than an error.
+      ref_time     <- Sys.time()
+      window_start <- ref_time - 24 * 3600
+      n_rl         <- nrow(rl)
+
+      get_posixct_col <- function(col) {
+        if (col %in% names(rl) && n_rl > 0) {
+          as.POSIXct(rl[[col]])
+        } else {
+          as.POSIXct(rep(NA_real_, n_rl), origin = "1970-01-01")
+        }
+      }
+
+      created_col <- get_posixct_col("created_at")
+      n_new_24h   <- sum(!is.na(created_col) & created_col >= window_start)
+
+      fix_sha_col <- if ("fix_commit_sha" %in% names(rl)) as.character(rl$fix_commit_sha) else rep(NA_character_, n_rl)
+      has_fix_sha <- !is.na(fix_sha_col) & nzchar(fix_sha_col)
+      fix_at_col  <- get_posixct_col("fix_commit_at")
+      n_resolved_24h <- sum(has_fix_sha & !is.na(fix_at_col) & fix_at_col >= window_start)
+
+      closed_col   <- get_posixct_col("closed_at")
+      n_closed_24h <- sum(!is.na(closed_col) & closed_col >= window_start)
     } else {
       n_open <- n_resolved <- n_high <- n_critical <- 0L
+      n_new_24h <- n_resolved_24h <- n_closed_24h <- 0L
       cat("  -> roborev_review_lifecycle not found; pulse will be zero\n")
     }
 
@@ -2453,21 +2490,24 @@ tryCatch({
 
     roborev_summary <- list(
       pulse = list(
-        n_open     = as.integer(n_open),
-        n_critical = as.integer(n_critical),
-        n_high     = as.integer(n_high),
-        n_resolved = as.integer(n_resolved),
-        n_loops    = as.integer(n_loops),
-        n_escalate = as.integer(n_escalate),
-        wasted_usd = wasted_usd
+        n_open         = as.integer(n_open),
+        n_critical     = as.integer(n_critical),
+        n_high         = as.integer(n_high),
+        n_resolved     = as.integer(n_resolved),
+        n_loops        = as.integer(n_loops),
+        n_escalate     = as.integer(n_escalate),
+        wasted_usd     = wasted_usd,
+        n_new_24h      = as.integer(n_new_24h),
+        n_resolved_24h = as.integer(n_resolved_24h),
+        n_closed_24h   = as.integer(n_closed_24h)
       ),
       loops = loops_list
     )
 
     # Write committed source (local regeneration)
     write_json_atomic(roborev_summary, roborev_src, auto_unbox = TRUE)
-    cat(sprintf("  -> inst/extdata/roborev_summary.json written: pulse={n_open=%d, n_high=%d, n_resolved=%d, n_loops=%d}\n",
-                n_open, n_high, n_resolved, n_loops))
+    cat(sprintf("  -> inst/extdata/roborev_summary.json written: pulse={n_open=%d, n_high=%d, n_resolved=%d, n_loops=%d, n_new_24h=%d, n_resolved_24h=%d, n_closed_24h=%d}\n",
+                n_open, n_high, n_resolved, n_loops, n_new_24h, n_resolved_24h, n_closed_24h))
   } else {
     cat("  -> unified.duckdb not found; skipping committed source regeneration\n")
   }
@@ -2489,7 +2529,8 @@ tryCatch({
     list(
       pulse = list(n_open = 0L, n_critical = 0L, n_high = 0L,
                    n_resolved = 0L, n_loops = 0L, n_escalate = 0L,
-                   wasted_usd = 0),
+                   wasted_usd = 0, n_new_24h = 0L, n_resolved_24h = 0L,
+                   n_closed_24h = 0L),
       loops = list()
     ),
     file.path(out_dir, "roborev_summary.json"),
