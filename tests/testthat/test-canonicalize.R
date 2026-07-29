@@ -235,6 +235,13 @@ test_that("bare 'worktrees' token returns NA", {
   expect_equal(.canonicalize_project_local("worktrees"), NA_character_)
 })
 
+test_that("sibling plural docs-gh-worktrees-llm-<branch> path strips to llm", {
+  expect_equal(
+    .canonicalize_project_local("docs-gh-worktrees-llm-feat-cc-20260524-102501"),
+    "llm"
+  )
+})
+
 test_that("former agent-tooling tokens (roborev, sonnet, cc, eval, subagents, worker, ClaudeProbe) now return NA", {
   # 2026-05-26: these tokens are noise — drop to NA (reverses 2026-05-25 bucketing).
   # They have no recoverable parent project and pollute by-project plots.
