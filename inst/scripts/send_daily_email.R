@@ -1053,6 +1053,16 @@ with our 4-component session IDs.
         })
       } else NULL
 
+      # Drop degenerate windows (e.g. an empty tertiary window) where both
+      # used_pct and window_minutes are NA — these render as an all-"-" row.
+      if (!is.null(usage_tbl) && nrow(usage_tbl) > 0) {
+        usage_tbl <- usage_tbl[
+          !(is.na(usage_tbl$used_pct) & is.na(usage_tbl$window_minutes)),
+          ,
+          drop = FALSE
+        ]
+      }
+
       limits_html <- ""
       if (!is.null(usage_tbl) && nrow(usage_tbl) > 0) {
         limits_html <- sprintf(
