@@ -3129,7 +3129,7 @@
       "startTime": "2026-07-28T13:00:00.000Z",
       "endTime": "2026-07-28T18:00:00.000Z",
       "actualEndTime": "2026-07-28T13:52:38.928Z",
-      "isActive": true,
+      "isActive": false,
       "isGap": false,
       "entries": 119,
       "tokenCounts": {
@@ -3145,16 +3145,8 @@
         "claude-opus-4-8",
         "claude-opus-5"
       ],
-      "burnRate": {
-        "tokensPerMinute": 413675.4185089094,
-        "tokensPerMinuteForIndicator": 1455.8591247311965,
-        "costPerHour": 15.130383600921068
-      },
-      "projection": {
-        "totalTokens": 56124978,
-        "totalCost": 34.21,
-        "remainingMinutes": 83
-      }
+      "burnRate": null,
+      "projection": null
     }
   ]
 }
