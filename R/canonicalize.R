@@ -100,7 +100,7 @@
   #                        single-char tokens, ephemeral names)
   meta_only <- c(
     # Original set (container dirs and true noise):
-    "worktree",
+    "worktree", "worktrees",
     "antigravity", "crypto", "data", "github", "hello",
     "simulations", "sport",
     "t", "io", "notmineraft",
@@ -150,7 +150,7 @@
     # Multi-segment container prefixes (must come before single-segment ones):
     "stats/simulations/", "stats/sport/", "finance/data/",
     # Single-segment container prefixes:
-    "worktree/", "simulations/", "sport/", "data/", "crypto/",
+    "worktree/", "worktrees/", "simulations/", "sport/", "data/", "crypto/",
     "subagents/", "knowledge/", "github/", "antigravity/", "hello/",
     "stats/", "pers/", "finance/"
   )

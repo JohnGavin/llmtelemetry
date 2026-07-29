@@ -219,6 +219,22 @@ test_that("'agent' residual token returns NA (2026-05-26: agent-<x> path residua
   expect_equal(.canonicalize_project_local("agent"), NA_character_)
 })
 
+# ── Plural "worktrees/" prefix + bare "worktrees" token (fix: fake project) ──
+# Real hook-emitted paths use plural "worktrees/<project>/..." but the
+# noise/prefix lists only had the singular "worktree" form, so "worktrees"
+# survived as the first path segment and appeared as a top project.
+
+test_that("plural docs-gh-worktrees-<project> path strips to the project", {
+  expect_equal(
+    .canonicalize_project_local("docs-gh-worktrees-travel-feat-cc-20260723-141533"),
+    "travel"
+  )
+})
+
+test_that("bare 'worktrees' token returns NA", {
+  expect_equal(.canonicalize_project_local("worktrees"), NA_character_)
+})
+
 test_that("former agent-tooling tokens (roborev, sonnet, cc, eval, subagents, worker, ClaudeProbe) now return NA", {
   # 2026-05-26: these tokens are noise — drop to NA (reverses 2026-05-25 bucketing).
   # They have no recoverable parent project and pollute by-project plots.
