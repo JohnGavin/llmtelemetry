@@ -701,29 +701,31 @@ with our 4-component session IDs.
   }
 
   # --- Build Top Claude Sessions by Cost ---
+  # ccusage session records carry no start time (fields: sessionId,
+  # projectPath, totalCost, totalTokens, lastActivity, token breakdowns), so
+  # the "Session" column is replaced with the canonicalized project name
+  # instead of inventing a start time.
   sessions_html <- ""
   if (!is.null(session_data) && nrow(session_data) > 0) {
     top_sessions <- session_data |> arrange(desc(totalCost)) |> head(5)
     sessions_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Top Claude Sessions by Cost</h3>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Session</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Project</th>
     <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
     <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
     <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Last Active</th>
   </tr>', accent_purple, accent_purple, dark_border, dark_border, dark_border, dark_border)
     for (i in seq_len(nrow(top_sessions))) {
       bg <- if (i %% 2 == 0) dark_row_alt else dark_card
-      session_name <- top_sessions$sessionId[i]
-      session_parts <- strsplit(gsub("^-", "", session_name), "-")[[1]]
-      if (length(session_parts) > 2) session_name <- paste(tail(session_parts, 2), collapse = "/")
+      project_name <- canonicalize_project(top_sessions$projectPath[i]) %||% "unknown"
       sessions_html <- paste0(sessions_html, sprintf('\n  <tr style="background-color: %s;">
     <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
   </tr>', bg,
-        dark_border, dark_text, session_name,
+        dark_border, dark_text, project_name,
         dark_border, accent_green, dollar(top_sessions$totalCost[i]),
         dark_border, accent_blue, millions(top_sessions$totalTokens[i]),
         dark_border, dark_muted, top_sessions$lastActivity[i]))
