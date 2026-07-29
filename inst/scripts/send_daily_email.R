@@ -447,12 +447,6 @@ if (!has_data) {
               }
             }
           }    
-    # Get recent Gemini sessions
-    gm_sessions <- dbGetQuery(gm_con, "
-      SELECT sessionId, total_cost, total_tokens, start_time 
-      FROM sessions_summary 
-      ORDER BY last_updated DESC LIMIT 5
-    ")
     gm_sessions_count <- dbGetQuery(gm_con, "SELECT COUNT(*) FROM sessions_summary")[[1]]
     dbDisconnect(gm_con, shutdown = TRUE)
   }
@@ -583,7 +577,6 @@ if (!has_data) {
 Cost attribution by trigger type is not available: ccusage block IDs use format
 <code>sanitized@{project}@h{hash}</code> (3 components, no timestamp) — incompatible
 with our 4-component session IDs.
-For trigger-stamped session counts and duration, see the Session Provenance section below.
 </p>', dark_muted),
           sprintf("<!-- QA:blocks_grouped_by_day=%d -->", length(sorted_dates)),
           sprintf("<!-- QA:blocks_total=%d -->", nrow(activity_df)))
@@ -889,97 +882,8 @@ For trigger-stamped session counts and duration, see the Session Provenance sect
       dark_border, dark_muted, as.character(cx_end))
   }
 
-  # --- Codex by automation type section ---
-  codex_type_html <- ""
-  if (has_codex && "source" %in% names(codex_d)) {
-    # Build per-source summary from codex_s (per-thread detail) so that a single
-    # thread spanning multiple dates/models is counted exactly once in Sessions.
-    # Fall back to codex_d-derived n() if codex_s is unavailable or lacks source.
-    has_sessions_src <- !is.null(codex_s) && nrow(codex_s) > 0 &&
-      all(c("source", "thread_id") %in% names(codex_s))
-    cx_by_type <- if (has_sessions_src) {
-      codex_s |>
-        group_by(source) |>
-        summarise(
-          sessions  = dplyr::n_distinct(thread_id),
-          tokens    = sum(total_tokens,  na.rm = TRUE),
-          est_cost  = sum(est_cost_usd,  na.rm = TRUE),
-          .groups   = "drop"
-        ) |>
-        arrange(desc(est_cost))
-    } else {
-      codex_d |>
-        group_by(source) |>
-        summarise(
-          sessions  = n(),
-          tokens    = sum(total_tokens, na.rm = TRUE),
-          est_cost  = sum(est_cost_usd, na.rm = TRUE),
-          .groups   = "drop"
-        ) |>
-        arrange(desc(est_cost))
-    }
-
-    codex_type_html <- sprintf(
-      '\n<h3 style="color: %s; margin-top: 20px;">Codex by Automation Type</h3>
-<table style="border-collapse: collapse; width: 100%%;">
-  <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Type</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Sessions</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Total Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Est. Cost</th>
-  </tr>',
-      accent_orange, accent_orange,
-      dark_border, dark_border, dark_border, dark_border)
-
-    for (i in seq_len(nrow(cx_by_type))) {
-      bg <- if (i %% 2 == 0) dark_row_alt else dark_card
-      type_label <- switch(as.character(cx_by_type$source[i]),
-        "roborev"     = "Roborev jobs",
-        "interactive" = "Interactive",
-        as.character(cx_by_type$source[i]))
-      codex_type_html <- paste0(codex_type_html, sprintf(
-        '\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s <em style="font-size:9px;">(est)</em></td>
-  </tr>',
-        bg,
-        dark_border, dark_text, type_label,
-        dark_border, dark_text, comma(cx_by_type$sessions[i]),
-        dark_border, accent_blue, comma(cx_by_type$tokens[i]),
-        dark_border, accent_green, dollar(cx_by_type$est_cost[i])))
-    }
-    codex_type_html <- paste0(codex_type_html, "\n</table>",
-      "<!-- QA:codex_type_rows=", nrow(cx_by_type), " -->")
-
-    # Stale-pricing warning
-    pricing_path <- here::here("inst/extdata/codex_pricing.json")
-    if (file.exists(pricing_path)) {
-      pricing_meta <- tryCatch(
-        jsonlite::fromJSON(pricing_path),
-        error = function(e) NULL
-      )
-      if (!is.null(pricing_meta) && !is.null(pricing_meta$updated_at)) {
-        pricing_date <- tryCatch(as.Date(pricing_meta$updated_at), error = function(e) NA)
-        if (!is.na(pricing_date) &&
-            as.numeric(Sys.Date() - pricing_date) > 30) {
-          codex_type_html <- paste0(codex_type_html, sprintf(
-            '\n<p style="color: %s; font-size: 10px; font-style: italic; margin-top: 6px;">
-  Codex cost estimates use pricing from %s; verify
-  <a href="https://openai.com/api/pricing" style="color: %s;">openai.com/api/pricing</a>
-  if stale.
-</p>',
-            dark_muted,
-            format(pricing_date, "%Y-%m-%d"),
-            accent_blue))
-        }
-      }
-    }
-  }
-
   email_body <- paste0(email_header, row_ccusage, row_gemini, row_cmonitor,
-                       row_codex, "\n</table>", codex_type_html)
+                       row_codex, "\n</table>")
 
   # Weekly Cost
   email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s;">Weekly Cost (Claude)</h3>
@@ -1044,35 +948,6 @@ For trigger-stamped session counts and duration, see the Session Provenance sect
      dark_row_alt, dark_border, dark_text, dark_border, dark_text, millions(week4$tokens)))
 
   # (Time Block Activity moved to top — see blocks_html above)
-
-  # Gemini Recent Sessions
-  if (exists("gm_sessions") && !is.null(gm_sessions) && nrow(gm_sessions) > 0) {
-    email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s; margin-top: 20px;">Gemini Recent Sessions</h3>
-<table style="border-collapse: collapse; width: 100%%;">
-  <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Session ID</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Started</th>
-  </tr>', accent_blue, accent_blue, dark_border, dark_border, dark_border, dark_border))
-
-    for (i in seq_len(nrow(gm_sessions))) {
-      bg <- if (i %% 2 == 0) dark_row_alt else dark_card
-      email_body <- paste0(email_body, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-  </tr>', 
-        bg,
-        dark_border, dark_text, gm_sessions$sessionId[i],
-        dark_border, accent_green, dollar(gm_sessions$total_cost[i]),
-        dark_border, accent_blue, millions(gm_sessions$total_tokens[i]),
-        dark_border, dark_muted, format(gm_sessions$start_time[i], "%Y-%m-%d %H:%M")
-      ))
-    }
-    email_body <- paste0(email_body, "</table>")
-  }
 
   # (Top Claude Sessions moved to top — see sessions_html/projects_html below)
 
@@ -1327,116 +1202,6 @@ For trigger-stamped session counts and duration, see the Session Provenance sect
   })
   email_body <- paste0(email_body, codexbar_html)
 
-  # --- Session Provenance (#322 Phase 2): trigger-based session split ---
-  # Joinability verdict: ccusage "session" type IDs use the 3-component form
-  # "sanitized@{project}@h{12hex}" (no timestamp), while sessions.parquet uses
-  # 4-component "sanitized@{project}@{iso8601}@h{12hex}" or raw UUIDs.
-  # These formats are INCOMPATIBLE for a direct key-join.  ccusage also only
-  # provides lastActivity (date only, no time), ruling out time-overlap joins.
-  # RESULT: cost attribution remains the Phase 1 block-window heuristic.
-  # This section shows the ACCURATE trigger split from stamped session rows.
-  tryCatch({
-    sp_parquet <- here::here("inst", "extdata", "telemetry", "v1",
-                             "sessions.parquet")
-    if (file.exists(sp_parquet)) {
-      sp_con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
-      on.exit(DBI::dbDisconnect(sp_con, shutdown = TRUE), add = TRUE)
-
-      # Check if trigger column exists (handle legacy parquet gracefully)
-      sp_schema <- tryCatch(
-        DBI::dbGetQuery(sp_con, sprintf(
-          "DESCRIBE SELECT * FROM read_parquet('%s') LIMIT 0",
-          gsub("'", "\\'", sp_parquet, fixed = TRUE)
-        )),
-        error = function(e) NULL
-      )
-      has_trig_col <- !is.null(sp_schema) &&
-                      "column_name" %in% names(sp_schema) &&
-                      "trigger" %in% sp_schema$column_name
-
-      if (has_trig_col) {
-        sp_df <- DBI::dbGetQuery(
-          sp_con,
-          sprintf(
-            "SELECT COALESCE(trigger, 'unknown') AS trigger,
-                    COUNT(*)                     AS n_sessions,
-                    ROUND(SUM(COALESCE(duration_min, 0)), 1) AS total_min
-             FROM read_parquet('%s')
-             GROUP BY COALESCE(trigger, 'unknown')
-             ORDER BY trigger",
-            gsub("'", "\\'", sp_parquet, fixed = TRUE)
-          )
-        )
-      } else {
-        # Legacy parquet without trigger column
-        cnt <- DBI::dbGetQuery(
-          sp_con,
-          sprintf("SELECT COUNT(*) AS n FROM read_parquet('%s')",
-                  gsub("'", "\\'", sp_parquet, fixed = TRUE))
-        )$n
-        sp_df <- data.frame(trigger = "unknown", n_sessions = cnt,
-                            total_min = NA_real_, stringsAsFactors = FALSE)
-      }
-
-      # Labels for display
-      trig_labels <- c(
-        "scheduled"   = "Scheduled (automated)",
-        "interactive" = "Interactive (human)",
-        "unknown"     = "Unknown (legacy/unstamped)"
-      )
-
-      n_stamped <- sum(
-        sp_df$n_sessions[sp_df$trigger %in% c("scheduled", "interactive")],
-        na.rm = TRUE
-      )
-      n_total <- sum(sp_df$n_sessions, na.rm = TRUE)
-
-      prov_rows_html <- ""
-      for (ti in seq_len(nrow(sp_df))) {
-        trig  <- sp_df$trigger[ti]
-        label <- if (trig %in% names(trig_labels)) trig_labels[[trig]] else trig
-        dur   <- if (is.na(sp_df$total_min[ti])) "-" else format_hhmm(sp_df$total_min[ti])
-        bg    <- if (ti %% 2 == 0) dark_row_alt else dark_card
-        prov_rows_html <- paste0(prov_rows_html, sprintf(
-          '\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-  </tr>',
-          bg,
-          dark_border, dark_text, label,
-          dark_border, accent_blue, comma(sp_df$n_sessions[ti]),
-          dark_border, dark_text, dur
-        ))
-      }
-
-      email_body <- paste0(email_body, sprintf(
-        '\n<h3 style="color: %s; margin-top: 20px;">Session Provenance (#322 Phase 2)</h3>
-<table style="border-collapse: collapse; max-width: 520px;">
-  <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Trigger</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Sessions</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Duration (HH:MM)</th>
-  </tr>%s
-</table>
-<p style="color: %s; font-size: 10px; font-style: italic; margin-top: 6px;">
-  %d/%d sessions carry provenance stamps (<em>scheduled</em> or <em>interactive</em>).<br>
-  <strong>Cost attribution by trigger is approximate</strong> (Phase 1 block-window
-  heuristic from ccusage blocks) — a direct key-join is not possible because ccusage
-  session IDs omit the timestamp component present in our 4-component IDs.
-  Rows labelled <em>unknown</em> are legacy or unstamped sessions written before Phase 2.
-</p>
-<!-- QA:session_provenance_rows=%d -->',
-        accent_orange, accent_orange,
-        dark_border, dark_border, dark_border,
-        prov_rows_html,
-        dark_muted, n_stamped, n_total, nrow(sp_df)
-      ))
-    }
-  }, error = function(e) {
-    message("Session Provenance section failed: ", e$message)
-  })
-
   email_body <- paste0(email_body, sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
 <p style="color: %s; font-size: 12px;">
   <a href="https://github.com/JohnGavin/llmtelemetry" style="color: %s;">llmtelemetry project</a> |
@@ -1449,7 +1214,7 @@ For trigger-stamped session counts and duration, see the Session Provenance sect
   <strong>Definitions:</strong><br>
   <sup>1</sup> <strong>Cost:</strong> Total cost in USD. Codex figures are estimates from <code>codex_pricing.json</code> and marked <em>(est)</em>.<br>
   <sup>2</sup> <strong>Days:</strong> Number of days in the reporting period.<br>
-  <sup>3</sup> <strong>Sessions:</strong> Number of distinct sessions recorded via ccusage (all trigger types). For trigger-based provenance (scheduled/interactive/unknown), see the Session Provenance section (#322 Phase 2).<br>
+  <sup>3</sup> <strong>Sessions:</strong> Number of distinct sessions recorded via ccusage (all trigger types).<br>
   <sup>4</sup> <strong>Entries:</strong> Total number of logged interactions/blocks.<br>
   <strong>Source:</strong> <em>ccusage/Gemini</em> (this R package) vs <em>cmonitor</em> (Rust-based system monitor) vs <em>Codex</em> (OpenAI Codex OTEL logs).
 </div>
@@ -1526,14 +1291,8 @@ for (marker in c("QA:blocks_grouped_by_day=", "QA:model_breakdown_days=", "QA:mo
   }
 }
 
-# Codex QA: if codex data was loaded, the type-breakdown marker and row must appear
+# Codex QA: if codex data was loaded, the Summary row's est-cost marker must appear
 if (has_codex) {
-  if (!grepl("QA:codex_type_rows=", email_body, fixed = TRUE)) {
-    qa_errors <- c(qa_errors, "Missing QA marker: QA:codex_type_rows= (codex data present but marker missing)")
-  }
-  if (!grepl("Codex by Automation Type", email_body)) {
-    qa_errors <- c(qa_errors, "Missing section: 'Codex by Automation Type'")
-  }
   if (!grepl("(est)", email_body, fixed = TRUE)) {
     qa_errors <- c(qa_errors, "Missing '(est)' suffix on Codex cost figures")
   }
