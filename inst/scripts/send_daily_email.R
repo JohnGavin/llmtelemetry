@@ -771,7 +771,7 @@ with our 4-component session IDs.
   row_ccusage <- sprintf('
   <!-- ccusage Row -->
   <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>ccusage</strong></td>
+    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>ccusage</strong> &middot; Claude</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
@@ -796,7 +796,7 @@ with our 4-component session IDs.
   row_gemini <- sprintf('
   <!-- Gemini Row -->
   <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>Gemini</strong></td>
+    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>Gemini</strong> &middot; Google</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
@@ -821,7 +821,7 @@ with our 4-component session IDs.
   row_cmonitor <- sprintf('
   <!-- cmonitor Row -->
   <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>cmonitor</strong></td>
+    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>cmonitor</strong> &middot; Claude</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
@@ -861,7 +861,7 @@ with our 4-component session IDs.
     row_codex <- sprintf('
   <!-- Codex Row -->
   <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>Codex</strong></td>
+    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>Codex</strong> &middot; OpenAI</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s <em style="font-size:13px; color:%s;">(est)</em></td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
@@ -884,8 +884,10 @@ with our 4-component session IDs.
       dark_border, dark_muted, as.character(cx_end))
   }
 
-  email_body <- paste0(email_header, row_ccusage, row_gemini, row_cmonitor,
-                       row_codex, "\n</table>")
+  # Order: Claude-usage sources first (ccusage, cmonitor), then other models
+  # (Codex, Gemini) — so usage-measurement sources and models aren't intermixed.
+  email_body <- paste0(email_header, row_ccusage, row_cmonitor, row_codex,
+                       row_gemini, "\n</table>")
 
   # Weekly Cost
   email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s;">Weekly Cost (Claude)</h3>
