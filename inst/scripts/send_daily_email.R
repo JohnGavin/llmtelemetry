@@ -316,8 +316,8 @@ if (cache_time != "Unknown") {
       ))
       stale_banner_html <- sprintf(
         '\n<div style="background-color: #5c1a00; border: 2px solid #ff6600; padding: 14px 18px; margin-bottom: 16px; border-radius: 4px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
-  <strong style="color: #ff9933; font-size: 14px;">&#9888; STALE DATA</strong>
-  <span style="color: #ffcc99; font-size: 13px; margin-left: 8px;">
+  <strong style="color: #ff9933; font-size: 17px;">&#9888; STALE DATA</strong>
+  <span style="color: #ffcc99; font-size: 16px; margin-left: 8px;">
     Latest data is <strong>%.0fh old</strong> (last seen: %s). ETL rollup may be broken
     &#8212; check <code style="background:#3a1000; padding:1px 4px; border-radius:2px;">run_rollup.R</code>
     and <code style="background:#3a1000; padding:1px 4px; border-radius:2px;">export_and_deploy_data.sh</code>
@@ -485,16 +485,16 @@ if (!has_data) {
 
       if (nrow(activity_df) > 0) {
         blocks_html <- sprintf('\n<h3 style="color: %s;">Time Block Activity (Last 5 Days)</h3>
-<p style="color: #ffffff; font-size: 10px; margin: 2px 0 6px 0;">&#9888; <strong>Phase 1 heuristic</strong>: whole 5h billing blocks are classified by time-window. Mixed business-hours blocks (e.g. 05:00&#8211;10:00 containing the 09:00 roborev poller) are approximate and attributed entirely to Interactive. Accurate split pending per-session provenance (<a href="https://github.com/JohnGavin/llmtelemetry/issues/322" style="color:#4fc3f7;">#322 Phase&#160;2</a>). &#9889;&nbsp;=&nbsp;Scheduled &nbsp; &#128100;&nbsp;=&nbsp;Interactive</p>
+<p style="color: #ffffff; font-size: 13px; margin: 2px 0 6px 0;">&#9888; <strong>Phase 1 heuristic</strong>: whole 5h billing blocks are classified by time-window. Mixed business-hours blocks (e.g. 05:00&#8211;10:00 containing the 09:00 roborev poller) are approximate and attributed entirely to Interactive. Accurate split pending per-session provenance (<a href="https://github.com/JohnGavin/llmtelemetry/issues/322" style="color:#4fc3f7;">#322 Phase&#160;2</a>). &#9889;&nbsp;=&nbsp;Scheduled &nbsp; &#128100;&nbsp;=&nbsp;Interactive</p>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Start</th>
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">End</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Duration</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">$/hr</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tok/hr</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Start</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">End</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Duration</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">$/hr</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Tok/hr</th>
   </tr>', accent_orange, "#607D8B",
               dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border)
 
@@ -513,11 +513,11 @@ if (!has_data) {
           d_cost_hr <- if (d_mins > 0) d_cost / (d_mins / 60) else 0
           day_label <- format(d, "%a %Y-%m-%d")
           blocks_html <- paste0(blocks_html, sprintf('\n  <tr style="background-color: #1a3a5c; font-weight: bold;">
-    <td colspan="2" style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">%s (%d blocks)</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td colspan="2" style="padding: 8px; border: 1px solid %s; font-size: 15px; color: %s;">%s (%d blocks)</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
     <td style="padding: 8px; border: 1px solid %s;"></td>
   </tr>',
             dark_border, "#ffffff", day_label, d_nblocks,
@@ -536,7 +536,7 @@ if (!has_data) {
           inter_tok  <- sum(trig_inter$totalTokens, na.rm = TRUE)
           blocks_html <- paste0(blocks_html, sprintf(
             '\n  <tr style="background-color: #0e2030;">
-    <td colspan="7" style="padding: 3px 8px; border: 1px solid %s; font-size: 10px;">
+    <td colspan="7" style="padding: 3px 8px; border: 1px solid %s; font-size: 13px;">
       <span style="color: #80b4e0;">&#9889;&nbsp;Sched-auto: %s (%s&nbsp;tok)</span>
       &nbsp;&bull;&nbsp;
       <span style="color: #ffffff;">&#128100;&nbsp;Interactive: %s (%s&nbsp;tok)</span>
@@ -549,18 +549,18 @@ if (!has_data) {
           for (i in seq_len(nrow(day_blocks))) {
             bg <- if (i %% 2 == 0) dark_row_alt else dark_card
             trig_icon <- if (identical(day_blocks$trigger[i], "scheduled"))
-              "<span style='color:#80b4e0;font-size:8px;'>&#9889;</span>&nbsp;"
+              "<span style='color:#80b4e0;font-size:13px;'>&#9889;</span>&nbsp;"
             else
-              "<span style='color:#ffffff;font-size:8px;'>&#128100;</span>&nbsp;"
+              "<span style='color:#ffffff;font-size:13px;'>&#128100;</span>&nbsp;"
             start_label <- paste0(trig_icon, format(day_blocks$start[i], "%H:%M"))
             blocks_html <- paste0(blocks_html, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s; padding-left: 20px;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 13px; color: %s; padding-left: 20px;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
   </tr>',
               bg,
               dark_border, dark_muted, start_label,
@@ -573,7 +573,7 @@ if (!has_data) {
           }
         }
         blocks_html <- paste0(blocks_html, "</table>",
-          sprintf('\n<p style="color: %s; font-size: 10px; font-style: italic; margin-top: 6px;">
+          sprintf('\n<p style="color: %s; font-size: 13px; font-style: italic; margin-top: 6px;">
 Cost attribution by trigger type is not available: ccusage block IDs use format
 <code>sanitized@{project}@h{hash}</code> (3 components, no timestamp) — incompatible
 with our 4-component session IDs.
@@ -599,11 +599,11 @@ with our 4-component session IDs.
           daily_model_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Daily Cost by Model (Last 5 Days)</h3>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Day</th>
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Model</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">$/MTok</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Day</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Model</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">$/MTok</th>
   </tr>', accent_purple, accent_purple,
             dark_border, dark_border, dark_border, dark_border, dark_border)
 
@@ -617,10 +617,10 @@ with our 4-component session IDs.
             day_label <- format(d, "%a %Y-%m-%d")
             # Day total row
             daily_model_html <- paste0(daily_model_html, sprintf('\n  <tr style="background-color: #1a3a5c; font-weight: bold;">
-    <td style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">ALL</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; font-size: 15px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; font-size: 15px; color: %s;">ALL</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
     <td style="padding: 8px; border: 1px solid %s;"></td>
   </tr>',
               dark_border, "#ffffff", day_label,
@@ -634,11 +634,11 @@ with our 4-component session IDs.
               bg <- if (row_idx %% 2 == 0) dark_row_alt else dark_card
               m_name <- gsub("claude-", "", as.character(d_rows$model[j]))
               daily_model_html <- paste0(daily_model_html, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s;"></td>
-    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s; padding-left: 20px;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 13px; color: %s;"></td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 13px; color: %s; padding-left: 20px;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
   </tr>',
                 bg,
                 dark_border, dark_muted,
@@ -681,16 +681,16 @@ with our 4-component session IDs.
       projects_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Top Projects by Cost</h3>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Project</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Total Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Project</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Total Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Tokens</th>
   </tr>', accent_orange, accent_orange, dark_border, dark_border, dark_border)
       for (i in seq_len(nrow(proj_totals))) {
         bg <- if (i %% 2 == 0) dark_row_alt else dark_card
         projects_html <- paste0(projects_html, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; font-size: 14px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
   </tr>', bg,
           dark_border, dark_text, as.character(proj_totals$project[i]),
           dark_border, accent_green, dollar(as.numeric(proj_totals$cost[i])),
@@ -711,19 +711,19 @@ with our 4-component session IDs.
     sessions_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Top Claude Sessions by Cost</h3>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Project</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Last Active</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Project</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Last Active</th>
   </tr>', accent_purple, accent_purple, dark_border, dark_border, dark_border, dark_border)
     for (i in seq_len(nrow(top_sessions))) {
       bg <- if (i %% 2 == 0) dark_row_alt else dark_card
       project_name <- canonicalize_project(top_sessions$projectPath[i]) %||% "unknown"
       sessions_html <- paste0(sessions_html, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; font-size: 14px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; font-size: 14px; color: %s;">%s</td>
   </tr>', bg,
         dark_border, dark_text, project_name,
         dark_border, accent_green, dollar(top_sessions$totalCost[i]),
@@ -735,7 +735,7 @@ with our 4-component session IDs.
 
   email_header <- sprintf('\n<div style="background-color: %s; color: %s; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
 <h2 style="color: %s; margin-bottom: 5px;">LLM Usage Report - %s</h2>
-<p style="color: %s; font-size: 12px; margin-top: 0;">Data through: %s</p>
+<p style="color: %s; font-size: 15px; margin-top: 0;">Data through: %s</p>
 
 <!-- Embedded Dashboard Link -->
 <div style="margin-bottom: 20px;">
@@ -750,7 +750,7 @@ with our 4-component session IDs.
 %s
 
 <h3 style="color: %s;">Summary</h3>
-<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">
+<table style="border-collapse: collapse; width: 100%%; font-size: 14px;">
   <tr style="background-color: %s; color: white;">
     <th style="padding: 6px; border: 1px solid %s;">Source</th>
     <th style="padding: 6px; border: 1px solid %s; text-align: right;">Cost<sup>1</sup></th>
@@ -862,7 +862,7 @@ with our 4-component session IDs.
   <!-- Codex Row -->
   <tr style="background-color: %s;">
     <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>Codex</strong></td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s <em style="font-size:9px; color:%s;">(est)</em></td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s <em style="font-size:13px; color:%s;">(est)</em></td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
@@ -973,31 +973,31 @@ with our 4-component session IDs.
           '\n<h3 style="color: %s; margin-top: 20px;">Roborev (llmtelemetry, last 24h)</h3>
 <table style="border-collapse: collapse; max-width: 400px;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Metric</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Value</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Metric</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Value</th>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">New findings</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">New findings</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d</td>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Resolved</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Resolved</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d</td>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Open total</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Open total</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d</td>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Active loops (Tier 2+)</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Active loops (Tier 2+)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d</td>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Stuck loops (Tier 3, no ack)</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d &nbsp; <span style="font-size:9px; color:%s;">[issues filed: %d]</span></td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Stuck loops (Tier 3, no ack)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d &nbsp; <span style="font-size:13px; color:%s;">[issues filed: %d]</span></td>
   </tr>
 </table>
-<p style="font-size: 9px; color: %s; margin-top: 4px; line-height: 1.5;">
+<p style="font-size: 13px; color: %s; margin-top: 4px; line-height: 1.5;">
   <strong>New findings:</strong> roborev review rows inserted in the last 24&nbsp;h (review_started_at &ge; now &minus; 24h).<br>
   <strong>Resolved:</strong> reviews closed via fix-commit link (<code>fix_commit_sha IS NOT NULL</code>) in the last 24&nbsp;h.<br>
   <strong>Open total (since inception):</strong> cumulative open reviews (state &ne; closed and not resolved).<br>
@@ -1039,7 +1039,7 @@ with our 4-component session IDs.
       paste0(
         sprintf('\n<h3 style="color: %s; margin-top: 20px;">Provider usage (CodexBar)</h3>',
                 accent_purple),
-        sprintf('<p style="color: %s; font-size: 11px; font-style: italic;">',
+        sprintf('<p style="color: %s; font-size: 14px; font-style: italic;">',
                 dark_muted),
         "CodexBar data not yet available (run <code>sanitize_codexbar.R</code> to populate).",
         "</p>",
@@ -1066,7 +1066,7 @@ with our 4-component session IDs.
       limits_html <- ""
       if (!is.null(usage_tbl) && nrow(usage_tbl) > 0) {
         limits_html <- sprintf(
-          '\n<h4 style="color: %s; margin-top: 0; margin-bottom: 6px;">Live rate-limit windows</h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Provider</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Window (length)</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Used %%</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Window (min)</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Resets at</th>\n  </tr>\n  <!-- Credits-left column dropped 2026-05-31 — provider does not expose. See llmtelemetry#277 -->',
+          '\n<h4 style="color: %s; margin-top: 0; margin-bottom: 6px;">Live rate-limit windows</h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 14px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Provider</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Window (length)</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Used %%</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Window (min)</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Resets at</th>\n  </tr>\n  <!-- Credits-left column dropped 2026-05-31 — provider does not expose. See llmtelemetry#277 -->',
           accent_purple, accent_purple,
           dark_border, dark_border, dark_border, dark_border, dark_border)
 
@@ -1108,7 +1108,7 @@ with our 4-component session IDs.
             dark_border, dark_muted,   reset_str))
         }
         limits_html <- paste0(limits_html, sprintf(
-          "\n</table>\n<p style=\"font-size: 9px; color: %s; margin-top: 4px; line-height: 1.5;\">",
+          "\n</table>\n<p style=\"font-size: 13px; color: %s; margin-top: 4px; line-height: 1.5;\">",
           dark_muted),
           "Window length is the rolling-window size the provider rate-limits against. ",
           "<code>Used %%</code> is consumption within that window. ",
@@ -1156,13 +1156,13 @@ with our 4-component session IDs.
 
           stale_note <- if (cb_is_stale) {
             sprintf(
-              ' <em style="font-size: 9px; color: %s;">(stale — data older than 6h)</em>',
+              ' <em style="font-size: 13px; color: %s;">(stale — data older than 6h)</em>',
               accent_orange
             )
           } else ""
 
           recon_html <- sprintf(
-            '\n<h4 style="color: %s; margin-top: 12px; margin-bottom: 4px;">Cost (last ~7 days)%s <em style="font-size: 9px; color: %s; font-weight: normal;">(actual provider invoices)</em></h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Date</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">CodexBar (actual invoice cost)</th>\n  </tr>',
+            '\n<h4 style="color: %s; margin-top: 12px; margin-bottom: 4px;">Cost (last ~7 days)%s <em style="font-size: 13px; color: %s; font-weight: normal;">(actual provider invoices)</em></h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 14px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Date</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">CodexBar (actual invoice cost)</th>\n  </tr>',
             accent_purple, stale_note, dark_muted, accent_purple,
             dark_border, dark_border)
 
@@ -1170,7 +1170,7 @@ with our 4-component session IDs.
             bg_r <- if (ri %% 2 == 0) dark_row_alt else dark_card
             # CodexBar value: append "(stale)" when data is stale (#281 1c)
             cb_val_str <- if (cb_is_stale) {
-              sprintf('%s <em style="font-size: 9px; color: %s;">(stale)</em>',
+              sprintf('%s <em style="font-size: 13px; color: %s;">(stale)</em>',
                       dollar(cb_daily_cb$cb_cost[ri]), accent_orange)
             } else {
               dollar(cb_daily_cb$cb_cost[ri])
@@ -1183,7 +1183,7 @@ with our 4-component session IDs.
           }
           recon_html <- paste0(recon_html, "\n</table>",
             sprintf(
-              '\n<p style="color: %s; font-size: 10px; font-style: italic; margin-top: 4px;">',
+              '\n<p style="color: %s; font-size: 13px; font-style: italic; margin-top: 4px;">',
               dark_muted
             ),
             "CodexBar reflects actual Anthropic + OpenAI invoiced costs. ",
@@ -1206,7 +1206,7 @@ with our 4-component session IDs.
     paste0(
       sprintf('\n<h3 style="color: %s; margin-top: 20px;">Provider usage (CodexBar)</h3>',
               accent_purple),
-      sprintf('<p style="color: %s; font-size: 11px; font-style: italic;">', dark_muted),
+      sprintf('<p style="color: %s; font-size: 14px; font-style: italic;">', dark_muted),
       "CodexBar data not yet available.",
       "</p>",
       "<!-- QA:codexbar_section=error -->"
@@ -1215,14 +1215,14 @@ with our 4-component session IDs.
   email_body <- paste0(email_body, codexbar_html)
 
   email_body <- paste0(email_body, sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
-<p style="color: %s; font-size: 12px;">
+<p style="color: %s; font-size: 15px;">
   <a href="https://github.com/JohnGavin/llmtelemetry" style="color: %s;">llmtelemetry project</a> |
   <a href="https://johngavin.github.io/llmtelemetry/" style="color: %s;">Dashboard</a> |
   Refresh: <code style="background-color: %s; padding: 2px 6px; border-radius: 3px; color: %s;">bash exec/refresh_and_preserve.sh</code>
 </p>
 
 <!-- Footnotes -->
-<div style="margin-top: 30px; border-top: 1px solid %s; padding-top: 10px; color: %s; font-size: 10px;">
+<div style="margin-top: 30px; border-top: 1px solid %s; padding-top: 10px; color: %s; font-size: 13px;">
   <strong>Definitions:</strong><br>
   <sup>1</sup> <strong>Cost:</strong> Total cost in USD. Codex figures are estimates from <code>codex_pricing.json</code> and marked <em>(est)</em>.<br>
   <sup>2</sup> <strong>Days:</strong> Number of days in the reporting period.<br>
