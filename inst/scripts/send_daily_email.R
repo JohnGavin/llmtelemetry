@@ -963,29 +963,41 @@ with our 4-component session IDs.
       rv_data <- tryCatch(fromJSON(rv_db_path), error = function(e) NULL)
       if (!is.null(rv_data) && is.list(rv_data)) {
         pulse     <- rv_data$pulse
-        n_new_24h <- pulse$n_new_24h              %||% 0
-        n_res_24h <- pulse$n_resolved_24h         %||% 0
+        # 24h metrics (computed by export_dashboard_data.R from
+        # roborev_review_lifecycle). Render em-dash when a key is absent/NA so a
+        # pre-#336 JSON degrades honestly instead of showing a fake 0.
+        fmt24 <- function(v) {
+          if (is.null(v) || length(v) == 0L || is.na(v)) return("&mdash;")
+          format(as.integer(v), big.mark = ",")
+        }
+        v_new_24h <- fmt24(pulse$n_new_24h)
+        v_res_24h <- fmt24(pulse$n_resolved_24h)
+        v_clo_24h <- fmt24(pulse$n_closed_24h)
         n_open    <- pulse$n_open                 %||% 0
         n_loops   <- pulse$n_loops                %||% 0
         n_esc     <- pulse$n_escalate             %||% 0
         n_esc_fil <- pulse$n_escalate_issues_filed %||% 0
         roborev_html <- sprintf(
           '\n<h3 style="color: %s; margin-top: 20px;">Roborev (llmtelemetry, last 24h)</h3>
-<table style="border-collapse: collapse; max-width: 400px;">
+<table style="border-collapse: collapse; max-width: 440px;">
   <tr style="background-color: %s;">
     <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Metric</th>
     <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Value</th>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">New findings</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">New findings (24h)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Resolved</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Resolved via fix-commit (24h)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Open total</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Auto-closed (24h)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
+  </tr>
+  <tr style="background-color: %s;">
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Open total (cumulative)</td>
     <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d</td>
   </tr>
   <tr style="background-color: %s;">
@@ -998,21 +1010,21 @@ with our 4-component session IDs.
   </tr>
 </table>
 <p style="font-size: 13px; color: %s; margin-top: 4px; line-height: 1.5;">
-  <strong>New findings:</strong> roborev review rows inserted in the last 24&nbsp;h (review_started_at &ge; now &minus; 24h).<br>
-  <strong>Resolved:</strong> reviews closed via fix-commit link (<code>fix_commit_sha IS NOT NULL</code>) in the last 24&nbsp;h.<br>
-  <strong>Open total (since inception):</strong> cumulative open reviews (state &ne; closed and not resolved).<br>
+  <strong>New findings (24h):</strong> reviews created in the last 24&nbsp;h (<code>created_at &ge; now &minus; 24h</code>).<br>
+  <strong>Resolved via fix-commit (24h):</strong> reviews with a fix-commit in the last 24&nbsp;h (<code>fix_commit_sha</code> set, <code>fix_commit_at</code> within 24h).<br>
+  <strong>Auto-closed (24h):</strong> reviews closed in the last 24&nbsp;h (<code>closed_at &ge; now &minus; 24h</code>).<br>
+  <strong>Open total (cumulative):</strong> open reviews since inception (<code>close_reason IS NULL</code>).<br>
   <strong>Active loops (Tier&nbsp;2+) / Stuck loops (Tier&nbsp;3, no ack):</strong>
-  <!-- TODO(llmtelemetry#277): link to loop-monitor tier definitions once rule doc path confirmed.
-       Placeholder: Tier definitions — see ~/.claude/rules/<loop-monitor-rule> -->
   loop-monitor tiers — Tier&nbsp;2 = repeated finding without fix; Tier&nbsp;3 = escalated with no acknowledgement.
 </p>
 <!-- QA:roborev_section=1 -->',
           accent_orange, accent_orange, dark_border, dark_border,
-          dark_card,    dark_border, dark_text, dark_border, dark_text, n_new_24h,
-          dark_row_alt, dark_border, dark_text, dark_border, accent_green, n_res_24h,
-          dark_card,    dark_border, dark_text, dark_border, dark_text, n_open,
-          dark_row_alt, dark_border, dark_text, dark_border, dark_text, n_loops,
-          dark_card,    dark_border, dark_text, dark_border,
+          dark_card,    dark_border, dark_text, dark_border, dark_text, v_new_24h,
+          dark_row_alt, dark_border, dark_text, dark_border, accent_green, v_res_24h,
+          dark_card,    dark_border, dark_text, dark_border, dark_text, v_clo_24h,
+          dark_row_alt, dark_border, dark_text, dark_border, dark_text, n_open,
+          dark_card,    dark_border, dark_text, dark_border, dark_text, n_loops,
+          dark_row_alt, dark_border, dark_text, dark_border,
           if (n_esc > 0) "#ff5555" else dark_text,
           n_esc, dark_muted, n_esc_fil,
           dark_muted  # caption <p> color
