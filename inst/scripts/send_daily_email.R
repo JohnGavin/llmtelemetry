@@ -745,28 +745,9 @@ with our 4-component session IDs.
 </div>
 
 %s
-%s
-%s
-%s
-
-<h3 style="color: %s;">Summary</h3>
-<table style="border-collapse: collapse; width: 100%%; font-size: 14px;">
-  <tr style="background-color: %s; color: white;">
-    <th style="padding: 6px; border: 1px solid %s;">Source</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Cost<sup>1</sup></th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">$/Day</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Tok/Day</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Days<sup>2</sup></th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Sessions<sup>3</sup></th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Entries<sup>4</sup></th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Start Date</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">End Date</th>
-  </tr>',
+%s',
   dark_bg, dark_text, accent_orange, today, dark_muted, cache_time, accent_blue,
-  blocks_html, daily_model_html, projects_html, sessions_html,
-  accent_green,
-  dark_row_alt, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border)
+  blocks_html, daily_model_html)
 
   row_ccusage <- sprintf('
   <!-- ccusage Row -->
@@ -884,13 +865,34 @@ with our 4-component session IDs.
       dark_border, dark_muted, as.character(cx_end))
   }
 
-  # Order: Claude-usage sources first (ccusage, cmonitor), then other models
-  # (Codex, Gemini) — so usage-measurement sources and models aren't intermixed.
-  email_body <- paste0(email_header, row_ccusage, row_cmonitor, row_codex,
-                       row_gemini, "\n</table>")
+  # --- Build Summary section (order: Claude-usage sources first (ccusage,
+  # cmonitor), then other models (Codex, Gemini) — so usage-measurement
+  # sources and models aren't intermixed). Captured as a variable (not
+  # appended to email_body) so it can be placed later in the body — see
+  # target body order in the item-7 email reorder.
+  summary_html <- paste0(
+    sprintf('\n<h3 style="color: %s;">Summary</h3>
+<table style="border-collapse: collapse; width: 100%%; font-size: 14px;">
+  <tr style="background-color: %s; color: white;">
+    <th style="padding: 6px; border: 1px solid %s;">Source</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Cost<sup>1</sup></th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">$/Day</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Tok/Day</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Days<sup>2</sup></th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Sessions<sup>3</sup></th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Entries<sup>4</sup></th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Start Date</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">End Date</th>
+  </tr>',
+      accent_green,
+      dark_row_alt, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border),
+    row_ccusage, row_cmonitor, row_codex, row_gemini,
+    "\n</table>"
+  )
 
   # Weekly Cost
-  email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s;">Weekly Cost (Claude)</h3>
+  weekly_cost_html <- sprintf('\n<h3 style="color: %s;">Weekly Cost (Claude)</h3>
 <table style="border-collapse: collapse; max-width: 400px;">
   <tr style="background-color: %s;">
     <th style="padding: 8px; border: 1px solid %s; color: white;">Period</th>
@@ -918,10 +920,10 @@ with our 4-component session IDs.
      dark_card, dark_border, dark_text, dark_border, accent_green, dollar(week1$cost),
      dark_row_alt, dark_border, dark_text, dark_border, dark_text, dollar(week2$cost),
      dark_card, dark_border, dark_text, dark_border, dark_text, dollar(week3$cost),
-     dark_row_alt, dark_border, dark_text, dark_border, dark_text, dollar(week4$cost)))
+     dark_row_alt, dark_border, dark_text, dark_border, dark_text, dollar(week4$cost))
 
   # Weekly Tokens
-  email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s;">Weekly Tokens (Claude)</h3>
+  weekly_tok_html <- sprintf('\n<h3 style="color: %s;">Weekly Tokens (Claude)</h3>
 <table style="border-collapse: collapse; max-width: 400px;">
   <tr style="background-color: %s;">
     <th style="padding: 8px; border: 1px solid %s; color: white;">Period</th>
@@ -949,7 +951,15 @@ with our 4-component session IDs.
      dark_card, dark_border, dark_text, dark_border, accent_blue, millions(week1$tokens),
      dark_row_alt, dark_border, dark_text, dark_border, dark_text, millions(week2$tokens),
      dark_card, dark_border, dark_text, dark_border, dark_text, millions(week3$tokens),
-     dark_row_alt, dark_border, dark_text, dark_border, dark_text, millions(week4$tokens)))
+     dark_row_alt, dark_border, dark_text, dark_border, dark_text, millions(week4$tokens))
+
+  # Side-by-side layout for the two weekly tables (email-safe: outer <table>
+  # with two <td valign="top"> cells — no flexbox). Narrow email clients that
+  # don't respect inline widths will stack the cells, which is acceptable.
+  weekly_side_by_side <- sprintf(
+    '\n<table style="border-collapse: collapse; width: 100%%;"><tr><td valign="top" style="padding-right: 16px;">%s</td><td valign="top">%s</td></tr></table>',
+    weekly_cost_html, weekly_tok_html
+  )
 
   # (Time Block Activity moved to top — see blocks_html above)
 
@@ -1036,7 +1046,8 @@ with our 4-component session IDs.
   }, error = function(e) {
     message("Roborev summary not available: ", e$message)
   })
-  email_body <- paste0(email_body, roborev_html)
+  # roborev_html kept as a variable (not appended to email_body here) — its
+  # position in the body is set by the final assembly below.
 
   # --- CodexBar section: live limits/credits + cost reconciliation ---
   # Graceful: renders a one-line note when the JSON files are absent (normal
@@ -1226,9 +1237,10 @@ with our 4-component session IDs.
       "<!-- QA:codexbar_section=error -->"
     )
   })
-  email_body <- paste0(email_body, codexbar_html)
+  # codexbar_html kept as a variable (not appended to email_body here) — its
+  # position in the body is set by the final assembly below.
 
-  email_body <- paste0(email_body, sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
+  footer_html <- sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
 <p style="color: %s; font-size: 15px;">
   <a href="https://github.com/JohnGavin/llmtelemetry" style="color: %s;">llmtelemetry project</a> |
   <a href="https://johngavin.github.io/llmtelemetry/" style="color: %s;">Dashboard</a> |
@@ -1245,7 +1257,15 @@ with our 4-component session IDs.
   <strong>Source:</strong> <em>ccusage/Gemini</em> (this R package) vs <em>cmonitor</em> (Rust-based system monitor) vs <em>Codex</em> (OpenAI Codex OTEL logs).
 </div>
 </div>
-', dark_border, dark_muted, accent_blue, accent_blue, dark_card, dark_text, dark_border, dark_muted))
+', dark_border, dark_muted, accent_blue, accent_blue, dark_card, dark_text, dark_border, dark_muted)
+
+  # --- Final body assembly (item 7 reorder) ---
+  # Target order: Time Block Activity + Daily model breakdown (both already
+  # inside email_header) -> Weekly Cost/Tokens (side by side) -> CodexBar ->
+  # Top Projects -> Top Sessions -> Summary -> Roborev -> footer.
+  email_body <- paste0(email_header, weekly_side_by_side, codexbar_html,
+                       projects_html, sessions_html, summary_html,
+                       roborev_html, footer_html)
 }
 
 # --- Freshness guard: prepend stale-data banner if data is old (#309) ---
