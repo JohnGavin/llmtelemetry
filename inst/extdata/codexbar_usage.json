@@ -24,55 +24,64 @@
     }
   },
   {
-    "pace": {
-      "secondary": {
-        "stage": "farBehind",
-        "expectedUsedPercent": 90,
-        "summary": "38% in reserve | Expected 90% used | Lasts until reset",
-        "willLastToReset": true,
-        "deltaPercent": -38
-      }
-    },
     "version": "2.1.220",
-    "provider": "claude",
     "source": "web",
     "usage": {
+      "updatedAt": "2026-08-01T10:10:18Z",
+      "secondary": {
+        "usedPercent": 0,
+        "windowMinutes": 10080,
+        "resetsAt": "2026-08-08T00:00:00Z",
+        "resetDescription": "Aug 8 at 1:00AM"
+      },
       "tertiary": {},
+      "providerCost": {
+        "period": "Monthly cap",
+        "limit": 0,
+        "updatedAt": "2026-08-01T10:10:17Z",
+        "used": 0,
+        "currencyCode": "GBP"
+      },
       "primary": {
+        "usedPercent": 0,
         "windowMinutes": 300,
-        "usedPercent": 0
+        "resetsAt": "2026-08-01T11:50:00Z",
+        "resetDescription": "Aug 1 at 12:50PM"
       },
       "extraRateWindows": [
         {
-          "id": "claude-routines",
+          "title": "Daily Routines",
           "window": {
-            "windowMinutes": 10080,
-            "usedPercent": 0
+            "usedPercent": 0,
+            "windowMinutes": 10080
           },
-          "title": "Daily Routines"
+          "id": "claude-routines"
         },
         {
-          "id": "claude-weekly-scoped-fable",
+          "title": "Fable only",
           "window": {
-            "windowMinutes": 10080,
-            "usedPercent": 0
+            "usedPercent": 0,
+            "windowMinutes": 10080
           },
-          "title": "Fable only"
+          "id": "claude-weekly-scoped-fable"
         }
-      ],
-      "providerCost": {
-        "period": "Monthly cap",
-        "used": 0,
-        "currencyCode": "GBP",
-        "updatedAt": "2026-07-31T07:01:48Z",
-        "limit": 0
+      ]
+    },
+    "provider": "claude",
+    "pace": {
+      "primary": {
+        "stage": "farBehind",
+        "expectedUsedPercent": 67,
+        "deltaPercent": -67,
+        "summary": "67% in reserve | Expected 67% used | Lasts until reset",
+        "willLastToReset": true
       },
-      "updatedAt": "2026-07-31T07:01:48Z",
       "secondary": {
-        "windowMinutes": 10080,
-        "resetsAt": "2026-08-01T00:00:00Z",
-        "usedPercent": 52,
-        "resetDescription": "Aug 1 at 1:00AM"
+        "stage": "behind",
+        "expectedUsedPercent": 6,
+        "deltaPercent": -6,
+        "summary": "6% in reserve | Expected 6% used | Lasts until reset",
+        "willLastToReset": true
       }
     }
   },
