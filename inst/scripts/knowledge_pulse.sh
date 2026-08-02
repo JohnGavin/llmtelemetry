@@ -141,8 +141,11 @@ if [ -d "$WIKI_DIR" ]; then
 
   for f in "$WIKI_DIR"/*.md; do
     [ -f "$f" ] || continue
-    has_sources=$(grep -c '^## Sources' "$f" 2>/dev/null || echo "0")
-    has_ai=$(grep -c 'AI-inferred' "$f" 2>/dev/null || echo "0")
+    # grep -q, not grep -c: `grep -c` prints "0" AND exits 1 on no-match, so
+    # `$(grep -c ... || echo 0)` yields the two-line string "0\n0" and every
+    # subsequent [ ] test aborts with "integer expected".
+    if grep -q '^## Sources' "$f" 2>/dev/null; then has_sources=1; else has_sources=0; fi
+    if grep -q 'AI-inferred' "$f" 2>/dev/null; then has_ai=1; else has_ai=0; fi
 
     if [ "$has_sources" -gt 0 ] && [ "$has_ai" -eq 0 ]; then
       n_fully_sourced=$((n_fully_sourced + 1))
