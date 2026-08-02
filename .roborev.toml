@@ -1,0 +1,26 @@
+# roborev config — llmtelemetry
+#
+# exclude_patterns removes matching files from review diffs. A commit that
+# touches ONLY excluded files presents an empty diff, so roborev produces no
+# findings for it; commits that also touch real code (R/, scripts/) are still
+# reviewed normally.
+#
+# WHY: llmtelemetry is a high-volume AUTOMATED-DATA repo — ~400 commits/week,
+# effectively 100% bot-authored ("data: update telemetry data",
+# "chore: Auto-refresh ccusage cache"), each touching only generated data under
+# inst/extdata/ (and vignettes/data/). Reviewing regenerated JSON/parquet is
+# pure noise: on 2026-07-22 llmtelemetry alone drove 234 roborev findings in 7d
+# (104 High, 103 Medium) at a 16.7% close rate — vs single digits for every
+# other repo — because each data refresh got code-reviewed. Excluding the data
+# paths collapses that noise without hiding real bugs.
+#
+# Session-ledger files (CHANGELOG.md, .claude/CURRENT_WORK.md) are excluded per
+# the roborev-exclude-patterns rule (JohnGavin/llm#198): they record SHAs and
+# audit counts about themselves, so every fix-commit re-triggers the same
+# findings.
+exclude_patterns = [
+  "inst/extdata/**",
+  "vignettes/data/**",
+  "CHANGELOG.md",
+  ".claude/CURRENT_WORK.md",
+]

@@ -12,6 +12,53 @@ full refresh history.
 
 ## [Unreleased]
 
+> **feat/runiverse-helper (llm#761 — R-Universe API helper for CI-minute conservation, 2026-07-10):**
+> Added `R/runiverse.R` with two exported functions querying the R-Universe API
+> (`https://<universe>.r-universe.dev/api/packages`), re-implemented against the
+> live API rather than copied from any third-party helper (external-code-zero-trust):
+> `runiverse_packages(universe, package = NULL)` returns one tibble row per
+> package (package, version, title, maintainer(_email), owner, status,
+> registered, published, stars, downloads, usedby, devurl, pkgdown, upstream,
+> and a `jobs` list-column holding the raw `_jobs` build matrix); `runiverse_checks()`
+> unnests `jobs` into one row per package x build config with `check` as an
+> ordered factor (`OK < NOTE < WARNING < ERROR < FAIL`) and a derived `os` label.
+> Responses are cached on disk via `httr2::req_cache()`, matching the API's own
+> `Cache-Control: max-age=60` header. `httr2` moved from Suggests to Imports
+> (added to `default.R`/`default.nix` — cwd-safe regeneration, diff confined to
+> the httr2 addition). 35 new tests in `test-runiverse.R`, mocked via
+> `httr2::local_mocked_responses()` against a trimmed recorded fixture of
+> `https://johngavin.r-universe.dev/api/packages` (6 packages) — no live network
+> in the default test run. One live smoke test is opt-in only
+> (`LLMTELEMETRY_RUN_LIVE_TESTS=true`), additionally guarded by `skip_on_ci()` and
+> `skip_if_offline()`. Confirmed against the live fixture: `irishbuoys` shows
+> `check = "ERROR"` on `linux-devel-x86_64` (and on 6 of 9 build configs) while
+> `_status` at the package level reports `"success"` — the two fields track
+> different things (registration success vs. per-config R CMD check result).
+> Full test suite: `[ FAIL 8 | WARN 0 | SKIP 19 | PASS 2395 ]` — the 8 failures
+> are pre-existing on the branch tip (unrelated `johngavin`-PII-pattern and
+> `hf-push`/`export-dashboard-data` assertions), confirmed identical via a
+> `git stash` A/B baseline run before this change.
+
+> **Session 2026-07-02 (#322 Phase 2 Part B — trigger column + ccusage joinability):**
+>
+> **Schema:** `inst/schema/v1/sessions.sql` — added `trigger VARCHAR DEFAULT 'unknown'` column carrying per-session provenance (`scheduled`/`interactive`/`unknown`). `unknown` is the safe default; legacy rows are never relabelled `interactive`.
+>
+> **`rollup_sessions.R`:** `rollup_sessions()` writes `trigger = "unknown"` for JSON-backfill rows (unified_sessions.json has no trigger). `append_sessions_from_staging()` extracts `trigger` from staging payload; absent → `"unknown"`. Phase 2 migration: existing parquet without trigger column receives `"unknown"` before rbind (idempotent). New `aggregate_sessions_by_trigger()` exported — returns session counts and total duration by trigger, with optional time-window filter.
+>
+> **Joinability verdict (ccusage session IDs):** ccusage `type="session"` IDs use the 3-component form `sanitized@{project}@h{12hex}` (no timestamp), incompatible with our 4-component `sanitized@{project}@{iso8601}@h{12hex}` IDs and raw UUIDs. `lastActivity` is date-only, ruling out time-overlap joins. Cost attribution remains the Phase 1 block-window heuristic. See `aggregate_sessions_by_trigger()` docstring for the documented finding.
+>
+> **`send_daily_email.R`:** Added "Session Provenance (#322 Phase 2)" section showing accurate session counts and duration by trigger from sessions.parquet. Added provenance note below Time Block Activity table explaining the non-joinability. Updated footnote 3 to reference trigger-based provenance. Graceful degradation when parquet absent or pre-Phase-2.
+>
+> **Tests:** 32 new tests in `test-trigger-column.R` (all GREEN). Existing test suites unaffected (178 pass in rollup/append/schema filter).
+
+> **feat/#322 Phase 1 — time-window block trigger classifier (2026-07-01):**
+> Added `classify_block_trigger()` (exported) and `default_automation_windows()` (internal) to `R/ccusage.R`.
+> A whole 5-hour billing block is classified `"scheduled"` iff its `[block_start_hour, block_end_hour]` interval falls entirely inside the overnight window `[0, 7]`.  All other blocks are `"interactive"`.
+> The 00:00–05:00 billing block (overnight digest, config_pulse, launchd routines) is the only "scheduled" block under the current window config.
+> Mixed blocks (e.g. 05:00–10:00, containing the 09:00 roborev poller alongside interactive morning work) are classified `"interactive"` and their cost is attributed accordingly — a documented Phase 1 approximation, superseded by Phase 2 per-session provenance (#322).
+> Modified `inst/scripts/send_daily_email.R`: local `classify_block_trigger_local()` added; Time Block Activity table now shows a Phase 1 heuristic note and a per-day Scheduled-automated vs Interactive cost+token breakdown row beneath each day header.
+> 22 new tests in `tests/testthat/test-ccusage-block-trigger.R` (RED→GREEN verified).
+
 > **Session 2026-06-22 (roborev backlog clear + #311 Validation Health card re-point + dashboard deploy):**
 > **Roborev backlog cleared:** closed the 1 unaddressed failing verdict (#6962, commit `b818680b`). Its freshness concern was already fixed; the missing `cross_check`/`deficit_pct` was traced to the #281 Phase 5 ccusage deprecation, not a regression. Verdict backlog now **0 unaddressed**. (The separate `overview.failed` count is codex-CLI execution crashes — infra noise, not findings.)
 > **#311 implemented — Option B (re-point `cross_check` to the live cmonitor-rs secondary):**

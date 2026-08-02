@@ -64,7 +64,8 @@ test_that("parquet has exactly the v1 column set — no extra, no missing", {
 
   expected_cols <- c(
     "session_id", "project", "canonical_project", "started_at", "ended_at",
-    "duration_min", "agent", "source", "working_dir", "valid_from"
+    "duration_min", "agent", "source", "working_dir", "valid_from",
+    "trigger"   # Phase 2 (#322): per-session provenance tag
   )
   expect_equal(sort(names(back)), sort(expected_cols))
 })
@@ -214,7 +215,9 @@ make_session_stop_r7 <- function(
 }
 
 # Helper: write minimal parquet with given session_ids
-write_parquet_r7 <- function(session_ids, parquet_path) {
+# include_trigger controls whether the trigger column is present, to allow
+# testing the Phase 2 migration path (legacy parquet has no trigger column).
+write_parquet_r7 <- function(session_ids, parquet_path, include_trigger = TRUE) {
   rows <- data.frame(
     session_id        = session_ids,
     project           = rep("test_proj", length(session_ids)),
@@ -228,6 +231,9 @@ write_parquet_r7 <- function(session_ids, parquet_path) {
     valid_from        = as.POSIXct("2026-01-01 00:00:00", tz = "UTC"),
     stringsAsFactors  = FALSE
   )
+  if (include_trigger) {
+    rows$trigger <- "unknown"
+  }
   dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
   con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)

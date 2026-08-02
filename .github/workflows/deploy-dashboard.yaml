@@ -18,7 +18,10 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: false
+  # This repo deploys on every data commit (inst/extdata/**), so queued runs
+  # pile up and collide on the single Pages deployment ("Deployment failed, try
+  # again later"). Cancel superseded runs — only the latest data needs to deploy.
+  cancel-in-progress: true
 
 jobs:
   build-deploy:
@@ -77,7 +80,7 @@ jobs:
           python3 << 'PYEOF'
           import json, os, sys
           data_dir = "vignettes/data"
-          critical = ["git_commits",
+          critical = ["git_commits", "git_commits_by_project",
                       "git_bus_factor", "git_velocity", "git_timing",
                       "git_churn", "git_bugs"]
           # legacy_ccusage_daily/blocks: frozen snapshots since Phase 5a (#281/#302).
@@ -369,6 +372,14 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
+        uses: actions/deploy-pages@v4
+        # "Deployment failed, try again later." is a transient GitHub Pages error;
+        # tolerate the first attempt and retry once below.
+        continue-on-error: true
+
+      - name: Deploy to GitHub Pages (retry transient failure)
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
 
       - name: Verify deployed parquet (DuckDB-WASM guard)

@@ -28,7 +28,8 @@ test_that("sessions table has the v1 column set with correct types", {
 
   expected_cols <- c(
     "session_id", "project", "canonical_project", "started_at", "ended_at",
-    "duration_min", "agent", "source", "working_dir", "valid_from"
+    "duration_min", "agent", "source", "working_dir", "valid_from",
+    "trigger"   # Phase 2 (#322): per-session provenance tag
   )
   expect_equal(sort(cols$column_name), sort(expected_cols))
 

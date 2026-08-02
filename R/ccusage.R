@@ -1054,3 +1054,105 @@ get_block_history <- function(days = 3, cache_dir = NULL) {
 
   invisible(recent_blocks)
 }
+
+# ---------------------------------------------------------------------------
+# Phase 1: time-window block trigger classifier
+# ---------------------------------------------------------------------------
+
+#' Default automation windows for Phase 1 block classification
+#'
+#' @description
+#' Returns the list of hour-range windows that are considered fully automated.
+#' A 5-hour billing block is classified as `"scheduled"` only when its
+#' `[block_start_hour, block_end_hour]` interval is entirely contained within
+#' one of these windows.
+#'
+#' **This is the single place to edit when adding or removing automation
+#' schedules.** Each element is a named list with `start` (inclusive) and
+#' `end` (inclusive) integer hours (0–24 clock, where 25 = 01:00 next day).
+#'
+#' Current automation windows:
+#' - **overnight** `[0, 7]`: Overnight maintenance band. The 00:00–05:00
+#'   billing block falls entirely inside this window. Jobs include the
+#'   overnight digest, `config_pulse`, launchd nightly routines.
+#'
+#' Note: the roborev business-hours poller (Mon–Fri 09:00/13:00/17:00) fires
+#' inside blocks that also contain interactive work, so no purely-automated
+#' window is defined for those slots. They are classified `"interactive"` by
+#' Phase 1 and will be split accurately in Phase 2 (per-session provenance,
+#' issue #322).
+#'
+#' @return Named list of automation windows; each element has `$start` and
+#'   `$end` integer hour fields.
+#'
+#' @seealso [classify_block_trigger()] which consumes this list.
+#' @keywords internal
+default_automation_windows <- function() {
+  list(
+    # Overnight maintenance band: covers the 00:00-05:00 billing block.
+    # Jobs: overnight digest, config_pulse, launchd nightly routines.
+    # The 05:00-10:00 block straddles the 07:00 boundary and is interactive.
+    overnight = list(start = 0L, end = 7L)
+  )
+}
+
+#' Classify billing blocks as scheduled-automated or interactive (Phase 1)
+#'
+#' @description
+#' Phase 1 heuristic classifier for 5-hour ccusage billing blocks.  A block is
+#' tagged `"scheduled"` **only** when its entire window `[block_start_hour,
+#' block_end_hour]` falls inside one of the known automation windows returned
+#' by [default_automation_windows()].  All other blocks are `"interactive"`.
+#'
+#' **Known approximation (Phase 1):** Billing blocks that contain *both*
+#' automated jobs and interactive work (e.g. the 05:00–10:00 block, which
+#' holds both the overnight tail and the 09:00 roborev poller alongside morning
+#' interactive sessions) are labelled `"interactive"` and the automated
+#' portion's cost is misattributed.  This is acceptable for a labelled first
+#' cut.  Accurate attribution requires per-session provenance tags (Phase 2,
+#' issue #322).
+#'
+#' @param block_start_hour Integer vector.  Hour of day (0–23) when the billing
+#'   block starts.  For standard ccusage blocks: one of 0, 5, 10, 15, 20.
+#' @param block_end_hour Integer vector.  Hour of day (5–25) when the billing
+#'   block ends.  Use 25 for the 20:00–01:00 block that crosses midnight.
+#' @param windows List of automation windows; defaults to
+#'   [default_automation_windows()].  Each element must have `$start` and
+#'   `$end` numeric/integer fields.  Supply a custom list to override the
+#'   defaults in tests or different deployment environments.
+#'
+#' @return Character vector (`"scheduled"` or `"interactive"`), same length as
+#'   `block_start_hour`.
+#'
+#' @examples
+#' # Overnight block (00:00-05:00): falls inside [0, 7] -> scheduled
+#' classify_block_trigger(0L, 5L)
+#'
+#' # 05:00-10:00 block straddles 07:00 boundary -> interactive
+#' classify_block_trigger(5L, 10L)
+#'
+#' # Vectorised over all five daily blocks
+#' classify_block_trigger(c(0L, 5L, 10L, 15L, 20L), c(5L, 10L, 15L, 20L, 25L))
+#'
+#' @seealso [default_automation_windows()] for the window configuration.
+#' @export
+classify_block_trigger <- function(block_start_hour,
+                                   block_end_hour,
+                                   windows = default_automation_windows()) {
+  stopifnot(
+    is.numeric(block_start_hour),
+    is.numeric(block_end_hour),
+    length(block_start_hour) == length(block_end_hour),
+    is.list(windows)
+  )
+
+  vapply(seq_along(block_start_hour), function(i) {
+    h_start <- block_start_hour[[i]]
+    h_end   <- block_end_hour[[i]]
+    # A block is scheduled iff [h_start, h_end] is fully inside ANY window.
+    is_sched <- any(vapply(windows, function(w) {
+      h_start >= w$start && h_end <= w$end
+    }, logical(1L)))
+    if (is_sched) "scheduled" else "interactive"
+  }, character(1L))
+}

@@ -49,7 +49,7 @@ if (send_only) {
   message("--send-only: using pre-validated HTML from ", qa_file)
 
   london_time <- format(Sys.time(), tz = "Europe/London", "%Y-%m-%d %H:%M")
-  dark_muted  <- "#a0a0a0"  # needed for footer only
+  dark_muted  <- "#ffffff"  # needed for footer only
   gmail_user  <- Sys.getenv("GMAIL_USERNAME")
   gmail_pass  <- Sys.getenv("GMAIL_APP_PASSWORD")
 
@@ -146,6 +146,29 @@ normalize_to_char_vec <- function(x) {
   ) |> (\(v) if (length(v) == 0) character(0) else v)()
 }
 
+# ---------------------------------------------------------------------------
+# Phase 1 block trigger classifier (local copy — no package dependency needed)
+# Edit .automation_windows to add/remove known automation schedules.
+# A block is "scheduled" iff its [start_hour, end_hour] is fully inside a window.
+# ---------------------------------------------------------------------------
+.automation_windows <- list(
+  # Overnight maintenance band: covers the 00:00-05:00 billing block (block_hour=0).
+  # Jobs: overnight digest, config_pulse, launchd nightly routines.
+  # The 05:00-10:00 block straddles the 07:00 boundary -> interactive.
+  # roborev pollers (09:00/13:00/17:00) fire inside mixed blocks -> interactive.
+  overnight = list(start = 0L, end = 7L)
+)
+classify_block_trigger_local <- function(block_start_hour, block_end_hour,
+                                         windows = .automation_windows) {
+  vapply(seq_along(block_start_hour), function(i) {
+    h_s <- block_start_hour[[i]]
+    h_e <- block_end_hour[[i]]
+    is_sched <- length(windows) > 0L &&
+      any(vapply(windows, function(w) h_s >= w$start && h_e <= w$end, logical(1L)))
+    if (is_sched) "scheduled" else "interactive"
+  }, character(1L))
+}
+
 # Parse daily data
 parse_daily <- function(json) {
   if (is.null(json$projects)) return(NULL)
@@ -237,7 +260,7 @@ dark_bg <- "#1a1a2e"
 dark_card <- "#16213e"
 dark_row_alt <- "#0f3460"
 dark_text <- "#e8e8e8"
-dark_muted <- "#a0a0a0"
+dark_muted <- "#ffffff"
 dark_border <- "#2a2a4a"
 accent_green <- "#00d26a"
 accent_blue <- "#4fc3f7"
@@ -293,8 +316,8 @@ if (cache_time != "Unknown") {
       ))
       stale_banner_html <- sprintf(
         '\n<div style="background-color: #5c1a00; border: 2px solid #ff6600; padding: 14px 18px; margin-bottom: 16px; border-radius: 4px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
-  <strong style="color: #ff9933; font-size: 14px;">&#9888; STALE DATA</strong>
-  <span style="color: #ffcc99; font-size: 13px; margin-left: 8px;">
+  <strong style="color: #ff9933; font-size: 17px;">&#9888; STALE DATA</strong>
+  <span style="color: #ffcc99; font-size: 16px; margin-left: 8px;">
     Latest data is <strong>%.0fh old</strong> (last seen: %s). ETL rollup may be broken
     &#8212; check <code style="background:#3a1000; padding:1px 4px; border-radius:2px;">run_rollup.R</code>
     and <code style="background:#3a1000; padding:1px 4px; border-radius:2px;">export_and_deploy_data.sh</code>
@@ -424,12 +447,6 @@ if (!has_data) {
               }
             }
           }    
-    # Get recent Gemini sessions
-    gm_sessions <- dbGetQuery(gm_con, "
-      SELECT sessionId, total_cost, total_tokens, start_time 
-      FROM sessions_summary 
-      ORDER BY last_updated DESC LIMIT 5
-    ")
     gm_sessions_count <- dbGetQuery(gm_con, "SELECT COUNT(*) FROM sessions_summary")[[1]]
     dbDisconnect(gm_con, shutdown = TRUE)
   }
@@ -450,7 +467,12 @@ if (!has_data) {
         date = as.Date(start),
         cost_per_hr = ifelse(duration_hrs > 0, costUSD / duration_hrs, 0),
         tokens_per_hr = ifelse(duration_hrs > 0, totalTokens / duration_hrs, 0),
-        models_list = map(models, normalize_to_char_vec)
+        models_list = map(models, normalize_to_char_vec),
+        # Phase 1: derive billing-block hour from activity start, classify trigger.
+        # block_start_hour is one of: 0, 5, 10, 15, 20 (5-hour billing windows).
+        block_start_hour = floor(as.integer(format(start, "%H")) / 5L) * 5L,
+        block_end_hr = block_start_hour + 5L,
+        trigger = classify_block_trigger_local(block_start_hour, block_end_hr)
       ) |>
       filter(!is.na(end), costUSD > 0)
 
@@ -463,15 +485,16 @@ if (!has_data) {
 
       if (nrow(activity_df) > 0) {
         blocks_html <- sprintf('\n<h3 style="color: %s;">Time Block Activity (Last 5 Days)</h3>
+<p style="color: #ffffff; font-size: 13px; margin: 2px 0 6px 0;">&#9888; <strong>Phase 1 heuristic</strong>: whole 5h billing blocks are classified by time-window. Mixed business-hours blocks (e.g. 05:00&#8211;10:00 containing the 09:00 roborev poller) are approximate and attributed entirely to Interactive. Accurate split pending per-session provenance (<a href="https://github.com/JohnGavin/llmtelemetry/issues/322" style="color:#4fc3f7;">#322 Phase&#160;2</a>). &#9889;&nbsp;=&nbsp;Scheduled &nbsp; &#128100;&nbsp;=&nbsp;Interactive</p>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Start</th>
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">End</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Duration</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">$/hr</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tok/hr</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Start</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">End</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Duration</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">$/hr</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Tok/hr</th>
   </tr>', accent_orange, "#607D8B",
               dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border)
 
@@ -490,11 +513,11 @@ if (!has_data) {
           d_cost_hr <- if (d_mins > 0) d_cost / (d_mins / 60) else 0
           day_label <- format(d, "%a %Y-%m-%d")
           blocks_html <- paste0(blocks_html, sprintf('\n  <tr style="background-color: #1a3a5c; font-weight: bold;">
-    <td colspan="2" style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">%s (%d blocks)</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td colspan="2" style="padding: 8px; border: 1px solid %s; font-size: 15px; color: %s;">%s (%d blocks)</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
     <td style="padding: 8px; border: 1px solid %s;"></td>
   </tr>',
             dark_border, "#ffffff", day_label, d_nblocks,
@@ -504,19 +527,43 @@ if (!has_data) {
             dark_border, accent_blue, comma(d_tokens), dark_border))
 
           day_blocks <- activity_df |> filter(date == d) |> arrange(desc(end))
+          # --- Phase 1 trigger summary sub-row (Scheduled vs Interactive) ---
+          trig_sched <- day_blocks[day_blocks$trigger == "scheduled", , drop = FALSE]
+          trig_inter <- day_blocks[day_blocks$trigger == "interactive", , drop = FALSE]
+          sched_cost <- sum(trig_sched$costUSD, na.rm = TRUE)
+          inter_cost <- sum(trig_inter$costUSD, na.rm = TRUE)
+          sched_tok  <- sum(trig_sched$totalTokens, na.rm = TRUE)
+          inter_tok  <- sum(trig_inter$totalTokens, na.rm = TRUE)
+          blocks_html <- paste0(blocks_html, sprintf(
+            '\n  <tr style="background-color: #0e2030;">
+    <td colspan="7" style="padding: 3px 8px; border: 1px solid %s; font-size: 13px;">
+      <span style="color: #80b4e0;">&#9889;&nbsp;Sched-auto: %s (%s&nbsp;tok)</span>
+      &nbsp;&bull;&nbsp;
+      <span style="color: #ffffff;">&#128100;&nbsp;Interactive: %s (%s&nbsp;tok)</span>
+    </td>
+  </tr>',
+            dark_border,
+            dollar(sched_cost), comma(sched_tok),
+            dollar(inter_cost), comma(inter_tok)))
+          # --- Per-block detail rows (tagged with trigger indicator) ---
           for (i in seq_len(nrow(day_blocks))) {
             bg <- if (i %% 2 == 0) dark_row_alt else dark_card
+            trig_icon <- if (identical(day_blocks$trigger[i], "scheduled"))
+              "<span style='color:#80b4e0;font-size:13px;'>&#9889;</span>&nbsp;"
+            else
+              "<span style='color:#ffffff;font-size:13px;'>&#128100;</span>&nbsp;"
+            start_label <- paste0(trig_icon, format(day_blocks$start[i], "%H:%M"))
             blocks_html <- paste0(blocks_html, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s; padding-left: 20px;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 13px; color: %s; padding-left: 20px;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
   </tr>',
               bg,
-              dark_border, dark_muted, format(day_blocks$start[i], "%H:%M"),
+              dark_border, dark_muted, start_label,
               dark_border, dark_muted, format(day_blocks$end[i], "%H:%M"),
               dark_border, dark_text, format_hhmm(day_blocks$duration_mins[i]),
               dark_border, accent_green, dollar(day_blocks$costUSD[i]),
@@ -526,6 +573,11 @@ if (!has_data) {
           }
         }
         blocks_html <- paste0(blocks_html, "</table>",
+          sprintf('\n<p style="color: %s; font-size: 13px; font-style: italic; margin-top: 6px;">
+Cost attribution by trigger type is not available: ccusage block IDs use format
+<code>sanitized@{project}@h{hash}</code> (3 components, no timestamp) — incompatible
+with our 4-component session IDs.
+</p>', dark_muted),
           sprintf("<!-- QA:blocks_grouped_by_day=%d -->", length(sorted_dates)),
           sprintf("<!-- QA:blocks_total=%d -->", nrow(activity_df)))
 
@@ -547,11 +599,11 @@ if (!has_data) {
           daily_model_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Daily Cost by Model (Last 5 Days)</h3>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Day</th>
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Model</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">$/MTok</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Day</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Model</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">$/MTok</th>
   </tr>', accent_purple, accent_purple,
             dark_border, dark_border, dark_border, dark_border, dark_border)
 
@@ -565,10 +617,10 @@ if (!has_data) {
             day_label <- format(d, "%a %Y-%m-%d")
             # Day total row
             daily_model_html <- paste0(daily_model_html, sprintf('\n  <tr style="background-color: #1a3a5c; font-weight: bold;">
-    <td style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; font-size: 12px; color: %s;">ALL</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
-    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 12px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; font-size: 15px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; font-size: 15px; color: %s;">ALL</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
+    <td style="padding: 8px; border: 1px solid %s; text-align: right; font-size: 15px; color: %s;">%s</td>
     <td style="padding: 8px; border: 1px solid %s;"></td>
   </tr>',
               dark_border, "#ffffff", day_label,
@@ -582,11 +634,11 @@ if (!has_data) {
               bg <- if (row_idx %% 2 == 0) dark_row_alt else dark_card
               m_name <- gsub("claude-", "", as.character(d_rows$model[j]))
               daily_model_html <- paste0(daily_model_html, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s;"></td>
-    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 10px; color: %s; padding-left: 20px;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
-    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 10px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 13px; color: %s;"></td>
+    <td style="padding: 4px 6px; border: 1px solid %s; font-size: 13px; color: %s; padding-left: 20px;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
+    <td style="padding: 4px 6px; border: 1px solid %s; text-align: right; font-size: 13px; color: %s;">%s</td>
   </tr>',
                 bg,
                 dark_border, dark_muted,
@@ -629,16 +681,16 @@ if (!has_data) {
       projects_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Top Projects by Cost</h3>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Project</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Total Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Project</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Total Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Tokens</th>
   </tr>', accent_orange, accent_orange, dark_border, dark_border, dark_border)
       for (i in seq_len(nrow(proj_totals))) {
         bg <- if (i %% 2 == 0) dark_row_alt else dark_card
         projects_html <- paste0(projects_html, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; font-size: 14px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
   </tr>', bg,
           dark_border, dark_text, as.character(proj_totals$project[i]),
           dark_border, accent_green, dollar(as.numeric(proj_totals$cost[i])),
@@ -649,29 +701,31 @@ if (!has_data) {
   }
 
   # --- Build Top Claude Sessions by Cost ---
+  # ccusage session records carry no start time (fields: sessionId,
+  # projectPath, totalCost, totalTokens, lastActivity, token breakdowns), so
+  # the "Session" column is replaced with the canonicalized project name
+  # instead of inventing a start time.
   sessions_html <- ""
   if (!is.null(session_data) && nrow(session_data) > 0) {
     top_sessions <- session_data |> arrange(desc(totalCost)) |> head(5)
     sessions_html <- sprintf('\n<h3 style="color: %s; margin-top: 20px;">Top Claude Sessions by Cost</h3>
 <table style="border-collapse: collapse; width: 100%%;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Session</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Last Active</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Project</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Cost</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Last Active</th>
   </tr>', accent_purple, accent_purple, dark_border, dark_border, dark_border, dark_border)
     for (i in seq_len(nrow(top_sessions))) {
       bg <- if (i %% 2 == 0) dark_row_alt else dark_card
-      session_name <- top_sessions$sessionId[i]
-      session_parts <- strsplit(gsub("^-", "", session_name), "-")[[1]]
-      if (length(session_parts) > 2) session_name <- paste(tail(session_parts, 2), collapse = "/")
+      project_name <- canonicalize_project(top_sessions$projectPath[i]) %||% "unknown"
       sessions_html <- paste0(sessions_html, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; font-size: 14px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
+    <td style="padding: 6px; border: 1px solid %s; font-size: 14px; color: %s;">%s</td>
   </tr>', bg,
-        dark_border, dark_text, session_name,
+        dark_border, dark_text, project_name,
         dark_border, accent_green, dollar(top_sessions$totalCost[i]),
         dark_border, accent_blue, millions(top_sessions$totalTokens[i]),
         dark_border, dark_muted, top_sessions$lastActivity[i]))
@@ -681,7 +735,7 @@ if (!has_data) {
 
   email_header <- sprintf('\n<div style="background-color: %s; color: %s; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
 <h2 style="color: %s; margin-bottom: 5px;">LLM Usage Report - %s</h2>
-<p style="color: %s; font-size: 12px; margin-top: 0;">Data through: %s</p>
+<p style="color: %s; font-size: 15px; margin-top: 0;">Data through: %s</p>
 
 <!-- Embedded Dashboard Link -->
 <div style="margin-bottom: 20px;">
@@ -691,33 +745,14 @@ if (!has_data) {
 </div>
 
 %s
-%s
-%s
-%s
-
-<h3 style="color: %s;">Summary</h3>
-<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">
-  <tr style="background-color: %s; color: white;">
-    <th style="padding: 6px; border: 1px solid %s;">Source</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Cost<sup>1</sup></th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">$/Day</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Tok/Day</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Days<sup>2</sup></th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Sessions<sup>3</sup></th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Entries<sup>4</sup></th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Start Date</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right;">End Date</th>
-  </tr>',
+%s',
   dark_bg, dark_text, accent_orange, today, dark_muted, cache_time, accent_blue,
-  blocks_html, daily_model_html, projects_html, sessions_html,
-  accent_green,
-  dark_row_alt, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border)
+  blocks_html, daily_model_html)
 
   row_ccusage <- sprintf('
   <!-- ccusage Row -->
   <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>ccusage</strong></td>
+    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>ccusage</strong> &middot; Claude</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
@@ -742,7 +777,7 @@ if (!has_data) {
   row_gemini <- sprintf('
   <!-- Gemini Row -->
   <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>Gemini</strong></td>
+    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>Gemini</strong> &middot; Google</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
@@ -767,7 +802,7 @@ if (!has_data) {
   row_cmonitor <- sprintf('
   <!-- cmonitor Row -->
   <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>cmonitor</strong></td>
+    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>cmonitor</strong> &middot; Claude</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
@@ -807,8 +842,8 @@ if (!has_data) {
     row_codex <- sprintf('
   <!-- Codex Row -->
   <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>Codex</strong></td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s <em style="font-size:9px; color:%s;">(est)</em></td>
+    <td style="padding: 6px; border: 1px solid %s; color: %s;"><strong>Codex</strong> &middot; OpenAI</td>
+    <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s <em style="font-size:13px; color:%s;">(est)</em></td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
     <td style="padding: 6px; border: 1px solid %s; text-align: right; color: %s;">%s</td>
@@ -830,100 +865,34 @@ if (!has_data) {
       dark_border, dark_muted, as.character(cx_end))
   }
 
-  # --- Codex by automation type section ---
-  codex_type_html <- ""
-  if (has_codex && "source" %in% names(codex_d)) {
-    # Build per-source summary from codex_s (per-thread detail) so that a single
-    # thread spanning multiple dates/models is counted exactly once in Sessions.
-    # Fall back to codex_d-derived n() if codex_s is unavailable or lacks source.
-    has_sessions_src <- !is.null(codex_s) && nrow(codex_s) > 0 &&
-      all(c("source", "thread_id") %in% names(codex_s))
-    cx_by_type <- if (has_sessions_src) {
-      codex_s |>
-        group_by(source) |>
-        summarise(
-          sessions  = dplyr::n_distinct(thread_id),
-          tokens    = sum(total_tokens,  na.rm = TRUE),
-          est_cost  = sum(est_cost_usd,  na.rm = TRUE),
-          .groups   = "drop"
-        ) |>
-        arrange(desc(est_cost))
-    } else {
-      codex_d |>
-        group_by(source) |>
-        summarise(
-          sessions  = n(),
-          tokens    = sum(total_tokens, na.rm = TRUE),
-          est_cost  = sum(est_cost_usd, na.rm = TRUE),
-          .groups   = "drop"
-        ) |>
-        arrange(desc(est_cost))
-    }
-
-    codex_type_html <- sprintf(
-      '\n<h3 style="color: %s; margin-top: 20px;">Codex by Automation Type</h3>
-<table style="border-collapse: collapse; width: 100%%;">
-  <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Type</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Sessions</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Total Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Est. Cost</th>
+  # --- Build Summary section (order: Claude-usage sources first (ccusage,
+  # cmonitor), then other models (Codex, Gemini) — so usage-measurement
+  # sources and models aren't intermixed). Captured as a variable (not
+  # appended to email_body) so it can be placed later in the body — see
+  # target body order in the item-7 email reorder.
+  summary_html <- paste0(
+    sprintf('\n<h3 style="color: %s;">Summary</h3>
+<table style="border-collapse: collapse; width: 100%%; font-size: 14px;">
+  <tr style="background-color: %s; color: white;">
+    <th style="padding: 6px; border: 1px solid %s;">Source</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Cost<sup>1</sup></th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">$/Day</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Tokens</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Tok/Day</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Days<sup>2</sup></th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Sessions<sup>3</sup></th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Entries<sup>4</sup></th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">Start Date</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right;">End Date</th>
   </tr>',
-      accent_orange, accent_orange,
-      dark_border, dark_border, dark_border, dark_border)
-
-    for (i in seq_len(nrow(cx_by_type))) {
-      bg <- if (i %% 2 == 0) dark_row_alt else dark_card
-      type_label <- switch(as.character(cx_by_type$source[i]),
-        "roborev"     = "Roborev jobs",
-        "interactive" = "Interactive",
-        as.character(cx_by_type$source[i]))
-      codex_type_html <- paste0(codex_type_html, sprintf(
-        '\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s <em style="font-size:9px;">(est)</em></td>
-  </tr>',
-        bg,
-        dark_border, dark_text, type_label,
-        dark_border, dark_text, comma(cx_by_type$sessions[i]),
-        dark_border, accent_blue, comma(cx_by_type$tokens[i]),
-        dark_border, accent_green, dollar(cx_by_type$est_cost[i])))
-    }
-    codex_type_html <- paste0(codex_type_html, "\n</table>",
-      "<!-- QA:codex_type_rows=", nrow(cx_by_type), " -->")
-
-    # Stale-pricing warning
-    pricing_path <- here::here("inst/extdata/codex_pricing.json")
-    if (file.exists(pricing_path)) {
-      pricing_meta <- tryCatch(
-        jsonlite::fromJSON(pricing_path),
-        error = function(e) NULL
-      )
-      if (!is.null(pricing_meta) && !is.null(pricing_meta$updated_at)) {
-        pricing_date <- tryCatch(as.Date(pricing_meta$updated_at), error = function(e) NA)
-        if (!is.na(pricing_date) &&
-            as.numeric(Sys.Date() - pricing_date) > 30) {
-          codex_type_html <- paste0(codex_type_html, sprintf(
-            '\n<p style="color: %s; font-size: 10px; font-style: italic; margin-top: 6px;">
-  Codex cost estimates use pricing from %s; verify
-  <a href="https://openai.com/api/pricing" style="color: %s;">openai.com/api/pricing</a>
-  if stale.
-</p>',
-            dark_muted,
-            format(pricing_date, "%Y-%m-%d"),
-            accent_blue))
-        }
-      }
-    }
-  }
-
-  email_body <- paste0(email_header, row_ccusage, row_gemini, row_cmonitor,
-                       row_codex, "\n</table>", codex_type_html)
+      accent_green,
+      dark_row_alt, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border, dark_border),
+    row_ccusage, row_cmonitor, row_codex, row_gemini,
+    "\n</table>"
+  )
 
   # Weekly Cost
-  email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s;">Weekly Cost (Claude)</h3>
+  weekly_cost_html <- sprintf('\n<h3 style="color: %s;">Weekly Cost (Claude)</h3>
 <table style="border-collapse: collapse; max-width: 400px;">
   <tr style="background-color: %s;">
     <th style="padding: 8px; border: 1px solid %s; color: white;">Period</th>
@@ -951,10 +920,10 @@ if (!has_data) {
      dark_card, dark_border, dark_text, dark_border, accent_green, dollar(week1$cost),
      dark_row_alt, dark_border, dark_text, dark_border, dark_text, dollar(week2$cost),
      dark_card, dark_border, dark_text, dark_border, dark_text, dollar(week3$cost),
-     dark_row_alt, dark_border, dark_text, dark_border, dark_text, dollar(week4$cost)))
+     dark_row_alt, dark_border, dark_text, dark_border, dark_text, dollar(week4$cost))
 
   # Weekly Tokens
-  email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s;">Weekly Tokens (Claude)</h3>
+  weekly_tok_html <- sprintf('\n<h3 style="color: %s;">Weekly Tokens (Claude)</h3>
 <table style="border-collapse: collapse; max-width: 400px;">
   <tr style="background-color: %s;">
     <th style="padding: 8px; border: 1px solid %s; color: white;">Period</th>
@@ -982,38 +951,17 @@ if (!has_data) {
      dark_card, dark_border, dark_text, dark_border, accent_blue, millions(week1$tokens),
      dark_row_alt, dark_border, dark_text, dark_border, dark_text, millions(week2$tokens),
      dark_card, dark_border, dark_text, dark_border, dark_text, millions(week3$tokens),
-     dark_row_alt, dark_border, dark_text, dark_border, dark_text, millions(week4$tokens)))
+     dark_row_alt, dark_border, dark_text, dark_border, dark_text, millions(week4$tokens))
+
+  # Side-by-side layout for the two weekly tables (email-safe: outer <table>
+  # with two <td valign="top"> cells — no flexbox). Narrow email clients that
+  # don't respect inline widths will stack the cells, which is acceptable.
+  weekly_side_by_side <- sprintf(
+    '\n<table style="border-collapse: collapse; width: 100%%;"><tr><td valign="top" style="padding-right: 16px;">%s</td><td valign="top">%s</td></tr></table>',
+    weekly_cost_html, weekly_tok_html
+  )
 
   # (Time Block Activity moved to top — see blocks_html above)
-
-  # Gemini Recent Sessions
-  if (exists("gm_sessions") && !is.null(gm_sessions) && nrow(gm_sessions) > 0) {
-    email_body <- paste0(email_body, sprintf('\n<h3 style="color: %s; margin-top: 20px;">Gemini Recent Sessions</h3>
-<table style="border-collapse: collapse; width: 100%%;">
-  <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Session ID</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Cost</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Tokens</th>
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Started</th>
-  </tr>', accent_blue, accent_blue, dark_border, dark_border, dark_border, dark_border))
-
-    for (i in seq_len(nrow(gm_sessions))) {
-      bg <- if (i %% 2 == 0) dark_row_alt else dark_card
-      email_body <- paste0(email_body, sprintf('\n  <tr style="background-color: %s;">
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%s</td>
-    <td style="padding: 6px; border: 1px solid %s; font-size: 11px; color: %s;">%s</td>
-  </tr>', 
-        bg,
-        dark_border, dark_text, gm_sessions$sessionId[i],
-        dark_border, accent_green, dollar(gm_sessions$total_cost[i]),
-        dark_border, accent_blue, millions(gm_sessions$total_tokens[i]),
-        dark_border, dark_muted, format(gm_sessions$start_time[i], "%Y-%m-%d %H:%M")
-      ))
-    }
-    email_body <- paste0(email_body, "</table>")
-  }
 
   # (Top Claude Sessions moved to top — see sessions_html/projects_html below)
 
@@ -1027,56 +975,68 @@ if (!has_data) {
       rv_data <- tryCatch(fromJSON(rv_db_path), error = function(e) NULL)
       if (!is.null(rv_data) && is.list(rv_data)) {
         pulse     <- rv_data$pulse
-        n_new_24h <- pulse$n_new_24h              %||% 0
-        n_res_24h <- pulse$n_resolved_24h         %||% 0
+        # 24h metrics (computed by export_dashboard_data.R from
+        # roborev_review_lifecycle). Render em-dash when a key is absent/NA so a
+        # pre-#336 JSON degrades honestly instead of showing a fake 0.
+        fmt24 <- function(v) {
+          if (is.null(v) || length(v) == 0L || is.na(v)) return("&mdash;")
+          format(as.integer(v), big.mark = ",")
+        }
+        v_new_24h <- fmt24(pulse$n_new_24h)
+        v_res_24h <- fmt24(pulse$n_resolved_24h)
+        v_clo_24h <- fmt24(pulse$n_closed_24h)
         n_open    <- pulse$n_open                 %||% 0
         n_loops   <- pulse$n_loops                %||% 0
         n_esc     <- pulse$n_escalate             %||% 0
         n_esc_fil <- pulse$n_escalate_issues_filed %||% 0
         roborev_html <- sprintf(
           '\n<h3 style="color: %s; margin-top: 20px;">Roborev (llmtelemetry, last 24h)</h3>
-<table style="border-collapse: collapse; max-width: 400px;">
+<table style="border-collapse: collapse; max-width: 440px;">
   <tr style="background-color: %s;">
-    <th style="padding: 6px; border: 1px solid %s; font-size: 11px; color: white;">Metric</th>
-    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 11px; color: white;">Value</th>
+    <th style="padding: 6px; border: 1px solid %s; font-size: 14px; color: white;">Metric</th>
+    <th style="padding: 6px; border: 1px solid %s; text-align: right; font-size: 14px; color: white;">Value</th>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">New findings</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">New findings (24h)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Resolved</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Resolved via fix-commit (24h)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Open total</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Auto-closed (24h)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%s</td>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Active loops (Tier 2+)</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Open total (cumulative)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d</td>
   </tr>
   <tr style="background-color: %s;">
-    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 11px; color: %s;">Stuck loops (Tier 3, no ack)</td>
-    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 11px; color: %s;">%d &nbsp; <span style="font-size:9px; color:%s;">[issues filed: %d]</span></td>
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Active loops (Tier 2+)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d</td>
+  </tr>
+  <tr style="background-color: %s;">
+    <td style="padding: 4px 8px; border: 1px solid %s; font-size: 14px; color: %s;">Stuck loops (Tier 3, no ack)</td>
+    <td style="padding: 4px 8px; border: 1px solid %s; text-align: right; font-size: 14px; color: %s;">%d &nbsp; <span style="font-size:13px; color:%s;">[issues filed: %d]</span></td>
   </tr>
 </table>
-<p style="font-size: 9px; color: %s; margin-top: 4px; line-height: 1.5;">
-  <strong>New findings:</strong> roborev review rows inserted in the last 24&nbsp;h (review_started_at &ge; now &minus; 24h).<br>
-  <strong>Resolved:</strong> reviews closed via fix-commit link (<code>fix_commit_sha IS NOT NULL</code>) in the last 24&nbsp;h.<br>
-  <strong>Open total (since inception):</strong> cumulative open reviews (state &ne; closed and not resolved).<br>
+<p style="font-size: 13px; color: %s; margin-top: 4px; line-height: 1.5;">
+  <strong>New findings (24h):</strong> reviews created in the last 24&nbsp;h (<code>created_at &ge; now &minus; 24h</code>).<br>
+  <strong>Resolved via fix-commit (24h):</strong> reviews with a fix-commit in the last 24&nbsp;h (<code>fix_commit_sha</code> set, <code>fix_commit_at</code> within 24h).<br>
+  <strong>Auto-closed (24h):</strong> reviews closed in the last 24&nbsp;h (<code>closed_at &ge; now &minus; 24h</code>).<br>
+  <strong>Open total (cumulative):</strong> open reviews since inception (<code>close_reason IS NULL</code>).<br>
   <strong>Active loops (Tier&nbsp;2+) / Stuck loops (Tier&nbsp;3, no ack):</strong>
-  <!-- TODO(llmtelemetry#277): link to loop-monitor tier definitions once rule doc path confirmed.
-       Placeholder: Tier definitions — see ~/.claude/rules/<loop-monitor-rule> -->
   loop-monitor tiers — Tier&nbsp;2 = repeated finding without fix; Tier&nbsp;3 = escalated with no acknowledgement.
 </p>
 <!-- QA:roborev_section=1 -->',
           accent_orange, accent_orange, dark_border, dark_border,
-          dark_card,    dark_border, dark_text, dark_border, dark_text, n_new_24h,
-          dark_row_alt, dark_border, dark_text, dark_border, accent_green, n_res_24h,
-          dark_card,    dark_border, dark_text, dark_border, dark_text, n_open,
-          dark_row_alt, dark_border, dark_text, dark_border, dark_text, n_loops,
-          dark_card,    dark_border, dark_text, dark_border,
+          dark_card,    dark_border, dark_text, dark_border, dark_text, v_new_24h,
+          dark_row_alt, dark_border, dark_text, dark_border, accent_green, v_res_24h,
+          dark_card,    dark_border, dark_text, dark_border, dark_text, v_clo_24h,
+          dark_row_alt, dark_border, dark_text, dark_border, dark_text, n_open,
+          dark_card,    dark_border, dark_text, dark_border, dark_text, n_loops,
+          dark_row_alt, dark_border, dark_text, dark_border,
           if (n_esc > 0) "#ff5555" else dark_text,
           n_esc, dark_muted, n_esc_fil,
           dark_muted  # caption <p> color
@@ -1086,7 +1046,8 @@ if (!has_data) {
   }, error = function(e) {
     message("Roborev summary not available: ", e$message)
   })
-  email_body <- paste0(email_body, roborev_html)
+  # roborev_html kept as a variable (not appended to email_body here) — its
+  # position in the body is set by the final assembly below.
 
   # --- CodexBar section: live limits/credits + cost reconciliation ---
   # Graceful: renders a one-line note when the JSON files are absent (normal
@@ -1103,7 +1064,7 @@ if (!has_data) {
       paste0(
         sprintf('\n<h3 style="color: %s; margin-top: 20px;">Provider usage (CodexBar)</h3>',
                 accent_purple),
-        sprintf('<p style="color: %s; font-size: 11px; font-style: italic;">',
+        sprintf('<p style="color: %s; font-size: 14px; font-style: italic;">',
                 dark_muted),
         "CodexBar data not yet available (run <code>sanitize_codexbar.R</code> to populate).",
         "</p>",
@@ -1117,10 +1078,20 @@ if (!has_data) {
         })
       } else NULL
 
+      # Drop degenerate windows (e.g. an empty tertiary window) where both
+      # used_pct and window_minutes are NA — these render as an all-"-" row.
+      if (!is.null(usage_tbl) && nrow(usage_tbl) > 0) {
+        usage_tbl <- usage_tbl[
+          !(is.na(usage_tbl$used_pct) & is.na(usage_tbl$window_minutes)),
+          ,
+          drop = FALSE
+        ]
+      }
+
       limits_html <- ""
       if (!is.null(usage_tbl) && nrow(usage_tbl) > 0) {
         limits_html <- sprintf(
-          '\n<h4 style="color: %s; margin-top: 0; margin-bottom: 6px;">Live rate-limit windows</h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Provider</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Window (length)</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Used %%</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Window (min)</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Resets at</th>\n  </tr>\n  <!-- Credits-left column dropped 2026-05-31 — provider does not expose. See llmtelemetry#277 -->',
+          '\n<h4 style="color: %s; margin-top: 0; margin-bottom: 6px;">Live rate-limit windows</h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 14px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Provider</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Window (length)</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Used %%</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">Window (min)</th>\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Resets at</th>\n  </tr>\n  <!-- Credits-left column dropped 2026-05-31 — provider does not expose. See llmtelemetry#277 -->',
           accent_purple, accent_purple,
           dark_border, dark_border, dark_border, dark_border, dark_border)
 
@@ -1162,7 +1133,7 @@ if (!has_data) {
             dark_border, dark_muted,   reset_str))
         }
         limits_html <- paste0(limits_html, sprintf(
-          "\n</table>\n<p style=\"font-size: 9px; color: %s; margin-top: 4px; line-height: 1.5;\">",
+          "\n</table>\n<p style=\"font-size: 13px; color: %s; margin-top: 4px; line-height: 1.5;\">",
           dark_muted),
           "Window length is the rolling-window size the provider rate-limits against. ",
           "<code>Used %%</code> is consumption within that window. ",
@@ -1210,13 +1181,13 @@ if (!has_data) {
 
           stale_note <- if (cb_is_stale) {
             sprintf(
-              ' <em style="font-size: 9px; color: %s;">(stale — data older than 6h)</em>',
+              ' <em style="font-size: 13px; color: %s;">(stale — data older than 6h)</em>',
               accent_orange
             )
           } else ""
 
           recon_html <- sprintf(
-            '\n<h4 style="color: %s; margin-top: 12px; margin-bottom: 4px;">Cost (last ~7 days)%s <em style="font-size: 9px; color: %s; font-weight: normal;">(actual provider invoices)</em></h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 11px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Date</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">CodexBar (actual invoice cost)</th>\n  </tr>',
+            '\n<h4 style="color: %s; margin-top: 12px; margin-bottom: 4px;">Cost (last ~7 days)%s <em style="font-size: 13px; color: %s; font-weight: normal;">(actual provider invoices)</em></h4>\n<table style="border-collapse: collapse; width: 100%%; font-size: 14px;">\n  <tr style="background-color: %s;">\n    <th style="padding: 5px; border: 1px solid %s; color: white;">Date</th>\n    <th style="padding: 5px; border: 1px solid %s; text-align: right; color: white;">CodexBar (actual invoice cost)</th>\n  </tr>',
             accent_purple, stale_note, dark_muted, accent_purple,
             dark_border, dark_border)
 
@@ -1224,7 +1195,7 @@ if (!has_data) {
             bg_r <- if (ri %% 2 == 0) dark_row_alt else dark_card
             # CodexBar value: append "(stale)" when data is stale (#281 1c)
             cb_val_str <- if (cb_is_stale) {
-              sprintf('%s <em style="font-size: 9px; color: %s;">(stale)</em>',
+              sprintf('%s <em style="font-size: 13px; color: %s;">(stale)</em>',
                       dollar(cb_daily_cb$cb_cost[ri]), accent_orange)
             } else {
               dollar(cb_daily_cb$cb_cost[ri])
@@ -1237,7 +1208,7 @@ if (!has_data) {
           }
           recon_html <- paste0(recon_html, "\n</table>",
             sprintf(
-              '\n<p style="color: %s; font-size: 10px; font-style: italic; margin-top: 4px;">',
+              '\n<p style="color: %s; font-size: 13px; font-style: italic; margin-top: 4px;">',
               dark_muted
             ),
             "CodexBar reflects actual Anthropic + OpenAI invoiced costs. ",
@@ -1260,32 +1231,41 @@ if (!has_data) {
     paste0(
       sprintf('\n<h3 style="color: %s; margin-top: 20px;">Provider usage (CodexBar)</h3>',
               accent_purple),
-      sprintf('<p style="color: %s; font-size: 11px; font-style: italic;">', dark_muted),
+      sprintf('<p style="color: %s; font-size: 14px; font-style: italic;">', dark_muted),
       "CodexBar data not yet available.",
       "</p>",
       "<!-- QA:codexbar_section=error -->"
     )
   })
-  email_body <- paste0(email_body, codexbar_html)
+  # codexbar_html kept as a variable (not appended to email_body here) — its
+  # position in the body is set by the final assembly below.
 
-  email_body <- paste0(email_body, sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
-<p style="color: %s; font-size: 12px;">
+  footer_html <- sprintf('\n<hr style="margin-top: 20px; border-color: %s;">
+<p style="color: %s; font-size: 15px;">
   <a href="https://github.com/JohnGavin/llmtelemetry" style="color: %s;">llmtelemetry project</a> |
   <a href="https://johngavin.github.io/llmtelemetry/" style="color: %s;">Dashboard</a> |
   Refresh: <code style="background-color: %s; padding: 2px 6px; border-radius: 3px; color: %s;">bash exec/refresh_and_preserve.sh</code>
 </p>
 
 <!-- Footnotes -->
-<div style="margin-top: 30px; border-top: 1px solid %s; padding-top: 10px; color: %s; font-size: 10px;">
+<div style="margin-top: 30px; border-top: 1px solid %s; padding-top: 10px; color: %s; font-size: 13px;">
   <strong>Definitions:</strong><br>
   <sup>1</sup> <strong>Cost:</strong> Total cost in USD. Codex figures are estimates from <code>codex_pricing.json</code> and marked <em>(est)</em>.<br>
   <sup>2</sup> <strong>Days:</strong> Number of days in the reporting period.<br>
-  <sup>3</sup> <strong>Sessions:</strong> Number of distinct interactive sessions recorded.<br>
+  <sup>3</sup> <strong>Sessions:</strong> Number of distinct sessions recorded via ccusage (all trigger types).<br>
   <sup>4</sup> <strong>Entries:</strong> Total number of logged interactions/blocks.<br>
   <strong>Source:</strong> <em>ccusage/Gemini</em> (this R package) vs <em>cmonitor</em> (Rust-based system monitor) vs <em>Codex</em> (OpenAI Codex OTEL logs).
 </div>
 </div>
-', dark_border, dark_muted, accent_blue, accent_blue, dark_card, dark_text, dark_border, dark_muted))
+', dark_border, dark_muted, accent_blue, accent_blue, dark_card, dark_text, dark_border, dark_muted)
+
+  # --- Final body assembly (item 7 reorder) ---
+  # Target order: Time Block Activity + Daily model breakdown (both already
+  # inside email_header) -> Weekly Cost/Tokens (side by side) -> CodexBar ->
+  # Top Projects -> Top Sessions -> Summary -> Roborev -> footer.
+  email_body <- paste0(email_header, weekly_side_by_side, codexbar_html,
+                       projects_html, sessions_html, summary_html,
+                       roborev_html, footer_html)
 }
 
 # --- Freshness guard: prepend stale-data banner if data is old (#309) ---
@@ -1357,14 +1337,8 @@ for (marker in c("QA:blocks_grouped_by_day=", "QA:model_breakdown_days=", "QA:mo
   }
 }
 
-# Codex QA: if codex data was loaded, the type-breakdown marker and row must appear
+# Codex QA: if codex data was loaded, the Summary row's est-cost marker must appear
 if (has_codex) {
-  if (!grepl("QA:codex_type_rows=", email_body, fixed = TRUE)) {
-    qa_errors <- c(qa_errors, "Missing QA marker: QA:codex_type_rows= (codex data present but marker missing)")
-  }
-  if (!grepl("Codex by Automation Type", email_body)) {
-    qa_errors <- c(qa_errors, "Missing section: 'Codex by Automation Type'")
-  }
   if (!grepl("(est)", email_body, fixed = TRUE)) {
     qa_errors <- c(qa_errors, "Missing '(est)' suffix on Codex cost figures")
   }

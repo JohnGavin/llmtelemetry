@@ -139,6 +139,25 @@ fi
 
 # ─── Main path ───────────────────────────────────────────────────────────────
 
+# Concurrency guard (2026-07-27): this script is invoked from the Stop hook,
+# which fires on every turn-end, not just true session end. In a long,
+# high-turn-count session, invocations arrive faster than a single
+# export+rollup cycle (R + nix-shell) can finish, and with no lock they pile
+# up — observed 7 concurrent R processes pegged near 100% CPU, overheating
+# the machine. PID-file lock: if a live invocation already holds the lock,
+# skip this one instead of piling up.
+LOCK_FILE="$HOME/.claude/logs/export_and_deploy_data.lock"
+mkdir -p "$(dirname "$LOCK_FILE")"
+if [ -f "$LOCK_FILE" ]; then
+  LOCK_PID=$(cat "$LOCK_FILE" 2>/dev/null)
+  if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+    echo "TELEMETRY: another export already running (pid $LOCK_PID) — skipping this invocation"
+    exit 0
+  fi
+fi
+echo $$ > "$LOCK_FILE"
+trap 'rm -f "$LOCK_FILE"' EXIT
+
 # Quick check: is the repo available?
 if [ ! -d "$TELEMETRY_REPO/.git" ]; then
   echo "TELEMETRY: repo not found at $TELEMETRY_REPO"
