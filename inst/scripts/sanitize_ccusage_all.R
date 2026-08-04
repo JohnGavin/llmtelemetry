@@ -49,27 +49,29 @@ if (!exists("sensitive_id_pattern", mode = "function")) {
   # provides the function automatically.
   sensitive_id_pattern <- function() {
     paste0(
-      "^-Users-",           # raw home-dir prefix (dashed form)
-      "|^/",                # Unix absolute path: /Users/..., /private/tmp/..., /var/..., /tmp/...
-      "|^-private-tmp-",    # macOS /private/tmp/ in dashed form
-      "|^-tmp-",            # generic /tmp/ in dashed form
-      "|-worktree-",        # any *-worktree-* substring (numeric, named, generic)
-      "|worktree-agent-",   # .claude/worktrees/agent-... (belt-and-suspenders)
-      "|johngavin"          # username anywhere
+      "^-Users-",                 # raw home-dir prefix (dashed form)
+      "|^/",                      # Unix absolute path: /Users/..., /private/tmp/..., /var/..., /tmp/...
+      "|-private-tmp-",           # macOS /private/tmp/ in dashed form (unanchored: #340)
+      "|-private-var-folders-",   # macOS per-user tmp, e.g. /private/var/folders/xx/.../T/tmp.YYY (#340)
+      "|-tmp-",                   # generic /tmp/ in dashed form (unanchored: #340)
+      "|-worktree-",              # any *-worktree-* substring (numeric, named, generic)
+      "|worktree-agent-",         # .claude/worktrees/agent-... (belt-and-suspenders)
+      "|johngavin"                # username anywhere
     )
   }
   sensitive_verify_patterns <- function() {
     c(
-      "Users-johngavin",    # home-dir prefix class   (^-Users-)
-      "/Users/",            # absolute-path class (^/) — home dirs
-      "/private/",          # absolute-path class (^/) — macOS /private/tmp/
-      "/tmp/",              # absolute-path class (^/) — Linux /tmp/
-      "/var/",              # absolute-path class (^/) — Linux /var/
-      "-private-tmp-",      # macOS tmp class          (^-private-tmp-)
-      "-tmp-",              # generic tmp class         (^-tmp-)
-      "-worktree-",         # any worktree class        (-worktree-)
-      "worktree-agent-",    # named agent worktree      (worktree-agent-)
-      "johngavin"           # username class
+      "Users-johngavin",       # home-dir prefix class   (^-Users-)
+      "/Users/",               # absolute-path class (^/) — home dirs
+      "/private/",             # absolute-path class (^/) — macOS /private/tmp/
+      "/tmp/",                 # absolute-path class (^/) — Linux /tmp/
+      "/var/",                 # absolute-path class (^/) — Linux /var/
+      "-private-tmp-",         # macOS tmp class            (-private-tmp-)
+      "-private-var-folders-", # macOS per-user tmp class   (-private-var-folders-, #340)
+      "-tmp-",                 # generic tmp class          (-tmp-)
+      "-worktree-",            # any worktree class         (-worktree-)
+      "worktree-agent-",       # named agent worktree       (worktree-agent-)
+      "johngavin"              # username class
     )
   }
 }

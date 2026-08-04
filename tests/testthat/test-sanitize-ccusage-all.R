@@ -388,6 +388,34 @@ test_that("derive_canonical_id redacts .claude/worktrees/agent-... style path (i
   expect_true(grepl("^sanitized@", result))
 })
 
+test_that("derive_canonical_id redacts macOS per-user tmp id with mid-string tmp token (#340)", {
+  # The exact offending value from ccusage_session_all.json that froze the
+  # refresh since 2026-08-02.  It is the dashed form of a macOS per-user temp
+  # dir (/private/var/folders/.../T/tmp.XXX), so the "-tmp-" token sits
+  # mid-string, after "-private-var-folders-...-T-" -- NOT at position 0.
+  # Prior to the #340 fix, sensitive_id_pattern() anchored the tmp classes
+  # to string-start (^-tmp-, ^-private-tmp-), so this id was verified as a
+  # leak (sensitive_verify_patterns() is unanchored) but never sanitized --
+  # the sanitizer left it untouched every run, and the fail-closed
+  # verification gate (#131) correctly refused to publish forever.
+  raw_id <- "-private-var-folders-hn-3nfdjww12237gp6y33bpnr7w0000gn-T-tmp-msqYsMoZTd"
+  result <- derive_canonical_id(raw_id)
+
+  # Must actually be REWRITTEN (sanitized), not merely flagged as sensitive.
+  expect_true(grepl("^sanitized@", result),
+              label = "macOS per-user tmp id must be sanitized, not passed through unchanged")
+  expect_false(identical(result, raw_id),
+               label = "sanitized output must differ from the raw offending id")
+
+  # The sanitized output must not itself trigger any verify pattern -- this
+  # is what the real script's verification gate checks before publishing.
+  leaked <- any(vapply(SENSITIVE_VERIFY_PATTERNS, function(p) {
+    grepl(p, result, perl = TRUE)
+  }, logical(1)))
+  expect_false(leaked,
+               label = "sanitized output must not match any SENSITIVE_VERIFY_PATTERNS entry")
+})
+
 # ---------------------------------------------------------------------------
 # Finding 1 — verification gate must cover all patterns that SENSITIVE_ID_PATTERN
 # covers, so it cannot report "0 leaks" while leaks remain (#140 round-2).
