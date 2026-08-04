@@ -467,6 +467,42 @@ test_that("forbidden_patterns catches generic -worktree- without numeric suffix 
   )
 })
 
+# ---------------------------------------------------------------------------
+# Regression (#340): sanitize/verify anchor asymmetry deadlocked the ETL.
+# sensitive_id_pattern() (sanitize) anchored the tmp classes to string-start
+# (^-tmp-, ^-private-tmp-) while sensitive_verify_patterns() (verify) used
+# the same substrings unanchored (-tmp-, -private-tmp-).  A macOS per-user
+# temp id -- derived from /private/var/folders/.../T/tmp.XXX -- has its
+# "-tmp-" token mid-string, so it was verified as a leak but never
+# sanitized: the fail-closed gate (#131) refused to publish on every run.
+# See test-sanitize-ccusage-all.R for the end-to-end "actually sanitized"
+# proof via derive_canonical_id(); this test proves the narrower
+# containment property directly on sensitive_id_pattern() itself.
+# ---------------------------------------------------------------------------
+
+test_that("sensitive_id_pattern() matches the exact macOS per-user tmp id that froze the pipeline (#340)", {
+  # Real offending value from ccusage_session_all.json, 2026-08-02 onward.
+  offending_id <- "-private-var-folders-hn-3nfdjww12237gp6y33bpnr7w0000gn-T-tmp-msqYsMoZTd"
+
+  # It was always caught by the verify/forbidden side (unanchored) --
+  # this is not new.
+  expect_true(
+    any(vapply(forbidden_patterns, function(p)
+      grepl(p, offending_id, perl = TRUE), logical(1))),
+    label = "macOS per-user tmp id must match forbidden_patterns (verify side)"
+  )
+
+  # It must ALSO be matched by the sanitizer (sensitive_id_pattern()) -- this
+  # is the actual #340 regression.  Before the fix, sensitive_id_pattern()
+  # anchored -tmp- and -private-tmp- to string-start, so this exact id --
+  # where the tmp token sits mid-string after -private-var-folders-...-T- --
+  # was never matched here, even though it was always matched above.
+  expect_true(
+    grepl(sensitive_id_pattern(), offending_id, perl = TRUE),
+    label = "macOS per-user tmp id must ALSO be matched by sensitive_id_pattern() (sanitize side) -- #340 containment invariant"
+  )
+})
+
 test_that("forbidden_patterns does not false-positive on clean project names", {
   clean <- c("llmtelemetry", "irishbuoys", "randomwalk",
              "sanitized@llm@h1a2b3c4d5e6", "claude-sonnet-4-6", "unknown")
