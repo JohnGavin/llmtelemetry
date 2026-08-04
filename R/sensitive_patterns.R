@@ -8,19 +8,32 @@
 #' Pattern classes (must stay in sync between `sensitive_id_pattern()` and
 #' `sensitive_verify_patterns()`):
 #'
-#' | Class            | Sanitizer regex   | Verify substrings         |
-#' |------------------|-------------------|---------------------------|
-#' | home-dir prefix  | `^-Users-`        | `Users-johngavin`         |
-#' | absolute path    | `^/`              | `/Users/`, `/private/`, `/tmp/`, `/var/` |
-#' | macOS tmp        | `^-private-tmp-`  | `-private-tmp-`           |
-#' | generic tmp      | `^-tmp-`          | `-tmp-`                   |
-#' | any worktree     | `-worktree-`      | `-worktree-`              |
-#' | named agent wt   | `worktree-agent-` | `worktree-agent-`         |
-#' | username         | `johngavin`       | `johngavin`               |
+#' | Class              | Sanitizer regex        | Verify substrings         |
+#' |--------------------|-------------------------|---------------------------|
+#' | home-dir prefix    | `^-Users-`              | `Users-johngavin`         |
+#' | absolute path      | `^/`                    | `/Users/`, `/private/`, `/tmp/`, `/var/` |
+#' | macOS tmp          | `-private-tmp-`         | `-private-tmp-`           |
+#' | macOS per-user tmp | `-private-var-folders-` | `-private-var-folders-`  |
+#' | generic tmp        | `-tmp-`                 | `-tmp-`                   |
+#' | any worktree       | `-worktree-`            | `-worktree-`              |
+#' | named agent wt     | `worktree-agent-`       | `worktree-agent-`         |
+#' | username           | `johngavin`             | `johngavin`               |
 #'
-#' INVARIANT: every class in `sensitive_id_pattern()` has at least one
-#' corresponding entry in `sensitive_verify_patterns()`.  If you add a class
-#' to the sanitizer, add the matching verify substring(s) here.
+#' INVARIANT (containment, not mere presence): every string matched by any
+#' pattern in `sensitive_verify_patterns()` MUST also be matched by
+#' `sensitive_id_pattern()` — i.e. verify's match set is a SUBSET of
+#' sanitise's.  It is not enough for the two functions to merely list the
+#' same *class names*; the actual regexes must accept the same strings for
+#' that class, including mid-string occurrences.  The original bug (#340)
+#' had a class present in both functions ("generic tmp") whose regexes
+#' disagreed: sanitize used the anchored `^-tmp-` (start of string only)
+#' while verify used the unanchored `-tmp-` (anywhere) — so a mid-string tmp
+#' token was verified as a leak but never sanitised, and the pipeline could
+#' never converge.  When adding or editing a class, keep both regexes
+#' anchoring-equivalent; prefer unanchored forms so verify's superset
+#' property (see `sensitive_verify_patterns()` below) actually holds in
+#' practice.  See `tests/testthat/test-sensitive-patterns.R` for the
+#' property test enforcing this.
 #'
 #' **Message-field path-shape coverage (#157):** `path_shape_patterns()` uses
 #' generic PCRE regexes (`/Users/[^/[:space:]]+` and
@@ -50,13 +63,14 @@ NULL
 #' grepl(sensitive_id_pattern(), "llmtelemetry", perl = TRUE) # FALSE
 sensitive_id_pattern <- function() {
   paste0(
-    "^-Users-",           # raw home-dir prefix (dashed form)
-    "|^/",                # Unix absolute path: /Users/..., /private/tmp/..., /var/..., /tmp/...
-    "|^-private-tmp-",    # macOS /private/tmp/ in dashed form
-    "|^-tmp-",            # generic /tmp/ in dashed form
-    "|-worktree-",        # any *-worktree-* substring (numeric, named, generic)
-    "|worktree-agent-",   # .claude/worktrees/agent-... (belt-and-suspenders)
-    "|johngavin"          # username anywhere
+    "^-Users-",                 # raw home-dir prefix (dashed form)
+    "|^/",                      # Unix absolute path: /Users/..., /private/tmp/..., /var/..., /tmp/...
+    "|-private-tmp-",           # macOS /private/tmp/ in dashed form (unanchored: #340)
+    "|-private-var-folders-",   # macOS per-user tmp, e.g. /private/var/folders/xx/.../T/tmp.YYY (#340)
+    "|-tmp-",                   # generic /tmp/ in dashed form (unanchored: #340 — see class table above)
+    "|-worktree-",              # any *-worktree-* substring (numeric, named, generic)
+    "|worktree-agent-",         # .claude/worktrees/agent-... (belt-and-suspenders)
+    "|johngavin"                # username anywhere
   )
 }
 
@@ -70,6 +84,16 @@ sensitive_id_pattern <- function() {
 #' forms the sanitizer rewrites but also any form that might have leaked through
 #' a different code path (e.g. a raw `/private/tmp/plain-id` written directly
 #' to a field without going through `derive_canonical_id()`).
+#'
+#' Because verify is a superset, [sensitive_id_pattern()] is deliberately
+#' allowed — and expected — to be MORE aggressive than the minimum required to
+#' pass verification (e.g. matching `-tmp-` or `-private-tmp-` anywhere in a
+#' string, not only where verify happens to look).  Over-sanitizing a value
+#' that did not strictly need it costs nothing beyond a slightly more
+#' aggressive canonical rewrite; under-sanitizing is both a privacy leak and,
+#' as of #340, a hard failure that freezes the whole refresh pipeline because
+#' the verification gate is fail-closed by design (#131).  When in doubt,
+#' widen the sanitizer regex rather than narrow the verify regex.
 #'
 #' **Coverage of the `^/` (absolute-path) class:**
 #' A bare `"/"` would match URLs and JSON separators.  Instead we enumerate the
@@ -96,9 +120,11 @@ sensitive_verify_patterns <- function() {
     "/private/",
     "/tmp/",
     "/var/",
-    # macOS tmp class (^-private-tmp-)
+    # macOS tmp class (-private-tmp-)
     "-private-tmp-",
-    # generic tmp class (^-tmp-)
+    # macOS per-user tmp class (-private-var-folders-, #340)
+    "-private-var-folders-",
+    # generic tmp class (-tmp-)
     "-tmp-",
     # any worktree class (-worktree-)
     "-worktree-",
