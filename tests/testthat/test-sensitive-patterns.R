@@ -75,7 +75,7 @@ test_that("every unanchored-by-design verify pattern is matched by sensitive_id_
       # the intended position (a broken test fixture would otherwise pass
       # vacuously).
       expect_true(
-        grepl(pat, s, perl = TRUE, fixed = TRUE),
+        grepl(pat, s, fixed = TRUE),
         label = sprintf(
           "test fixture bug: candidate '%s' does not contain verify pattern '%s' at position '%s'",
           s, pat, position
