@@ -78,15 +78,49 @@ cat(sprintf(
 # llmtelemetry-side replacement: it calls cmonitor-rs directly and upserts
 # fresh rows.  Fail-open: exits 0 when cmonitor-rs is absent so this does not
 # break CI or non-macOS environments.  See llmtelemetry#309.
+#
+# `envir = new.env(parent = baseenv())` deliberately keeps the sourced script
+# isolated from this file's globalenv() — it cannot see or accidentally
+# mutate `package_dir`, `extdata`, `n_sess`, etc. defined above, and this
+# file cannot be polluted by anything the sourced script defines. The
+# original bug this caused (llm#907) — a bare `fromJSON()` call in the
+# sourced script being unresolvable because baseenv() never reaches the
+# attached-package search path hanging off globalenv() — is fixed at the
+# source: every package call in run_refresh_costs_unified.R is now
+# namespace-qualified (`jsonlite::fromJSON`, matching the file's existing
+# DBI::/duckdb:: convention). Namespace-qualification is the correct
+# long-term contract for a sourced utility script; switching to
+# `parent = globalenv()` would silently reintroduce two-way search-path
+# leakage instead of fixing the actual defect (llm#907 Deliverable 4).
 refresh_costs_script <- file.path(dirname(script_path), "run_refresh_costs_unified.R")
 if (file.exists(refresh_costs_script)) {
   cat("Refreshing unified.duckdb costs table via cmonitor-rs (#309)...\n")
-  rc <- tryCatch({
-    sys.source(refresh_costs_script, envir = new.env(parent = baseenv()))
-    0L
+  refresh_env    <- new.env(parent = baseenv())
+  refresh_result <- tryCatch({
+    # sys.source() always returns invisible(NULL), regardless of the sourced
+    # script's last expression — so the only way to learn the outcome is to
+    # read back a well-known variable from the envir we handed it (llm#907
+    # Deliverable 3: the sourced script no longer quit()s, which used to
+    # terminate this whole process and made "unified.duckdb costs refresh
+    # complete" below unreachable on every skip path).
+    sys.source(refresh_costs_script, envir = refresh_env)
+    get0(".refresh_result", envir = refresh_env,
+         ifnotfound = list(status = "unknown", message = "no status reported"))
   }, error = function(e) {
     message("run_rollup: costs refresh failed (non-fatal): ", e$message)
-    1L
+    list(status = "error", message = e$message)
   })
-  if (rc == 0L) cat("run_rollup: unified.duckdb costs refresh complete\n")
+  # This is the non-zero signal a caller (e.g. export_and_deploy_data.sh, in
+  # the llm repo) can surface for the "error" case (llm#907 Deliverable 2) —
+  # kept non-fatal to run_rollup.R itself, matching this step's original
+  # fail-open design, since the sessions/costs/git-commit parquet rollups
+  # above already completed successfully regardless of this optional step.
+  if (identical(refresh_result$status, "ok")) {
+    cat("run_rollup: unified.duckdb costs refresh complete\n")
+  } else if (identical(refresh_result$status, "skipped")) {
+    cat(sprintf("run_rollup: unified.duckdb costs refresh skipped (%s)\n",
+                refresh_result$message))
+  } else {
+    message("run_rollup: unified.duckdb costs refresh reported an error — see messages above")
+  }
 }
