@@ -56,17 +56,33 @@ record_stranded_run() {
   } >> "$STRANDED_LOG"
 }
 
-# run_rscript_with_nix REPO SCRIPT TIMEOUT
+# run_rscript_with_nix REPO SCRIPT TIMEOUT [NIX_FILE] [SCRIPT_ARGS...]
 # Runs Rscript SCRIPT in REPO. If Rscript is not on PATH, wraps via nix-shell
-# REPO/default.nix (same pattern as the rollup step). Returns Rscript's exit code.
+# NIX_FILE (same pattern as the rollup step). NIX_FILE defaults to
+# REPO/default.nix when omitted — pass it explicitly only when the script
+# to run lives outside REPO's own nix environment (llm#909: skill_usage_etl.R
+# lives under $HOME/.claude/scripts/ but needs the llm repo's default.nix).
+# Any arguments after NIX_FILE are forwarded verbatim to SCRIPT (e.g. --apply).
+# Returns Rscript's exit code.
 run_rscript_with_nix() {
   local repo="$1" script="$2" t="$3"
+  local nix_file="${4:-$repo/default.nix}"
+  if [ $# -ge 4 ]; then
+    shift 4
+  else
+    shift 3
+  fi
   if command -v Rscript >/dev/null 2>&1; then
-    (cd "$repo" && timeout "$t" Rscript "$script" 2>&1) | tail -5
+    (cd "$repo" && timeout "$t" Rscript "$script" "$@" 2>&1) | tail -5
     return "${PIPESTATUS[0]}"
   fi
-  if [ -f "$repo/default.nix" ] && command -v nix-shell >/dev/null 2>&1; then
-    (cd "$repo" && timeout "$t" nix-shell "$repo/default.nix" --run "Rscript '$script'" 2>&1) | tail -5
+  if [ -f "$nix_file" ] && command -v nix-shell >/dev/null 2>&1; then
+    local remote_cmd="Rscript '$script'"
+    local a
+    for a in "$@"; do
+      remote_cmd="$remote_cmd $(printf '%q' "$a")"
+    done
+    (cd "$repo" && timeout "$t" nix-shell "$nix_file" --run "$remote_cmd" 2>&1) | tail -5
     return "${PIPESTATUS[0]}"
   fi
   echo "TELEMETRY: ERROR — Rscript not on PATH and no usable default.nix; cannot run $script" >&2
@@ -170,12 +186,27 @@ if [ ! -f "$EXPORT_SCRIPT" ]; then
   exit 0
 fi
 
-# Refresh config_staleness view in unified.duckdb (llm#630) — non-fatal
+# Refresh config_staleness view in unified.duckdb (llm#630) — non-fatal for
+# the overall export, but the outcome must be durable (llm#909). The bare
+# `Rscript` call previously used here always failed silently when Rscript
+# was not on PATH (labelled "non-fatal" and swallowed) — indistinguishable
+# from success on the next run. Route through the nix-aware helper (same
+# fallback the export step uses) and record success in etl_freshness so a
+# genuine failure ages out and etl_freshness_stale_banner.sh surfaces it.
 SKILL_ETL="$HOME/.claude/scripts/skill_usage_etl.R"
-if [ -f "$SKILL_ETL" ] && [ -f "$HOME/.claude/logs/unified.duckdb" ]; then
+LLM_REPO="$HOME/docs_gh/llm"
+UNIFIED_DB="$HOME/.claude/logs/unified.duckdb"
+ETL_FRESHNESS_UPSERT="$HOME/.claude/scripts/etl_freshness_upsert.sh"
+if [ -f "$SKILL_ETL" ] && [ -f "$UNIFIED_DB" ]; then
   echo "TELEMETRY: refreshing config_staleness (skill_usage_etl.R --apply)..."
-  timeout 60 Rscript "$SKILL_ETL" --apply 2>&1 | tail -3 || \
-    echo "TELEMETRY: skill_usage_etl.R failed (non-fatal) — config_staleness may be stale"
+  if run_rscript_with_nix "$LLM_REPO" "$SKILL_ETL" 60 "$LLM_REPO/default.nix" --apply; then
+    if [ -x "$ETL_FRESHNESS_UPSERT" ]; then
+      "$ETL_FRESHNESS_UPSERT" config_staleness "$UNIFIED_DB" "" \
+        --table config_inventory --ts-col etl_run_at >/dev/null 2>&1 || true
+    fi
+  else
+    echo "TELEMETRY: skill_usage_etl.R failed — config_staleness NOT refreshed (no freshness record written; etl_freshness_stale_banner.sh will surface this)"
+  fi
 fi
 
 # Run export (from repo root so here::here() works). Sub-bug B fix:
