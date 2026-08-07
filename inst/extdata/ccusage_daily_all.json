@@ -2064,6 +2064,28 @@
             "cost": 17.7565
           }
         ]
+      },
+      {
+        "date": "2026-08-07",
+        "inputTokens": 73,
+        "outputTokens": 42922,
+        "cacheCreationTokens": 322990,
+        "cacheReadTokens": 12116916,
+        "totalTokens": 12482901,
+        "totalCost": 9.1506,
+        "modelsUsed": [
+          "claude-opus-5"
+        ],
+        "modelBreakdowns": [
+          {
+            "modelName": "claude-opus-5",
+            "inputTokens": 73,
+            "outputTokens": 42922,
+            "cacheCreationTokens": 322990,
+            "cacheReadTokens": 12116916,
+            "cost": 9.1506
+          }
+        ]
       }
     ],
     "llmtelemetry": [
@@ -4137,11 +4159,11 @@
     ]
   },
   "totals": {
-    "inputTokens": 4903383,
-    "outputTokens": 14860803,
-    "cacheCreationTokens": 280202018,
-    "cacheReadTokens": 5937605683,
-    "totalCost": 4320.3082,
-    "totalTokens": 6237571887
+    "inputTokens": 4903456,
+    "outputTokens": 14903725,
+    "cacheCreationTokens": 280525008,
+    "cacheReadTokens": 5949722599,
+    "totalCost": 4329.4587,
+    "totalTokens": 6250054788
   }
 }

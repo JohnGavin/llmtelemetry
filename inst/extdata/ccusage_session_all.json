@@ -1,6 +1,30 @@
 {
   "sessions": [
     {
+      "sessionId": "sanitized@worktrees@h2e4ac9095d3e",
+      "inputTokens": 314,
+      "outputTokens": 165778,
+      "cacheCreationTokens": 763410,
+      "cacheReadTokens": 39118082,
+      "totalTokens": 40047584,
+      "totalCost": 28.4764,
+      "lastActivity": "2026-08-07",
+      "modelsUsed": [
+        "claude-opus-5"
+      ],
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-opus-5",
+          "inputTokens": 314,
+          "outputTokens": 165778,
+          "cacheCreationTokens": 763410,
+          "cacheReadTokens": 39118082,
+          "cost": 28.4764
+        }
+      ],
+      "projectPath": "Unknown Project"
+    },
+    {
       "sessionId": "sanitized@mycare@he777afe75bc9",
       "inputTokens": 100,
       "outputTokens": 41843,
@@ -128,30 +152,6 @@
         }
       ],
       "projectPath": "sanitized@worktrees@hc7db4d4e535f"
-    },
-    {
-      "sessionId": "sanitized@worktrees@h2e4ac9095d3e",
-      "inputTokens": 241,
-      "outputTokens": 122856,
-      "cacheCreationTokens": 440420,
-      "cacheReadTokens": 27001166,
-      "totalTokens": 27564683,
-      "totalCost": 19.3258,
-      "lastActivity": "2026-08-06",
-      "modelsUsed": [
-        "claude-opus-5"
-      ],
-      "modelBreakdowns": [
-        {
-          "modelName": "claude-opus-5",
-          "inputTokens": 241,
-          "outputTokens": 122856,
-          "cacheCreationTokens": 440420,
-          "cacheReadTokens": 27001166,
-          "cost": 19.3258
-        }
-      ],
-      "projectPath": "Unknown Project"
     },
     {
       "sessionId": "sanitized@llmtelemetry@h144d1e77657b",
@@ -4243,11 +4243,11 @@
     }
   ],
   "totals": {
-    "inputTokens": 4903383,
-    "outputTokens": 14860803,
-    "cacheCreationTokens": 280202018,
-    "cacheReadTokens": 5937605683,
-    "totalCost": 4320.3082,
-    "totalTokens": 6237571887
+    "inputTokens": 4903456,
+    "outputTokens": 14903725,
+    "cacheCreationTokens": 280525008,
+    "cacheReadTokens": 5949722599,
+    "totalCost": 4329.4587,
+    "totalTokens": 6250054788
   }
 }
